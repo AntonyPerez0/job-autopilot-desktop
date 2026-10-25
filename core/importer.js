@@ -6,26 +6,13 @@ import { Tailor, aiSettings } from "./engine.js";
 
 export async function resumeText(name, bytes) {
   const ext = path.extname(String(name)).toLowerCase();
-  const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  const data = new Uint8Array(bytes);
   if (ext === ".pdf") {
-    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-    const doc = await pdfjs.getDocument({ data: data.slice(), isEvalSupported: false, useSystemFonts: false, disableFontFace: true }).promise;
-    const pages = [];
-    for (let i = 1; i <= doc.numPages; i++) {
-      const c = await (await doc.getPage(i)).getTextContent();
-      let line = "", lastY = null;
-      const lines = [];
-      for (const it of c.items) {
-        const y = it.transform ? Math.round(it.transform[5]) : null;
-        if (lastY !== null && y !== null && Math.abs(y - lastY) > 2) { lines.push(line); line = ""; }
-        line += it.str + (it.hasEOL ? "\n" : "");
-        lastY = y;
-      }
-      lines.push(line);
-      pages.push(lines.join("\n"));
-    }
-    await doc.destroy();
-    return pages.join("\n\n").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+    // unpdf ships a build of pdf.js with no native parts, so it runs inside Electron.
+    const { extractText, getDocumentProxy } = await import("unpdf");
+    const doc = await getDocumentProxy(data);
+    const { text } = await extractText(doc, { mergePages: false });
+    return [].concat(text).join("\n\n").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
   }
   if (ext === ".docx") {
     const mammoth = (await import("mammoth")).default;

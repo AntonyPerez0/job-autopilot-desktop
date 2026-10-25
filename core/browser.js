@@ -17,7 +17,7 @@ export function chromiumPath() {
 
 // Runs Playwright's own installer with this app's Node (Electron as Node), into PLAYWRIGHT_BROWSERS_PATH.
 export function installChromium(onLine = () => {}) {
-  let cli = require.resolve("playwright-core/cli.js");
+  let cli = path.join(path.dirname(require.resolve("playwright-core/package.json")), "cli.js");
   cli = cli.replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`);
   return new Promise((resolve, reject) => {
     const p = spawn(process.execPath, [cli, "install", "--no-shell", "chromium"], {
