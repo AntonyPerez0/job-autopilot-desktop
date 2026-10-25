@@ -128,12 +128,13 @@ function humanReason(j) {
 }
 
 // ---------- shell ----------
+const NAV_TONE = { applied: "done", queued: "work", failed: "attn", manual: "attn", filled: "attn" };
 function renderNav() {
   const c = (st && st.counts) || {};
   const total = Object.values(c).reduce((a, b) => a + b, 0);
   const count = (v) => v.id === "all" ? total : v.status ? (c[v.status] || 0) + (v.id === "queued" ? (c.working || 0) : 0) : null;
   const html = (mobile) => VIEWS.map((v, i) => `${!mobile && v.id === "applied" ? '<div class="nav-label">Applications</div>' : ""}${!mobile && v.id === "all" ? '<div class="nav-label">More</div>' : ""}
-    <div class="nav ${view === v.id ? "on" : ""}" onclick="go('${v.id}')">${icon(v.icon)}<span>${v.label}</span>${count(v) !== null && !mobile ? `<span class="count">${count(v)}</span>` : ""}</div>`).join("");
+    <div class="nav ${view === v.id ? "on" : ""}" onclick="go('${v.id}')">${icon(v.icon)}<span>${v.label}</span>${count(v) !== null && !mobile ? `<span class="count ${count(v) > 0 ? NAV_TONE[v.id] || "" : ""}">${count(v)}</span>` : ""}</div>`).join("");
   $("nav").innerHTML = html(false);
   $("mnav").innerHTML = html(true);
 }
@@ -197,7 +198,7 @@ function liveChip() {
   else if (/waiting between/.test(s.now)) txt = "Pacing between applications";
   else if (/queue empty/.test(s.now)) txt = "Queue empty, waiting for the next search";
   const busy = !set.paused && (s.job || s.now === "searching");
-  return `<div class="live" role="status"><span class="dot ${tone}"></span>${busy ? '<span class="spin" aria-hidden="true"></span>' : ""}<span class="txt">${txt}</span></div>`;
+  return `<div class="live ${tone}" role="status"><span class="dot ${tone}"></span>${busy ? '<span class="spin" aria-hidden="true"></span>' : ""}<span class="txt">${txt}</span></div>`;
 }
 function header() {
   const [t, sub] = TITLES[view];
@@ -285,7 +286,7 @@ async function renderOverview() {
   $("main").innerHTML = header() + `
   <div class="grid-kpi">
     ${kpi("applied", "Applications sent", done, `${ago(applied[0] && applied[0].applied_at) ? "Last " + ago(applied[0].applied_at) : "None yet"}`)}
-    <div class="kpi" onclick="go('applied')"><div class="lbl">Today</div>
+    <div class="kpi done" onclick="go('applied')"><div class="lbl">Today</div>
       <div class="val">${st.appliedToday}<small>/ ${s.dailyCap}</small></div><div class="bar"><i style="width:${Math.min(100, (100 * st.appliedToday) / Math.max(1, s.dailyCap))}%"></i></div></div>
     ${kpi("queued", "In queue", (c.queued || 0) + (c.working || 0), "Screened as a fit")}
     ${kpi("failed", "Needs attention", stopped, Object.entries(cats).sort((a, b) => b[1] - a[1]).slice(0, 1).map(([k, n]) => `${n}: ${k}`)[0] || "All clear")}
@@ -309,7 +310,8 @@ async function renderOverview() {
     </div>
   </div>`;
 }
-const kpi = (to, label, val, foot) => `<div class="kpi" onclick="go('${to}')"><div class="lbl">${label}</div><div class="val">${val}</div><div class="foot">${esc(foot)}</div></div>`;
+const KPI_TONE = { applied: "done", queued: "work", failed: "attn" };
+const kpi = (to, label, val, foot) => `<div class="kpi ${KPI_TONE[to] || ""}" onclick="go('${to}')"><div class="lbl">${label}</div><div class="val">${val}</div><div class="foot">${esc(foot)}</div></div>`;
 const item = (j) => `<div class="list-item" onclick="openJob('${esc(j.slug)}')">${avatar(j.company)}<div class="li-main"><div class="t">${esc(cleanTitle(j.title))}</div><div class="s">${meta(esc(j.company), esc(j.location))}</div></div>
   ${badge(category(j))}<span class="time hide-md">${ago(j.applied_at || j.updated_at)}</span></div>`;
 const empty = (ic, t, s) => `<div class="empty"><div class="ico">${icon(ic)}</div><h3>${t}</h3><div>${s}</div></div>`;

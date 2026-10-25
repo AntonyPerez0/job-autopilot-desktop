@@ -19,6 +19,9 @@
   --font-outlier: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --color-attn: oklch(50% 0.105 68); --color-attn-bg: oklch(94.5% 0.035 80); --color-error-bg: oklch(95% 0.025 27);
   --color-scrim: oklch(21% 0.012 38 / 0.32);
+  --color-done: oklch(47% 0.115 150); --color-done-bg: oklch(94% 0.04 150);
+  --color-work: oklch(47% 0.085 200); --color-work-bg: oklch(94% 0.03 200);
+  --color-attn-strong: oklch(70% 0.14 72);
   --radius-card: 8px; --radius-input: 6px; --radius-pill: 999px; --radius-stock: 8px; --rule-hair: 1px;
   --shadow-card: 0 1px 2px oklch(20% 0.01 35 / 0.05);
   --edge-stock: inset 0 1px 0 oklch(var(--lit) / 0.9), inset 0 -1px 0 oklch(var(--shade) / 0.07), 0 0 0 0.5px oklch(var(--shade) / 0.22), 0 1px 0 oklch(var(--shade) / 0.12);
@@ -38,6 +41,9 @@
     --color-board: oklch(92% 0.008 70); --color-board-type: oklch(19% 0.012 38); --color-paid: oklch(74% 0.12 33);
     --color-error: oklch(72% 0.14 27); --color-error-bg: oklch(25% 0.045 27); --color-success: oklch(74% 0.1 150);
     --color-attn: oklch(80% 0.1 75); --color-attn-bg: oklch(26% 0.04 70);
+    --color-done: oklch(78% 0.11 150); --color-done-bg: oklch(26% 0.045 150);
+    --color-work: oklch(80% 0.075 200); --color-work-bg: oklch(26% 0.035 200);
+    --color-attn-strong: oklch(78% 0.13 75);
     --color-scrim: oklch(8% 0.01 40 / 0.6);
     --shadow-card: none;
     --edge-stock: inset 0 0 0 1px var(--color-rule-2); --cast-stock: 0 0 0 0 transparent; --cast-stock-lift: 0 0 0 0 transparent;
