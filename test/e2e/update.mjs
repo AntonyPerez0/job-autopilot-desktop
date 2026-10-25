@@ -39,6 +39,8 @@ const checked = await api("/api/update/check", {});
 console.log("check:", checked.phase, checked.info && checked.info.latest, "packaged:", checked.packaged);
 assert.strictEqual(checked.phase, "available");
 const before = launches().length;
+const bundleOf = () => path.resolve(exe, "..", "..", "..");
+const inodeBefore = process.platform === "darwin" ? fs.statSync(bundleOf()).ino : null;
 const t0 = Date.now();
 const started = await api("/api/update/install", {});
 assert.ok(!started.error, started.error);
@@ -69,6 +71,7 @@ console.log("relaunched:", JSON.stringify(relaunched));
 if (process.platform === "darwin") {
   const bundle = path.resolve(exe, "..", "..", "..");
   assert.ok(!fs.existsSync(bundle + ".old-update"), "the old copy was removed");
+  assert.notStrictEqual(fs.statSync(bundle).ino, inodeBefore, "the app bundle was replaced by the downloaded one");
   execSync(`codesign -v ${JSON.stringify(bundle)}`);
   execSync("pkill -f 'Job Autopilot.app/Contents/MacOS/Job Autopilot' || true");
 } else {
