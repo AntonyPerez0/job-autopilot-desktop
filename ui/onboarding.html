@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: ap-file:; frame-src ap-file:">
+<meta name="color-scheme" content="light dark">
+<title>Job Autopilot · Setup</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<script src="icons.js"></script>
+<div class="wiz">
+  <aside class="wiz-side">
+    <div class="brand" style="display:flex;align-items:center;gap:10px;padding:2px 8px 18px;font-weight:650;font-size:15px"><div class="logo"><svg class="i"><use href="#i-bolt"/></svg></div>Job Autopilot</div>
+    <div id="steps"></div>
+  </aside>
+  <main class="wiz-main">
+    <div id="step"></div>
+    <div id="err" style="margin-top:16px"></div>
+    <div class="wiz-foot"><button class="btn" id="back">Back</button><div class="right"><button class="btn ghost" id="skip" hidden>Skip</button><button class="btn primary" id="next">Continue</button></div></div>
+  </main>
+</div>
+<script src="forms.js"></script>
+<script>
+const { esc, icon, msg } = Forms;
+const STEPS = [
+  { id: "welcome", label: "Welcome" },
+  { id: "ai", label: "AI key", title: "Connect an AI model", lead: "Job Autopilot uses an AI model you pay for directly, with your own key. Each application costs a fraction of a cent to a few cents with the default model." },
+  { id: "resumes", label: "Your resume", title: "Upload your resume", lead: "The app reads it and splits it into summaries, bullets, skills and a layout. You approve each piece next." },
+  { id: "review", label: "Review", title: "Approve every piece", lead: "Resumes are only ever assembled from what you approve here, so nothing reaches an employer that you did not write and check." },
+  { id: "questions", label: "Common questions", title: "Answers to the usual questions", lead: "Application forms ask these every time. Your answers here are the only source of truth: the app corrects anything the AI says that disagrees with them." },
+  { id: "prefs", label: "Job preferences", title: "What jobs to look for", lead: "The app searches for these on freehire.me, keeps the ones you can apply to without making an account (Greenhouse, Lever, Ashby), and has the AI check each one for fit." },
+  { id: "mail", label: "Mailbox", title: "Connect your mailbox (optional)", lead: "For employers that email a security code, and to spot jobs you already applied to." , optional: true },
+  { id: "start", label: "Start" },
+];
+let i = 0, cfg = null, form = null;
+
+function drawSteps() {
+  document.getElementById("steps").innerHTML = STEPS.map((s, k) => `<div class="wiz-step ${k === i ? "on" : k < i ? "done" : ""}" data-k="${k}"><span class="n">${k < i ? "&#10003;" : k + 1}</span>${s.label}</div>`).join("");
+  document.querySelectorAll(".wiz-step").forEach((e) => e.onclick = () => { const k = Number(e.dataset.k); if (k < i) show(k); });
+}
+
+function show(k) {
+  i = k; form = null;
+  msg(document.getElementById("err"), "", "");
+  const s = STEPS[i];
+  const el = document.getElementById("step");
+  document.getElementById("back").style.visibility = i ? "visible" : "hidden";
+  document.getElementById("skip").hidden = !s.optional;
+  document.getElementById("next").textContent = i === STEPS.length - 1 ? "Start in dry run" : i === 0 ? "Get started" : "Continue";
+  drawSteps();
+  if (s.id === "welcome") {
+    el.innerHTML = `<h1>Apply to jobs while you do something else</h1>
+      <p class="lead">Job Autopilot finds jobs that match what you want, writes a one-page resume for each from pieces you approved, fills in the application in a browser window you can watch, and submits it. It keeps a full record of every application.</p>
+      <div class="card sec"><h3>What it will and won't do</h3><ul class="bul" style="margin-top:10px">
+        <li>It never submits with a required question unanswered, and never guesses legal agreements. Those jobs wait for you.</li>
+        <li>It only states facts from your approved resume and your answers. A second AI pass fact-checks every written answer, and answers that fail are not used.</li>
+        <li>It starts in <b>dry run</b>: forms are filled but never submitted until you have checked one and switched to live.</li>
+        <li>It applies at a steady pace (10 a day by default) and never to the same job twice.</li>
+        <li>It does not solve CAPTCHAs, create accounts or log in anywhere. Jobs that need that are skipped or left for you.</li>
+        <li>Everything stays on this computer, except what is sent to your AI provider and to the job sites themselves.</li></ul></div>
+      <div class="card sec" style="margin-top:16px"><h3>Before you start</h3>
+        <p style="margin:6px 0 12px">Automated applications may go against the terms of some job sites or employers, and some employers may treat them differently. You are responsible for every application sent in your name; review the dry-run results before you go live.</p>
+        <label class="check"><input type="checkbox" id="terms" ${cfg.settings.acceptedTerms ? "checked" : ""}>I understand, and I will check the applications it sends.</label></div>`;
+    return;
+  }
+  if (s.id === "start") {
+    el.innerHTML = `<h1>Ready for a dry run</h1>
+      <p class="lead">The app will search for jobs, screen them, and fill in the first good match without submitting it. Then it stops and waits for you.</p>
+      <div class="card sec"><h3>What happens next</h3><ol class="bul" style="margin-top:10px;list-style:decimal;padding-left:18px">
+        <li style="padding-left:4px">A browser window opens and you can watch it fill in the form. Leave the app open; closing it stops the autopilot.</li>
+        <li style="padding-left:4px">The filled application shows up on the Overview with every answer, the resume it would send, and screenshots.</li>
+        <li style="padding-left:4px">Check it and press <b>I checked these answers</b>. Fix anything wrong in Settings.</li>
+        <li style="padding-left:4px">When you trust it, turn on <b>Go live</b> in the sidebar. You can pause or go back to dry run at any time.</li></ol></div>`;
+    return;
+  }
+  el.innerHTML = `<h1>${s.title}</h1><p class="lead">${s.lead}</p><div class="card sec" id="sec"></div>`;
+  const sec = document.getElementById("sec");
+  if (s.id === "ai") form = Forms.ai(sec, cfg);
+  if (s.id === "resumes") form = Forms.resumes(sec, cfg, () => setTimeout(() => show(i + 1), 600));
+  if (s.id === "review") form = Forms.review(sec, cfg);
+  if (s.id === "questions") form = Forms.questions(sec, cfg);
+  if (s.id === "prefs") form = Forms.prefs(sec, cfg);
+  if (s.id === "mail") form = Forms.mailbox(sec, cfg);
+}
+
+document.getElementById("back").onclick = () => show(Math.max(0, i - 1));
+document.getElementById("skip").onclick = () => show(i + 1);
+document.getElementById("next").onclick = async () => {
+  const btn = document.getElementById("next"), err = document.getElementById("err");
+  btn.disabled = true;
+  try {
+    if (STEPS[i].id === "welcome") {
+      if (!document.getElementById("terms").checked) return msg(err, "err", "Tick the box to continue.");
+      await window.ja.api("/api/settings", { acceptedTerms: true });
+    }
+    if (form) { const e = await form.save(); if (e) return msg(err, "err", e); }
+    if (STEPS[i].id === "start") {
+      const r = await window.ja.api("/api/onboarding/finish", {});
+      if (r.error) return msg(err, "err", r.error);
+      return window.ja.go("index.html");
+    }
+    show(i + 1);
+    window.scrollTo(0, 0);
+  } finally { btn.disabled = false; }
+};
+
+(async () => {
+  cfg = await window.ja.api("/api/config");
+  show(0);
+})();
+</script>
+</body>
+</html>
