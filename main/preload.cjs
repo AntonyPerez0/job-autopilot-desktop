@@ -7,4 +7,7 @@ contextBridge.exposeInMainWorld("ja", {
   openExternal: (url) => ipcRenderer.invoke("open-external", url),
   showDataFolder: () => ipcRenderer.invoke("show-data-folder"),
   go: (page) => ipcRenderer.invoke("go", page),
+  saveHistory: () => ipcRenderer.invoke("history-save"),
+  pickFolder: () => ipcRenderer.invoke("pick-folder"),
+  showFile: (f) => ipcRenderer.invoke("show-file", f),
 });

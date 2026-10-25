@@ -61,7 +61,9 @@ function show(k) {
         <li>Everything stays on this computer, except what is sent to your AI provider and to the job sites themselves.</li></ul></div>
       <div class="card sec" style="margin-top:16px"><h3>Before you start</h3>
         <p style="margin:6px 0 12px">Automated applications may go against the terms of some job sites or employers, and some employers may treat them differently. You are responsible for every application sent in your name; review the dry-run results before you go live.</p>
-        <label class="check"><input type="checkbox" id="terms" ${cfg.settings.acceptedTerms ? "checked" : ""}>I understand, and I will check the applications it sends.</label></div>`;
+        <label class="check"><input type="checkbox" id="terms" ${cfg.settings.acceptedTerms ? "checked" : ""}>I understand, and I will check the applications it sends.</label></div>
+      <div id="history-found"></div>`;
+    offerHistory();
     return;
   }
   if (s.id === "start") {
@@ -82,6 +84,21 @@ function show(k) {
   if (s.id === "questions") form = Forms.questions(sec, cfg);
   if (s.id === "prefs") form = Forms.prefs(sec, cfg);
   if (s.id === "mail") form = Forms.mailbox(sec, cfg);
+}
+
+// A reinstall or a new computer: offer the application history the app finds in its folder.
+async function offerHistory() {
+  const h = await window.ja.api("/api/history");
+  const host = document.getElementById("history-found");
+  if (!host || !h.backup || !h.backup.count || h.local >= h.backup.count) return;
+  host.innerHTML = `<div class="card sec" style="margin-top:16px"><h3>Welcome back</h3>
+    <p style="margin:6px 0 12px">Found your application history: <b>${h.backup.count} job${h.backup.count === 1 ? "" : "s"}</b> you applied to, saved ${new Date(h.backup.exportedAt).toLocaleDateString()}. Import it so the app never applies to them again.</p>
+    <div class="row-actions"><button class="btn primary" id="hist-import">Import my history</button></div><div id="hist-msg" style="margin-top:10px"></div></div>`;
+  document.getElementById("hist-import").onclick = async () => {
+    const r = await window.ja.api("/api/history/import", { fromBackup: true });
+    msg(document.getElementById("hist-msg"), r.error ? "err" : "ok", r.error || Forms.importedText(r));
+    if (!r.error) document.getElementById("hist-import").disabled = true;
+  };
 }
 
 document.getElementById("back").onclick = () => show(Math.max(0, i - 1));

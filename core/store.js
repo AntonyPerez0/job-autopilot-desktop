@@ -43,7 +43,9 @@ export const SETTINGS_DEFAULTS = {
   headless: false,           // older setting; windowMode replaces it
   // windowMode: minimized | visible | headless (unset: minimized, or headless for the old switch)
   browser: "auto",           // auto | chrome | msedge | chromium
-  mailbox: null,             // { preset, host, port, user } ; the password lives in secrets
+  mailbox: null,
+  historyBackup: true,       // keep applied-jobs.json.gz outside the app (survives reinstalls)
+  historyFolder: null,       // null: Documents/Job Autopilot             // { preset, host, port, user } ; the password lives in secrets
 };
 
 export const PREFS_DEFAULTS = {

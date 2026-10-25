@@ -523,12 +523,14 @@ async function renderConfig() {
       ${card("ai", "AI provider", "Your key, your costs")}
       ${card("mailbox", "Mailbox", "Optional: security codes and duplicate checks")}
       ${card("running", "Pace and browser", "")}
+      <div class="card" style="margin-bottom:20px"><div class="card-h"><h3>Application history</h3><span class="sub">So you never apply twice, even after a reinstall</span></div><div class="sec" id="sec-history"></div></div>
       <div class="card sec"><h3>Your data</h3><p>Everything lives in one folder on this computer: <span class="mono">${esc(cfg.dataDir)}</span>. Version ${esc(cfg.version)}.</p>
         <div class="row-actions"><button class="btn sm" onclick="window.ja.showDataFolder()">${icon("ext")}Open the folder</button>
         <button class="btn sm" onclick="window.ja.go('onboarding.html')">${icon("retry")}Run the setup again</button>
         <button class="btn sm" onclick="checkUpdate(this)">${icon("refresh")}Check for updates</button></div></div></div>`;
     const forms = { prefs: Forms.prefs($("sec-prefs"), cfg), questions: Forms.questions($("sec-questions"), cfg), ai: Forms.ai($("sec-ai"), cfg),
       mailbox: Forms.mailbox($("sec-mailbox"), cfg), running: Forms.running($("sec-running"), cfg) };
+    Forms.history($("sec-history"), cfg, () => refreshStatusOnly());
     bindSaves(forms);
   }
 }

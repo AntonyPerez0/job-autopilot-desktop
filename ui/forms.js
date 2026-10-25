@@ -470,5 +470,46 @@
     };
   }
 
-  window.Forms = { ai, resumes, review, questions, prefs, mailbox, running, esc, icon, msg };
+  // ---------- Application history: survives reinstalls, moves to a new computer ----------
+  function history(el, cfg, onChange) {
+    const draw = async () => {
+      const h = await api("/api/history");
+      el.innerHTML = `<div class="form">
+        <p class="hint" style="margin:0">Every job you applied to is kept in a small file outside the app (${h.local} so far). After a reinstall, or on a new
+          computer, import it and the app will never apply to those jobs again. It holds only employer, job title, location, the
+          posting's address and the date: no answers, resumes or screenshots.</p>
+        <label class="check"><input type="checkbox" data-on ${h.enabled ? "checked" : ""}>Keep an up-to-date copy in <span class="mono">${esc(h.file ? h.file.replace(/[\\/][^\\/]+$/, "") : "")}</span></label>
+        <div class="row-actions">
+          <button type="button" class="btn sm" data-folder>${icon("file")}Change folder</button>
+          ${h.file && h.backup ? `<button type="button" class="btn sm" data-show>${icon("ext")}Show the file</button>` : ""}
+          <button type="button" class="btn sm" data-save>${icon("upload")}Save a copy...</button>
+          <button type="button" class="btn sm primary" data-import>${icon("plus")}Import a history file</button>
+          <input type="file" accept=".gz,.json" hidden>
+        </div>
+        <small class="hint">To move to a new computer: copy the file over (or keep the folder in iCloud Drive, OneDrive or Dropbox), then use Import there.</small>
+        <div data-msg></div></div>`;
+      const m = el.querySelector("[data-msg]"), input = el.querySelector("input[type=file]");
+      el.querySelector("[data-on]").onchange = async (e) => { await api("/api/settings", { historyBackup: e.target.checked }); draw(); };
+      el.querySelector("[data-folder]").onclick = async () => { const d = await window.ja.pickFolder(); if (d) { await api("/api/settings", { historyFolder: d }); draw(); } };
+      const show = el.querySelector("[data-show]"); if (show) show.onclick = () => window.ja.showFile(h.file);
+      el.querySelector("[data-save]").onclick = async () => { const f = await window.ja.saveHistory(); if (f) msg(m, "ok", "Saved to " + f); };
+      el.querySelector("[data-import]").onclick = () => input.click();
+      input.onchange = async () => {
+        const f = input.files[0]; if (!f) return;
+        const buf = new Uint8Array(await f.arrayBuffer()); let s = "";
+        for (let i = 0; i < buf.length; i += 32768) s += String.fromCharCode.apply(null, buf.subarray(i, i + 32768));
+        const r = await api("/api/history/import", { b64: btoa(s) });
+        input.value = "";
+        if (r.error) return msg(m, "err", r.error);
+        await draw();
+        msg(el.querySelector("[data-msg]"), "ok", importedText(r));
+        onChange && onChange(r);
+      };
+    };
+    draw();
+    return { save: async () => null };
+  }
+  const importedText = (r) => `Imported ${r.total} application${r.total === 1 ? "" : "s"}: ${r.added} added, ${r.updated} marked as applied, ${r.already} already here. None of them will be applied to again.`;
+
+  window.Forms = { ai, resumes, review, questions, prefs, mailbox, running, history, importedText, esc, icon, msg };
 })();

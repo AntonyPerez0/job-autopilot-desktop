@@ -14,8 +14,9 @@ import { countries, searchCities } from "./geo.js";
 import { browserOpen, detectBrowsers, installChromium, chromiumPath, showBrowser } from "./browser.js";
 import { windowModeOf } from "./apply.js";
 import { AGENCIES } from "./discover.js";
+import { backupFile, collect, exportHistory, importHistory, peekBackup, writeBackup } from "./history.js";
 
-const EDITABLE = ["paused", "acceptedTerms", "windowMode", "dailyCap", "dayStartsAtHour", "minutesBetweenApplies", "postedWithinDays", "searchEveryMinutes", "headless", "browser", "maxAttempts"];
+const EDITABLE = ["paused", "acceptedTerms", "windowMode", "historyBackup", "historyFolder", "dailyCap", "dayStartsAtHour", "minutesBetweenApplies", "postedWithinDays", "searchEveryMinutes", "headless", "browser", "maxAttempts"];
 const bad = (msg, code = 400) => ({ error: msg, code });
 // main.js plugs in the updater (it needs Electron); without it (tests, scripts) updates are off.
 let updater = null;
@@ -82,6 +83,7 @@ const ROUTES = {
     if ("minutesBetweenApplies" in patch) patch.minutesBetweenApplies = Math.max(1, patch.minutesBetweenApplies);
     if (b.dryRun === true) patch.dryRun = true;
     const s = saveSettings(patch);
+    if ("historyFolder" in patch || patch.historyBackup) { try { writeBackup(VERSION); } catch { /* shown on the Settings card */ } }
     kick();
     return s;
   },
@@ -193,6 +195,19 @@ const ROUTES = {
   "POST /api/browser/install": async () => {
     try { return { ok: true, path: chromiumPath() || await installChromium() }; } catch (e) { return bad(e.message); }
   },
+  // ---------- application history (never apply twice, across reinstalls and computers) ----------
+  "GET /api/history": () => ({ file: backupFile(), enabled: getSettings().historyBackup !== false, local: collect().length, backup: peekBackup() }),
+  "POST /api/history/import": (b) => {
+    try {
+      const buf = b.b64 ? Buffer.from(b.b64, "base64") : b.fromBackup && backupFile() ? fs.readFileSync(backupFile()) : null;
+      if (!buf) return bad("Choose a history file.");
+      const r = importHistory(buf);
+      try { writeBackup(VERSION); } catch { /* the import itself worked */ }
+      return r;
+    } catch (e) { return bad(e.message); }
+  },
+  "POST /api/history/backup": () => { try { return { file: writeBackup(VERSION) }; } catch (e) { return bad(e.message); } },
+  "POST /api/history/export": () => ({ b64: exportHistory(VERSION).toString("base64"), count: collect().length }),
   "GET /api/update": async () => (updater ? updater.state() : { phase: "idle" }),
   "POST /api/update/check": async () => (updater ? updater.check() : bad("Updates are off here.")),
   "POST /api/update/install": async () => {

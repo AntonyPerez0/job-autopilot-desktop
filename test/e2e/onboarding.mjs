@@ -18,6 +18,11 @@ const ROOT = path.resolve(import.meta.dirname, "..", "..");
 const OUT = path.join(ROOT, "test", "out", "e2e");
 fs.mkdirSync(OUT, { recursive: true });
 const data = fs.mkdtempSync(path.join(os.tmpdir(), "ja-e2e-"));
+// A history left by an earlier install, where the app keeps it (Documents/Job Autopilot, here a temp folder).
+const backups = fs.mkdtempSync(path.join(os.tmpdir(), "ja-e2e-backup-"));
+fs.writeFileSync(path.join(backups, "applied-jobs.json.gz"), (await import("node:zlib")).gzipSync(JSON.stringify({ format: "job-autopilot/history@1", exportedAt: "2026-10-01T00:00:00Z",
+  jobs: [{ s: "old-job-1", c: "Initech", t: "Data Engineer", at: "2026-09-30T10:00:00Z", u: "https://jobs.lever.co/initech/1" },
+    { s: "old-job-2", c: "Hooli", t: "Web Developer", at: "2026-09-29T10:00:00Z", maybe: 1 }], alreadyApplied: "" })));
 
 // The sample resume: the example person's base layout as a PDF.
 const { spec } = Tailor.checkPlan(Profile.EXAMPLE, { base: Profile.EXAMPLE.bases[0].id });
@@ -59,7 +64,7 @@ const exe = process.env.JA_APP_EXE || require("electron");
 const args = process.env.JA_APP_EXE ? [] : [ROOT];
 if (process.platform === "linux") args.push("--no-sandbox", ...(process.env.DISPLAY ? [] : ["--ozone-platform=headless"]));
 console.log("launching", exe);
-const app = await electron.launch({ executablePath: exe, args, env: { ...process.env, JA_DATA_DIR: data }, timeout: 120000 });
+const app = await electron.launch({ executablePath: exe, args, env: { ...process.env, JA_DATA_DIR: data, JA_BACKUP_DIR: backups }, timeout: 120000 });
 app.process().stdout.on("data", (d) => { if (process.env.JA_E2E_LOG) process.stdout.write("[app] " + d); });
 app.process().stderr.on("data", (d) => { const t = String(d); if (/Error|unhandled|FATAL/i.test(t) && !/dbus|gl_|EGL|ANGLE|viz_main|Display.cpp|egl_util|ozone|gpu/i.test(t)) process.stdout.write("[app err] " + t); });
 const win = await app.firstWindow();
@@ -70,7 +75,10 @@ const heading = (t) => win.waitForSelector(`h1:has-text("${t}")`);
 
 try {
   await heading("Apply to jobs while you do something else");
+  await win.waitForSelector('h3:has-text("Welcome back")');
   await shot("1-welcome");
+  await win.click("#hist-import");
+  await win.waitForSelector('#hist-msg .msg.ok:has-text("Imported 2")');
   await win.check("#terms");
   await next();
 
@@ -145,9 +153,16 @@ try {
   const profile = JSON.parse(fs.readFileSync(path.join(data, "profile.json"), "utf8"));
   assert.ok(profile.summaries.every((s) => s.approved), "approved on the review screen");
 
+  // The imported history is in this install, and the backup was rewritten with it.
+  const { DatabaseSync } = await import("node:sqlite");
+  const jobs = new DatabaseSync(path.join(data, "autopilot.db")).prepare("SELECT slug, status FROM jobs WHERE slug LIKE 'old-job-%' ORDER BY slug").all();
+  assert.deepStrictEqual(jobs.map((j) => `${j.slug}:${j.status}`), ["old-job-1:applied", "old-job-2:failed"]);
+  assert.ok(fs.existsSync(path.join(backups, "applied-jobs.json.gz.bak")), "previous backup kept");
+
   // Settings and profile pages render.
   await win.click('.nav:has-text("Settings")');
   await win.waitForSelector("#sec-prefs .tags");
+  await win.waitForSelector('#sec-history .hint:has-text("2 so far")');
   await shot("9-settings");
   // Playwright inside the packaged app: find the installed browsers, and optionally download Chromium.
   await win.click("#sec-running [data-detect]");

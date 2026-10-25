@@ -3,7 +3,7 @@
 import fs from "node:fs";
 import { getDb, log, setJob, getJob, appliedToday, nextDayStart } from "./db.js";
 import { discover } from "./discover.js";
-import { sameRoleAs } from "./dedupe.js";
+import { sameRoleAs, sameUrlAs } from "./dedupe.js";
 import { abortCurrent, applyTo, STEPS } from "./apply.js";
 import { closeBrowser } from "./browser.js";
 import { isLocal } from "./llm.js";
@@ -59,8 +59,11 @@ function nextJob() {
     ORDER BY (work_mode = 'remote') ASC, posted_at DESC LIMIT 1`).get(CONFIG.maxAttempts);
 }
 
+// Applied, mid-submit, or possibly sent (an interrupted submit, here or on another computer).
+const APPLIED_SQL = "SELECT slug, company, title, url, apply_url, applied_at, status FROM jobs WHERE status IN ('applied', 'submitting') OR (status = 'failed' AND reason LIKE '%may have gone through%')";
 function appliedSameRole(job) {
-  return sameRoleAs(job, db.prepare("SELECT slug, company, title, applied_at, status FROM jobs WHERE status IN ('applied', 'submitting')").all());
+  const rows = db.prepare(APPLIED_SQL).all().map((r) => ({ ...r, status: r.status === "failed" ? "submitting" : r.status }));
+  return sameRoleAs(job, rows) || sameUrlAs(job, rows);
 }
 
 // Applications made outside the app (by hand) show up only as the employer's confirmation email.

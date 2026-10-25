@@ -35,6 +35,13 @@ export function inAppliedList(list, job) {
     list.roles.has(roleKey(job.company, job.title));
 }
 
+// An applied job at the same address, from rows of { slug, url, apply_url }.
+export function sameUrlAs(job, rows) {
+  const mine = [job.url, job.apply_url, job.official_job_url].filter(Boolean).map(cleanUrl);
+  if (!mine.length) return null;
+  return rows.find((r) => r.slug !== job.slug && [r.url, r.apply_url].filter(Boolean).map(cleanUrl).some((u) => mine.includes(u))) || null;
+}
+
 // An applied (or mid-submit) job for the same role, from rows of { slug, company, title, status }.
 export function sameRoleAs(job, rows) {
   const key = roleKey(job.company, job.title);

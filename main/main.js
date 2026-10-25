@@ -1,7 +1,7 @@
 // The desktop app: one window with the dashboard (or the first-run setup),
 // the autopilot loop running in this process, and everything stored in the
 // OS app-data folder. The window talks to the engine over IPC only.
-import { app, BrowserWindow, ipcMain, net, protocol, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -65,6 +65,22 @@ app.whenReady().then(async () => {
     const list = (() => { try { return JSON.parse(fs.readFileSync(f, "utf8")); } catch { return []; } })();
     fs.writeFileSync(f, JSON.stringify([...list.slice(-19), { version: app.getVersion(), at: new Date().toISOString(), exe: process.execPath }], null, 1));
   } catch { /* informational only */ }
+  const history = await import("../core/history.js");
+  history.setDefaultBackupDir(path.join(app.getPath("documents"), "Job Autopilot"));
+  history.startBackups(app.getVersion());
+  ipcMain.handle("history-save", async () => {
+    const day = new Date().toISOString().slice(0, 10);
+    const r = await dialog.showSaveDialog(win, { title: "Save your application history", defaultPath: path.join(app.getPath("documents"), `job-autopilot-history-${day}.json.gz`),
+      filters: [{ name: "Job Autopilot history", extensions: ["gz"] }] });
+    if (r.canceled || !r.filePath) return null;
+    fs.writeFileSync(r.filePath, history.exportHistory(app.getVersion()));
+    return r.filePath;
+  });
+  ipcMain.handle("pick-folder", async () => {
+    const r = await dialog.showOpenDialog(win, { title: "Where to keep your application history", properties: ["openDirectory", "createDirectory"] });
+    return r.canceled ? null : r.filePaths[0];
+  });
+  ipcMain.handle("show-file", (_e, f) => { if (f && fs.existsSync(String(f))) shell.showItemInFolder(String(f)); });
   const updater = await import("./updater.js");
   updater.initUpdater(worker);
   api.setUpdater({ state: updater.updateState, check: updater.checkNow, install: updater.installNow });

@@ -216,6 +216,29 @@ this app. You can only create one when two-step verification is turned on.
 Use the mailbox that receives mail for the email address you put on your
 applications.
 
+## Moving to a new computer, or reinstalling
+
+The app keeps a small file listing every job you applied to:
+`Documents/Job Autopilot/applied-jobs.json.gz`. It's rewritten a few seconds
+after each application. It only holds the employer, job title, location, the
+posting's address and the date (no answers, resumes or screenshots), so even
+thousands of applications take a few hundred KB at most. The file only ever
+grows, and the previous copy is kept next to it as `.bak`.
+
+- **Reinstalling on the same computer:** your data folder stays where it is, so
+  nothing changes. If you wiped it, the setup finds the file in Documents and
+  offers **Import my history** on its first screen.
+- **A new computer:** copy the file over and press **Import a history file** in
+  Settings > Application history, or let the setup find it in Documents. If
+  your Documents folder syncs (iCloud Drive, OneDrive), it may already be
+  there. You can also pick another folder, such as Dropbox, with **Change
+  folder**, or save a dated copy with **Save a copy...**.
+
+Once imported, the app never applies to those jobs again: not the same
+posting, not the same address, and not the same role at the same employer on
+another job board. Jobs that might have gone through (the app was interrupted
+while submitting) come in as Needs attention, never as something to retry.
+
 ## Privacy
 
 Everything stays on your computer, in one folder (Settings > Your data > Open
@@ -225,7 +248,8 @@ the folder):
 - Windows: `%APPDATA%\Job Autopilot`
 
 That folder holds your profile, answers, preferences, the job list, every
-resume that was sent, and the screenshots. The API key and mailbox password
+resume that was sent, and the screenshots. The only file kept elsewhere is the
+application history described above (you can turn it off in Settings). The API key and mailbox password
 are encrypted by your operating system's keychain (macOS Keychain, Windows
 DPAPI).
 

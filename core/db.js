@@ -39,10 +39,15 @@ export function log(slug, message, level = "info") {
   getDb().prepare("INSERT INTO events (slug, level, message) VALUES (?, ?, ?)").run(slug || null, level, String(message).slice(0, 2000));
 }
 
+// Told about every status change, so the application history backup stays current.
+const listeners = [];
+export const onJobStatus = (fn) => listeners.push(fn);
+
 export function setJob(slug, fields) {
   const keys = Object.keys(fields);
   const sql = `UPDATE jobs SET ${keys.map((k) => `${k} = ?`).join(", ")}, updated_at = datetime('now') WHERE slug = ?`;
   getDb().prepare(sql).run(...keys.map((k) => (fields[k] !== null && typeof fields[k] === "object" ? JSON.stringify(fields[k]) : fields[k])), slug);
+  if ("status" in fields) for (const fn of listeners) { try { fn(slug, fields.status); } catch { /* a backup problem never stops the autopilot */ } }
 }
 
 export const getJob = (slug) => getDb().prepare("SELECT * FROM jobs WHERE slug = ?").get(slug);

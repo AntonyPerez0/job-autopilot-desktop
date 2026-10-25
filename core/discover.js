@@ -6,7 +6,7 @@ import { call } from "./freehire.js";
 import { loadProfile, screen } from "./engine.js";
 import { citiesNear, remoteOk, withinRadius } from "./geo.js";
 import { getAnswers, getPrefs } from "./store.js";
-import { inAppliedList, jobKey, parseAppliedList, roleKey } from "./dedupe.js";
+import { cleanUrl, inAppliedList, jobKey, parseAppliedList, roleKey } from "./dedupe.js";
 
 // Recruiting agencies and repost aggregators: the application never reaches the employer.
 export const AGENCIES = ["jobgether", "synergisticit", "jobot", "cybercoders", "revature", "dice", "true talent", "crossover", "lensa", "jobright"];
@@ -101,6 +101,10 @@ export async function discover(progress = () => {}) {
   const keys = new Set(db.prepare("SELECT key FROM jobs").all().map((r) => r.key));
   const roles = new Set(db.prepare("SELECT company, title FROM jobs WHERE status != 'skipped'").all().map((r) => roleKey(r.company, r.title)));
   const manual = parseAppliedList(prefs.alreadyApplied);
+  // Addresses of everything applied to (including history imported from another computer).
+  for (const r of db.prepare("SELECT url, apply_url FROM jobs WHERE status IN ('applied', 'submitting') OR (status = 'failed' AND reason LIKE '%may have gone through%')").all()) {
+    for (const u of [r.url, r.apply_url]) if (u) manual.urls.add(cleanUrl(u));
+  }
   const profile = loadProfile();
   const found = new Map();
   const list0 = searches(prefs);
@@ -129,7 +133,7 @@ export async function discover(progress = () => {}) {
     if (excludedCompany(d.company, prefs)) { status = "skipped"; reason = "excluded company, recruiter or repost aggregator"; }
     else if (!(prefs.sources || []).includes(via)) { status = "skipped"; reason = `applies through ${via}, which needs an account`; }
     else if (d.ghost_level === "likely") { status = "skipped"; reason = "freehire says this posting is likely a ghost listing"; }
-    else if (inAppliedList(manual, { ...d, url: d.official_job_url || d.url })) { status = "skipped"; reason = "on your already-applied list"; }
+    else if (inAppliedList(manual, { ...d, url: d.official_job_url || d.url })) { status = "skipped"; reason = "already applied (your history or your already-applied list)"; }
     else {
       apply = await applyUrl(via, d.official_job_url || j.official_job_url).catch(() => null);
       if (!apply) { status = "skipped"; reason = "no direct application link"; }
