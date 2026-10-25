@@ -1,0 +1,199 @@
+// The loop: search on a schedule, apply to one queued job at a time, respect
+// the daily cap and the pause switch, and never stop on an error.
+import fs from "node:fs";
+import { getDb, log, setJob, getJob, appliedToday, nextDayStart } from "./db.js";
+import { discover } from "./discover.js";
+import { sameRoleAs } from "./dedupe.js";
+import { applyTo, STEPS } from "./apply.js";
+import { call } from "./freehire.js";
+import { findConfirmation } from "./mail.js";
+import { dataDir, getSecret, getSettings } from "./store.js";
+
+const CONFIG = new Proxy({}, { get: (_, k) => getSettings()[k] });
+const db = new Proxy({}, { get: (_, k) => { const d = getDb(); return typeof d[k] === "function" ? d[k].bind(d) : d[k]; } });
+
+// The mailbox from Settings, with its password from secure storage, or null.
+export function mailbox() {
+  const m = getSettings().mailbox;
+  const pass = m && getSecret("mailPassword");
+  return m && m.host && m.user && pass ? { ...m, pass } : null;
+}
+
+export const state = { now: "starting", job: null, lastSearch: null, nextSearch: null, lastApply: 0, wake: null, progress: null };
+
+// How long each step usually takes, learned from past runs, for the time-left estimate.
+const TIMINGS = () => dataDir("timings.json");
+let timing;
+function loadTimings() {
+  timing = Object.assign({ browser: 5, open: 12, read: 10, plan: 25, build: 30, fill: 30, verify: 4, submit: 3, code: 12, confirm: 8 },
+    (() => { try { return JSON.parse(fs.readFileSync(TIMINGS(), "utf8")); } catch { return {}; } })());
+}
+function learn(key, seconds) {
+  if (!(key in timing) || seconds <= 0 || seconds > 600) return;
+  timing[key] = Math.round((timing[key] * 0.7 + seconds * 0.3) * 10) / 10;
+  try { fs.writeFileSync(TIMINGS(), JSON.stringify(timing)); } catch { /* estimate only */ }
+}
+
+function applyProgress(job) {
+  const p = { kind: "apply", startedAt: Date.now(), step: null, stepAt: Date.now(), done: [],
+    steps: STEPS.map(([key, label]) => ({ key, label, typical: timing[key] })) };
+  state.progress = p;
+  return (key) => {
+    const now = Date.now();
+    if (p.step && p.step !== key) { learn(p.step, (now - p.stepAt) / 1000); if (!p.done.includes(p.step)) p.done.push(p.step); }
+    if (key === "confirm" && !p.done.includes("code") && p.step !== "code") p.skipCode = true;
+    p.step = key; p.stepAt = now;
+    p.steps.forEach((x) => { x.typical = timing[x.key]; });
+  };
+}
+const sleep = (ms) => new Promise((r) => { const t = setTimeout(r, ms); state.wake = () => { clearTimeout(t); r(); }; });
+export const kick = () => { if (state.wake) state.wake(); };
+export const forceSearch = () => { state.lastSearch = null; kick(); };
+
+const TRANSIENT = /timeout|timed out|net::|ECONN|socket|Target (page|closed)|browser has been closed|Model API 5|Model API 429|fetch failed/i;
+
+function nextJob() {
+  return db.prepare(`SELECT * FROM jobs WHERE status = 'queued' AND attempts < ?
+    ORDER BY (work_mode = 'remote') ASC, posted_at DESC LIMIT 1`).get(CONFIG.maxAttempts);
+}
+
+function appliedSameRole(job) {
+  return sameRoleAs(job, db.prepare("SELECT slug, company, title, applied_at, status FROM jobs WHERE status IN ('applied', 'submitting')").all());
+}
+
+// Applications made outside the app (by hand) show up only as the employer's confirmation email.
+async function inboxConfirms(job) {
+  const m = mailbox();
+  if (!m) return null;
+  return findConfirmation(m, job.company, job.title, 60);
+}
+
+async function stillOpen(slug) {
+  try {
+    const r = await call("check_jobs_open", { slugs: [slug] });
+    const j = (r.jobs || [])[0];
+    return !j || j.status === "open";
+  } catch { return true; }
+}
+
+async function withTimeout(p, ms) {
+  let t;
+  return Promise.race([p, new Promise((_, rej) => { t = setTimeout(() => rej(new Error("application timed out")), ms); })]).finally(() => clearTimeout(t));
+}
+
+async function applyOne(job) {
+  state.now = "applying"; state.job = { slug: job.slug, title: job.title, company: job.company };
+  setJob(job.slug, { status: "working", attempts: job.attempts + 1 });
+  const twin = appliedSameRole(job);
+  if (twin) {
+    setJob(job.slug, { status: "skipped", reason: `already applied to this role at ${twin.company} (${twin.title}, ${String(twin.applied_at || "").slice(0, 10)})` });
+    log(job.slug, "skipped: already applied to the same role through another posting");
+    return false;
+  }
+  const mail = await inboxConfirms(job);
+  if (mail) {
+    setJob(job.slug, { status: "skipped", reason: `already applied: confirmation email in your inbox (${mail})` });
+    log(job.slug, "skipped: the inbox already has this employer's confirmation for this role");
+    return false;
+  }
+  if (!(await stillOpen(job.slug))) {
+    setJob(job.slug, { status: "skipped", reason: "posting closed (freehire)" });
+    log(job.slug, "closed before we got to it");
+    return false;
+  }
+  const dryRun = !!CONFIG.dryRun;
+  log(job.slug, `applying: ${job.title} at ${job.company}${dryRun ? " (dry run)" : ""}`);
+  const track = applyProgress(job);
+  const progress = (key) => {
+    track(key);
+    if (key === "submit" && !dryRun) setJob(job.slug, { status: "submitting", applied_at: new Date().toISOString() });
+  };
+  try {
+    const r = await withTimeout(applyTo(job, { progress, status: (t) => { state.now = t; } }, { dryRun, mailbox: mailbox() }), 12 * 60000);
+    setJob(job.slug, {
+      status: r.status, reason: r.reason, details: r.details || null,
+      resume_file: r.resume_file || null, screenshot: r.screenshot || null,
+      applied_at: r.status === "applied" ? new Date().toISOString() : null,
+    });
+    log(job.slug, `${r.status}: ${r.reason}`, r.status === "failed" ? "warn" : "info");
+    return r.status === "applied" || r.status === "filled";
+  } catch (e) {
+    if ((getJob(job.slug) || {}).status === "submitting") {
+      setJob(job.slug, { status: "failed", reason: "error right after pressing Submit (" + e.message.slice(0, 200) + "): it may have gone through. Check your email before using Try again." });
+      log(job.slug, "error after Submit, not retried: " + e.message, "error");
+      return false;
+    }
+    const retry = TRANSIENT.test(e.message) && job.attempts + 1 < CONFIG.maxAttempts;
+    setJob(job.slug, { status: retry ? "queued" : "failed", reason: "error: " + e.message.slice(0, 400) });
+    log(job.slug, `error${retry ? " (will retry)" : ""}: ${e.message}`, "error");
+    return false;
+  } finally { state.job = null; state.progress = null; }
+}
+
+let running = false, stopping = false;
+export const stop = () => { stopping = true; kick(); };
+
+export async function run() {
+  if (running) return;
+  running = true; stopping = false;
+  loadTimings();
+  db.prepare("UPDATE jobs SET status = 'queued' WHERE status = 'working'").run();
+  // Stopped between pressing Submit and the employer's answer: it may have gone through.
+  // Never press it again on our own; the inbox decides, or the user does.
+  for (const j of db.prepare("SELECT * FROM jobs WHERE status = 'submitting'").all()) {
+    const mail = await inboxConfirms(j);
+    if (mail) { setJob(j.slug, { status: "applied", applied_at: new Date().toISOString(), reason: `submitted; confirmed by email after a restart (${mail})` }); log(j.slug, "restart: the confirmation email shows it went through"); }
+    else { setJob(j.slug, { status: "failed", reason: "interrupted right after pressing Submit: it may have gone through. Check your email before using Try again." }); log(j.slug, "restart: interrupted mid-submit, not retried", "warn"); }
+  }
+  // Once the mailbox is set up, Greenhouse jobs that stopped at the emailed code get another go.
+  if (mailbox()) {
+    const n = db.prepare("UPDATE jobs SET status = 'queued', attempts = 0 WHERE status = 'failed' AND reason LIKE 'security code:%'").run().changes;
+    if (n) log(null, `mailbox configured: ${n} jobs that needed an emailed code are queued again`);
+  }
+  log(null, `autopilot started (${CONFIG.dryRun ? "dry run" : "live"}, cap ${CONFIG.dailyCap}/day)`);
+  while (!stopping) {
+    try {
+      if (CONFIG.paused) { state.now = "paused"; state.progress = null; await sleep(30000); continue; }
+      const due = !state.lastSearch || Date.now() - state.lastSearch > CONFIG.searchEveryMinutes * 60000;
+      if (due) {
+        state.now = "searching";
+        state.progress = { kind: "search", startedAt: Date.now(), phase: "search", i: 0, n: 0 };
+        try { await discover((u) => Object.assign(state.progress, u)); } catch (e) { log(null, "discovery failed: " + e.message, "error"); }
+        state.progress = null;
+        state.lastSearch = Date.now();
+        state.nextSearch = state.lastSearch + CONFIG.searchEveryMinutes * 60000;
+      }
+      if (CONFIG.paused) continue;
+      // Dry run on a new install: fill one application, then wait until the user has looked at it.
+      if (CONFIG.dryRun && !CONFIG.reviewedDryRun && db.prepare("SELECT 1 FROM jobs WHERE status = 'filled' LIMIT 1").get()) {
+        state.now = "waiting for you to review the first filled application";
+        await sleep(30000);
+        continue;
+      }
+      if (appliedToday() >= CONFIG.dailyCap) {
+        state.now = `daily cap reached (${CONFIG.dailyCap})`;
+        state.resumesAt = nextDayStart();
+        await sleep(5 * 60000);
+        continue;
+      }
+      state.resumesAt = null;
+      const wait = state.lastApply + CONFIG.minutesBetweenApplies * 60000 - Date.now();
+      if (wait > 0) {
+        state.now = "waiting between applications";
+        state.progress = { kind: "wait", from: state.lastApply, until: state.lastApply + CONFIG.minutesBetweenApplies * 60000 };
+        await sleep(Math.min(wait, 60000));
+        state.progress = null;
+        continue;
+      }
+      const job = nextJob();
+      if (!job) { state.now = "queue empty, waiting for the next search"; await sleep(Math.min(5 * 60000, Math.max(30000, state.nextSearch - Date.now()))); continue; }
+      const used = await applyOne(job);
+      if (used) state.lastApply = Date.now();
+    } catch (e) {
+      log(null, "loop error: " + e.message, "error");
+      await sleep(60000);
+    }
+  }
+  running = false;
+  state.now = "stopped";
+}
