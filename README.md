@@ -46,8 +46,23 @@ your keychain. Click **Always Allow**: that's where the key is kept, encrypted.
 
 ### Updates
 
-The app tells you on the Overview page when a newer version is out. Download it
-from Releases and install it over the old one. Your data stays where it is.
+The app checks for a new version when it starts and every few hours after.
+When one is out, the Overview shows **Update now**, and Settings has **Check
+for updates**. Press Update now and the app does the rest:
+
+1. It downloads the new version and checks it against the release's
+   checksums.
+2. It lets any application in progress finish.
+3. It closes, installs the new version and opens again.
+
+Your data and settings stay as they are.
+
+On a Mac this works when the app is in your Applications folder, not when it's
+run straight from the disk image or the Downloads folder. After an update,
+macOS may ask once more to let Job Autopilot use your keychain: click **Always
+Allow**. That's because these builds aren't signed yet (see
+[docs/SIGNING.md](docs/SIGNING.md)). You can always download a version from
+Releases by hand and install it over the old one instead.
 
 ## First run: the setup
 

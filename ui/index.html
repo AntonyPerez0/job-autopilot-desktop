@@ -162,7 +162,7 @@ function header() {
   const list = !["overview", "log", "profile", "settings"].includes(view);
   return `<div class="top"><div><h1>${t}</h1><p>${sub}</p></div><div class="actions">${liveChip()}
     ${list ? `<div class="search">${icon("search")}<input id="q" placeholder="Search company, role, location" value="${esc(q)}" oninput="q=this.value;renderList()"></div>` : ""}
-    <button class="btn" onclick="searchNow()">${icon("refresh")}Search now</button></div></div>${banners()}<div id="progress-host">${progressCard()}</div>`;
+    <button class="btn" onclick="searchNow()">${icon("refresh")}Search now</button></div></div><div id="banner-host">${banners()}</div><div id="progress-host">${progressCard()}</div>`;
 }
 
 // ---------- progress ----------
@@ -405,7 +405,7 @@ async function refresh(full) {
   renderNav(); renderControls();
   if (view === "overview") await renderOverview();
   else if (view === "log") await renderLog();
-  else if (view === "profile" || view === "settings") { if (full || !$("cfg-host")) await renderConfig(); else { const c = $("main").querySelector(".top .live"); if (c) c.outerHTML = liveChip(); } }
+  else if (view === "profile" || view === "settings") { if (full || !$("cfg-host")) await renderConfig(); else { const c = $("main").querySelector(".top .live"); if (c) c.outerHTML = liveChip(); const bh = $("banner-host"); if (bh) bh.innerHTML = banners(); } }
   else { if (full) $("main").innerHTML = ""; await renderListView(); }
 }
 if (!TITLES[view]) view = "overview";
@@ -413,23 +413,54 @@ refresh(true);
 setInterval(tickProgress, 1000);
 let lastPoll = 0;
 setInterval(() => {
-  const busy = st && st.state.progress && st.state.progress.kind !== "wait";
+  const busy = st && ((st.state.progress && st.state.progress.kind !== "wait") || (st.update && ["downloading", "waiting", "installing"].includes(st.update.phase)));
   if (document.hidden || Date.now() - lastPoll < (busy ? 2500 : 10000)) return;
   lastPoll = Date.now();
   if (document.activeElement === $("q")) refreshStatusOnly(); else refresh();
 }, 500);
-async function refreshStatusOnly() { st = await api("/api/status"); if (st.serverNow) skew = st.serverNow - Date.now(); renderNav(); renderControls(); tickProgress(); }
+async function refreshStatusOnly() { st = await api("/api/status"); if (st.serverNow) skew = st.serverNow - Date.now(); renderNav(); renderControls(); tickProgress(); const b = $("banner-host"); if (b) b.innerHTML = banners(); }
 
 async function showBrowser(show) { const r = await api("/api/browser/show", { show }); if (!r.ok) toast("The browser is not open right now"); }
 
 // ---------- dry run review, going live, updates ----------
-let update = null;
+function updateBanner() {
+  const u = st.update;
+  if (!u || !u.info || !["available", "downloading", "waiting", "installing", "error"].includes(u.phase)) return "";
+  if (u.phase === "error" && !u.info.newer) return "";
+  const v = esc(u.info.latest);
+  const page = `<button class="btn sm" onclick="window.ja.openExternal('${esc(u.info.url)}')">${icon("ext")}What's new</button>`;
+  let body, actions = "";
+  if (u.phase === "available") {
+    body = `<b>Version ${v} is available</b>You have ${esc(u.info.current)}. Updating keeps all your data and settings, and the app restarts by itself.`;
+    actions = u.packaged ? `${page}<button class="btn sm primary" onclick="installUpdate()">${icon("upload")}Update now</button>` : page;
+  } else if (u.phase === "downloading") {
+    body = `<b>Downloading version ${v}: ${Math.round((u.progress || 0) * 100)}%</b><div class="bar" style="margin-top:8px"><i style="width:${Math.round((u.progress || 0) * 100)}%"></i></div>`;
+  } else if (u.phase === "waiting") {
+    body = `<b>Version ${v} is ready</b>The application in progress finishes first, then the app restarts with the new version.`;
+  } else if (u.phase === "installing") {
+    body = `<b>Installing version ${v}</b>The app closes and opens again in a moment.`;
+  } else {
+    body = `<b>The update did not install</b>${esc(u.error || "")}`;
+    actions = `<button class="btn sm" onclick="window.ja.openExternal('${esc(u.info.url)}')">${icon("ext")}Download it instead</button>${u.packaged ? `<button class="btn sm primary" onclick="installUpdate()">Try again</button>` : ""}`;
+  }
+  return `<div class="banner ${u.phase === "error" ? "amber" : "blue"}">${icon("upload")}<div style="flex:1">${body}</div>${actions ? `<div class="right">${actions}</div>` : ""}</div>`;
+}
+async function installUpdate() {
+  const r = await api("/api/update/install", {});
+  if (r.error) toast(r.error);
+  refreshStatusOnly(true);
+}
+async function checkUpdate(el) {
+  el.disabled = true;
+  const u = await api("/api/update/check", {});
+  el.disabled = false;
+  toast(u.error || (u.phase === "available" ? `Version ${u.info.latest} is available` : u.phase === "uptodate" ? `You have the latest version (${u.info.current})` : "Could not check for updates"));
+  refreshStatusOnly(true);
+}
 function banners() {
   if (!st) return "";
   const s = st.settings;
-  let h = "";
-  if (update && update.newer) h += `<div class="banner blue">${icon("upload")}<div><b>Version ${esc(update.latest)} is available</b>You have ${esc(update.current)}. Download it from the releases page and install it over this one; your data stays.</div>
-    <div class="right"><button class="btn sm" onclick="window.ja.openExternal('${esc(update.url)}')">Download</button></div></div>`;
+  let h = updateBanner();
   if (s.dryRun && !s.reviewedDryRun) {
     h += st.firstFilled
       ? `<div class="banner violet">${icon("eye")}<div><b>Your first application is filled in, not sent</b>Check every answer, the resume and the screenshot for ${esc(st.firstFilled.company)}. The autopilot waits until you do.</div>
@@ -494,7 +525,8 @@ async function renderConfig() {
       ${card("running", "Pace and browser", "")}
       <div class="card sec"><h3>Your data</h3><p>Everything lives in one folder on this computer: <span class="mono">${esc(cfg.dataDir)}</span>. Version ${esc(cfg.version)}.</p>
         <div class="row-actions"><button class="btn sm" onclick="window.ja.showDataFolder()">${icon("ext")}Open the folder</button>
-        <button class="btn sm" onclick="window.ja.go('onboarding.html')">${icon("retry")}Run the setup again</button></div></div></div>`;
+        <button class="btn sm" onclick="window.ja.go('onboarding.html')">${icon("retry")}Run the setup again</button>
+        <button class="btn sm" onclick="checkUpdate(this)">${icon("refresh")}Check for updates</button></div></div></div>`;
     const forms = { prefs: Forms.prefs($("sec-prefs"), cfg), questions: Forms.questions($("sec-questions"), cfg), ai: Forms.ai($("sec-ai"), cfg),
       mailbox: Forms.mailbox($("sec-mailbox"), cfg), running: Forms.running($("sec-running"), cfg) };
     bindSaves(forms);
@@ -510,7 +542,7 @@ function bindSaves(forms) {
     if (!e) refreshStatusOnly();
   });
 }
-api("/api/update").then((u) => { update = u; });
+
 </script>
 </body>
 </html>

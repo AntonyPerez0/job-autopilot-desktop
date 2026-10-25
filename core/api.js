@@ -17,11 +17,9 @@ import { AGENCIES } from "./discover.js";
 
 const EDITABLE = ["paused", "acceptedTerms", "windowMode", "dailyCap", "dayStartsAtHour", "minutesBetweenApplies", "postedWithinDays", "searchEveryMinutes", "headless", "browser", "maxAttempts"];
 const bad = (msg, code = 400) => ({ error: msg, code });
-export function newerVersion(a, b) {
-  const x = String(a).split(".").map(Number), y = String(b).split(".").map(Number);
-  for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0);
-  return false;
-}
+// main.js plugs in the updater (it needs Electron); without it (tests, scripts) updates are off.
+let updater = null;
+export const setUpdater = (u) => { updater = u; };
 
 export const VERSION = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 
@@ -34,7 +32,7 @@ function status() {
   const firstFilled = db.prepare("SELECT slug, title, company FROM jobs WHERE status = 'filled' ORDER BY updated_at ASC LIMIT 1").get() || null;
   const { wake, ...st } = state;
   return { state: st, counts, appliedToday: appliedToday(), settings: s, model: s.ai.model, serverNow: Date.now(), next, firstFilled, version: VERSION,
-    browser: { open: browserOpen(), mode: windowModeOf(s) } };
+    browser: { open: browserOpen(), mode: windowModeOf(s) }, update: updater ? updater.state() : null };
 }
 
 // First and last name, links, city and school found in an imported resume, to start the common questions with.
@@ -195,15 +193,13 @@ const ROUTES = {
   "POST /api/browser/install": async () => {
     try { return { ok: true, path: chromiumPath() || await installChromium() }; } catch (e) { return bad(e.message); }
   },
-  "GET /api/update": async () => {
-    try {
-      const r = await fetch("https://api.github.com/repos/AntonyPerez0/job-autopilot-desktop/releases/latest", { headers: { accept: "application/vnd.github+json" }, signal: AbortSignal.timeout(10000) });
-      if (!r.ok) return { current: VERSION };
-      const j = await r.json();
-      const latest = String(j.tag_name || "").replace(/^v/, "");
-      return { current: VERSION, latest, newer: newerVersion(latest, VERSION), url: j.html_url };
-    } catch { return { current: VERSION }; }
+  "GET /api/update": async () => (updater ? updater.state() : { phase: "idle" }),
+  "POST /api/update/check": async () => (updater ? updater.check() : bad("Updates are off here.")),
+  "POST /api/update/install": async () => {
+    if (!updater) return bad("Updates are off here.");
+    try { return await updater.install(); } catch (e) { return bad(e.message, 409); }
   },
+
 };
 
 // body undefined means a read (GET), anything else a change (POST).

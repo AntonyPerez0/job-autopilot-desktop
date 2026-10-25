@@ -45,6 +45,9 @@ jobs:
           codesign -dv "$RUNNER_TEMP/Job Autopilot.app" 2>&1 | head -5
           lipo -archs "$RUNNER_TEMP/Job Autopilot.app/Contents/MacOS/Job Autopilot"
           JA_E2E_CHROMIUM=1 JA_APP_EXE="$RUNNER_TEMP/Job Autopilot.app/Contents/MacOS/Job Autopilot" node test/e2e/onboarding.mjs
+      - name: Update now, end to end (macOS)
+        if: runner.os == 'macOS'
+        run: JA_APP_EXE="$RUNNER_TEMP/Job Autopilot.app/Contents/MacOS/Job Autopilot" JA_UPDATE_FILE="$(ls dist/*-mac-universal.zip | head -1)" node test/e2e/update.mjs
       - name: Install with the .exe installer and run the setup end to end
         if: runner.os == 'Windows'
         shell: pwsh
@@ -57,12 +60,21 @@ jobs:
           $env:JA_E2E_CHROMIUM = "1"
           node test/e2e/onboarding.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Update now, end to end (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:JA_APP_EXE = Join-Path $env:LOCALAPPDATA "Programs\Job Autopilot\Job Autopilot.exe"
+          $env:JA_UPDATE_FILE = (Get-ChildItem dist\*.exe | Select-Object -First 1).FullName
+          node test/e2e/update.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - uses: actions/upload-artifact@v7
         with:
           name: installer-${{ runner.os }}
           path: |
             dist/*.dmg
+            dist/*-mac-universal.zip
             dist/*.exe
           if-no-files-found: error
       - uses: actions/upload-artifact@v7
@@ -85,6 +97,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # "Update now" in the app checks every download against these.
+          (cd out && sha256sum * > SHA256SUMS.txt)
           ls -la out
           gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
             gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --title "Job Autopilot $GITHUB_REF_NAME" \

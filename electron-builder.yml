@@ -25,6 +25,9 @@ mac:
   target:
     - target: dmg
       arch: [universal]
+    # the zipped app is what "Update now" downloads
+    - target: zip
+      arch: [universal]
   category: public.app-category.productivity
   # Ad-hoc signature: unsigned builds otherwise show as "damaged" on Apple Silicon.
   # For a Developer ID signature and notarization see docs/SIGNING.md.

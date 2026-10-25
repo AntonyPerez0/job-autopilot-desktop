@@ -59,6 +59,15 @@ app.whenReady().then(async () => {
   const db = await import("../core/db.js");
   db.openDb();
   core = { store, api, worker };
+  // One line per start, so support (and the update test) can see which version ran when.
+  try {
+    const f = path.join(DATA, "launches.json");
+    const list = (() => { try { return JSON.parse(fs.readFileSync(f, "utf8")); } catch { return []; } })();
+    fs.writeFileSync(f, JSON.stringify([...list.slice(-19), { version: app.getVersion(), at: new Date().toISOString(), exe: process.execPath }], null, 1));
+  } catch { /* informational only */ }
+  const updater = await import("./updater.js");
+  updater.initUpdater(worker);
+  api.setUpdater({ state: updater.updateState, check: updater.checkNow, install: updater.installNow });
 
   protocol.handle("ap-file", (req) => {
     const u = new URL(req.url);

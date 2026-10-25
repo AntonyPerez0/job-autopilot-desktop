@@ -135,7 +135,9 @@ async function applyOne(job) {
   } finally { state.job = null; state.progress = null; }
 }
 
-let running = false, stopping = false;
+let running = false, stopping = false, held = false;
+// An update waiting to install: finish the application in progress, start no new one.
+export const hold = (on) => { held = !!on; kick(); };
 export const stop = () => { stopping = true; kick(); };
 
 export async function run() {
@@ -193,6 +195,7 @@ export async function run() {
         state.progress = null;
         continue;
       }
+      if (held) { state.now = "updating: no new applications until the update is installed"; await sleep(5000); continue; }
       const job = nextJob();
       if (!job) { await closeBrowser(); state.now = "queue empty, waiting for the next search"; await sleep(Math.min(5 * 60000, Math.max(30000, state.nextSearch - Date.now()))); continue; }
       const used = await applyOne(job);

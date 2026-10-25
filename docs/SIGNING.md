@@ -77,8 +77,10 @@ Steps:
    should say `source=Notarized Developer ID`.
 
 Once the app is signed, the macOS Keychain stops asking again after each
-update, because the signature stays the same. Auto-update with
-`electron-updater` also becomes possible; it isn't wired up yet.
+update, because the signature stays the same. The app's own updater
+(`main/updater.js`) keeps working unchanged: it swaps the `.app` bundle
+itself. If you'd rather switch to Apple's Squirrel updater through
+`electron-updater`, that also needs the signature.
 
 ## Windows: code signing
 
