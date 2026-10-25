@@ -4,7 +4,7 @@
 (function () {
   const api = (p, body) => window.ja.api(p, body);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  const icon = (n) => `<svg class="i"><use href="#i-${n}"/></svg>`;
+  const icon = (n) => `<svg class="i" aria-hidden="true"><use href="#i-${n}"/></svg>`;
   const uid = () => Math.random().toString(36).slice(2, 9);
   const msg = (el, kind, text) => { el.innerHTML = text ? `<div class="msg ${kind}">${esc(text)}</div>` : ""; };
   const fld = (label, inner, hint) => `<div class="fld"><span>${label}</span>${inner}${hint ? `<small>${hint}</small>` : ""}</div>`;
@@ -233,7 +233,7 @@
       list.innerHTML = `<div class="hint" style="margin:6px 0">Tick the projects to put on your resume (up to 8). The best ones are ticked already. Then say how each was built.</div>
         <div class="sub-list">${r.repos.slice(0, 40).map((x, i) => `<div class="sub-item gh-repo" data-repo="${esc(x.name)}">
           <label class="check"><input type="checkbox" data-pick ${r.suggested.includes(x.name) ? "checked" : ""}><b>${esc(x.name)}</b>
-            <span class="muted">${[x.language, x.stars ? `${x.stars} star${x.stars === 1 ? "" : "s"}` : "", x.fork ? "copy of someone else's project" : "", x.archived ? "archived" : ""].filter(Boolean).map(esc).join(" · ")}</span></label>
+            <span class="muted meta">${[x.language, x.stars ? `${x.stars} star${x.stars === 1 ? "" : "s"}` : "", x.fork ? "copy of someone else’s project" : "", x.archived ? "archived" : ""].filter(Boolean).map((t) => `<span>${esc(t)}</span>`).join("")}</span></label>
           ${x.description ? `<div class="muted" style="margin:2px 0 4px 26px">${esc(x.description)}</div>` : ""}
           <div style="margin-left:26px">${radios(`gh_role_${i}`, "me", ROLES)}</div></div>`).join("")}</div>
         <div class="row-actions" style="margin-top:10px"><button type="button" class="btn primary" data-gh-add>${icon("plus")}Add the ticked projects</button></div><div data-gh-out></div>`;
@@ -252,7 +252,7 @@
         cfg.profile = res.profile; cfg.answers = res.answers;
         const n = res.added.reduce((k, x) => k + x.lines, 0);
         out.innerHTML = `<div class="msg ok">Added ${res.added.length} project${res.added.length === 1 ? "" : "s"} with ${n} line${n === 1 ? "" : "s"}, waiting for your approval.${res.rejected.length ? ` ${res.rejected.length} line${res.rejected.length === 1 ? " was" : "s were"} left out because ${res.rejected.length === 1 ? "it" : "they"} said more than the project does.` : ""}</div>
-          ${res.questions.length ? `<div class="msg info" style="margin-top:8px"><b>To make them stronger</b>, think about: ${res.questions.map((q) => esc(q.question)).join(" · ")} You can add the answer to a line when you review it.</div>` : ""}`;
+          ${res.questions.length ? `<div class="msg info" style="margin-top:8px"><b>To make them stronger</b>, think about: ${res.questions.map((q) => esc(q.question)).join(" ")} You can add the answer to a line when you review it.</div>` : ""}`;
         onDone && onDone(res);
       };
     };
@@ -323,7 +323,7 @@
       cfg.profile = r.profile; cfg.answers = r.answers;
       const lines = r.profile.experience.reduce((n, e) => n + e.bullets.length, 0);
       m.innerHTML = `<div class="msg ok">Done: ${lines} lines from your answers. Check each one next.${r.rejected.length ? ` ${r.rejected.length} suggestion${r.rejected.length === 1 ? " was" : "s were"} left out because ${r.rejected.length === 1 ? "it" : "they"} added things you didn't say.` : ""}</div>
-        ${r.questions.length ? `<div class="msg info" style="margin-top:8px"><b>To make it stronger later</b>, think about: ${r.questions.map((q) => esc(q.question)).join(" · ")} Then use <b>Check &amp; improve</b> on the Resume page.</div>` : ""}`;
+        ${r.questions.length ? `<div class="msg info" style="margin-top:8px"><b>To make it stronger later</b>, think about: ${r.questions.map((q) => esc(q.question)).join(" ")} Then use <b>Check &amp; improve</b> on the Resume page.</div>` : ""}`;
       onDone && onDone(r);
     };
     return { save: async () => (cfg.profile ? null : "Write your resume first.") };
@@ -473,7 +473,7 @@
             <input type="text" data-edit="${k}.${ei}.dates" value="${esc(e.dates || "")}" placeholder="Dates"></div>
             <button type="button" class="btn ghost sm" data-del="${k}.${ei}" title="Delete this entry">${icon("trash")}</button></div>
             ${k === "projects" ? `<div class="rv-item"><span></span><label class="check"><input type="checkbox" data-flag="${k}.${ei}.aiBuilt" ${e.aiBuilt ? "checked" : ""}>Built mostly by AI coding agents (answers must say so, and never "I built it")</label><span></span></div>` : ""}`;
-          h += group(`${title}: ${esc(e.title || "")}${e.org ? " · " + esc(e.org) : ""}`, `${k}.${ei}.bullets`, head + arr(e.bullets).map((b, bi) => item(`${k}.${ei}.bullets.${bi}.text`, b.text, b.approved, { source: b.source, warning: b.warning })).join(""), `bullet:${k}.${ei}`);
+          h += group(`${title}: ${esc(e.title || "")}${e.org ? ", " + esc(e.org) : ""}`, `${k}.${ei}.bullets`, head + arr(e.bullets).map((b, bi) => item(`${k}.${ei}.bullets.${bi}.text`, b.text, b.approved, { source: b.source, warning: b.warning })).join(""), `bullet:${k}.${ei}`);
         });
       }
       h += group("Skills", "skills", arr(p.skills).map((s, i) => `<div class="rv-item ${s.approved ? "ok" : ""}"><input type="checkbox" class="approve" data-approve="skills.${i}.text" ${s.approved ? "checked" : ""}>
@@ -702,7 +702,7 @@
     const drawGoogle = () => {
       const host = el.querySelector("[data-google]");
       if (!boards.google) { host.innerHTML = ""; return; }
-      host.innerHTML = cfg.hasSerpKey ? `<small class="ok-line">Key saved · ${esc(cfg.googleUse || 0)} searches used this month <a href="#" data-gremove>Remove key</a></small>`
+      host.innerHTML = cfg.hasSerpKey ? `<small class="ok-line">Key saved. ${esc(cfg.googleUse || 0)} searches used this month. <a href="#" data-gremove>Remove key</a></small>`
         : `<div class="row-actions" style="margin-top:6px"><input class="inp" data-gkey type="password" placeholder="Paste your SerpApi key" style="max-width:280px">
            <button type="button" class="btn sm" data-gsave>Save key</button><button type="button" class="btn ghost sm" data-glink>Get a free key</button></div><div data-gmsg></div>`;
       const s = host.querySelector("[data-gsave]");
@@ -808,7 +808,7 @@
       <div class="row-actions"><button type="button" class="btn sm" data-detect>${icon("search")}Check browsers</button><button type="button" class="btn sm" data-install>${icon("upload")}Download Chromium now</button></div>
       <div data-msg></div></div>`;
     const m = el.querySelector("[data-msg]");
-    el.querySelector("[data-detect]").onclick = async () => { msg(m, "info", "Checking..."); const r = await api("/api/browser/detect", {}); msg(m, "ok", `Chrome: ${r.chrome ? "found" : "not found"} · Edge: ${r.msedge ? "found" : "not found"} · Chromium: ${r.chromium ? "downloaded" : "not downloaded"}`); };
+    el.querySelector("[data-detect]").onclick = async () => { msg(m, "info", "Checking..."); const r = await api("/api/browser/detect", {}); msg(m, "ok", `Chrome: ${r.chrome ? "found" : "not found"}, Edge: ${r.msedge ? "found" : "not found"}, Chromium: ${r.chromium ? "downloaded" : "not downloaded"}`); };
     el.querySelector("[data-install]").onclick = async () => { msg(m, "info", "Downloading Chromium (about 150 MB)..."); const r = await api("/api/browser/install", {}); msg(m, r.error ? "err" : "ok", r.error || "Chromium is ready."); };
     return {
       async save() {

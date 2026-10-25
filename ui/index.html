@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: ap-file:; frame-src ap-file:">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Job Autopilot finds jobs that match what you want, fills in each application and keeps a record of every one.">
 <meta name="color-scheme" content="light dark">
 <title>Job Autopilot</title>
 <link rel="stylesheet" href="style.css">
@@ -13,15 +14,15 @@
 
 <div class="app">
   <aside class="side">
-    <div class="brand"><div class="logo"><svg class="i"><use href="#i-bolt"/></svg></div>Job Autopilot</div>
+    <div class="brand"><div class="logo"><svg class="i" aria-hidden="true"><use href="#i-bolt"/></svg></div>Job Autopilot</div>
     <div id="nav"></div>
     <div class="side-foot">
-      <div class="row"><span style="display:flex;align-items:center;gap:8px"><span id="mode-dot" class="dot"></span><b id="mode-txt" style="color:var(--text);font-weight:600">...</b></span>
+      <div class="row"><span style="display:flex;align-items:center;gap:8px"><span id="mode-dot" class="dot"></span><b id="mode-txt">…</b></span>
         <button class="btn sm" id="pause"></button></div>
       <div class="row"><span>Go live <span class="muted">(submit for real)</span></span><button class="switch" id="live" aria-label="Go live"></button></div>
       <div class="row"><span>Day starts</span><span class="muted" id="daystart"></span></div>
       <div class="row"><span>Daily limit</span><div class="stepper"><button id="cap-dn" aria-label="Lower">&minus;</button><span id="cap">0</span><button id="cap-up" aria-label="Raise">+</button></div></div>
-      <div class="muted" id="model" style="font-size:12px"></div>
+      <div class="muted" id="model"></div>
       <div id="update-side"></div>
     </div>
   </aside>
@@ -66,7 +67,9 @@ let view = (location.hash.slice(1) || "overview"), st = null, jobsCache = {}, q 
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const icon = (n, extra = "") => `<svg class="i" ${extra}><use href="#i-${n}"/></svg>`;
+const icon = (n, extra = "") => `<svg class="i" aria-hidden="true" ${extra}><use href="#i-${n}"/></svg>`;
+// Parts of one line of details, set apart by space instead of dots.
+const meta = (...parts) => `<span class="meta">${parts.filter(Boolean).map((x) => `<span>${x}</span>`).join("")}</span>`;
 const api = (p, body) => window.ja.api(p, body);
 const toDate = (s) => (s ? new Date(/Z|[+-]\d\d:?\d\d$/.test(s) ? s : s.replace(" ", "T") + "Z") : null);
 function ago(s) {
@@ -80,13 +83,11 @@ function ago(s) {
 const fmtTime = (s) => { const d = toDate(s); return d ? d.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : ""; };
 function toast(t) { const el = $("toast"); el.textContent = t; el.classList.add("show"); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove("show"), 2200); }
 
-const PALETTE = ["#4f46e5", "#0ea5e9", "#14b8a6", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#10b981", "#6366f1", "#f97316", "#06b6d4", "#84cc16"];
 function avatar(name, cls = "") {
   const n = String(name || "?").replace(/[^A-Za-z0-9 ]/g, " ").trim();
   const parts = n.split(/\s+/).filter(Boolean);
   const ini = (parts.length > 1 ? parts[0][0] + parts[1][0] : n.slice(0, 2)).toUpperCase();
-  let h = 0; for (const c of n) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  return `<div class="avatar ${cls}" style="background:${PALETTE[h % PALETTE.length]}">${esc(ini)}</div>`;
+  return `<div class="avatar ${cls}" aria-hidden="true">${esc(ini)}</div>`;
 }
 const cleanTitle = (t) => String(t || "").trim();
 const SOURCE = { greenhouse: "Greenhouse", lever: "Lever", ashby: "Ashby" };
@@ -147,7 +148,7 @@ function renderControls() {
   $("live").classList.toggle("on", !s.dryRun);
   $("cap").textContent = s.dailyCap;
   $("daystart").textContent = new Date(2000, 0, 1, s.dayStartsAtHour || 0).toLocaleTimeString([], { hour: "numeric" });
-  $("model").textContent = "Model · " + st.model;
+  $("model").textContent = "Model: " + st.model;
   $("update-side").innerHTML = updateSide();
   const card = $("update-card"); if (card) card.innerHTML = updateCard();
 }
@@ -159,9 +160,9 @@ function updateSide() {
     return `<button class="btn sm primary" style="width:100%;justify-content:center" onclick="installUpdate()">${icon("upload")}Update to ${esc(u.info.latest)}</button>`;
   }
   if (["downloading", "waiting", "installing"].includes(u.phase)) {
-    return `<div class="muted" style="font-size:12px">${u.phase === "downloading" ? `Downloading update · ${Math.round((u.progress || 0) * 100)}%` : u.phase === "waiting" ? "Update ready · finishing the current application" : "Installing update · restarting"}</div>`;
+    return `<div class="muted">${u.phase === "downloading" ? `Downloading update: ${Math.round((u.progress || 0) * 100)}%` : u.phase === "waiting" ? "Update ready, finishing the current application" : "Installing update, restarting"}</div>`;
   }
-  return `<div class="row" style="font-size:12px"><span class="muted">Version ${v}</span><button class="btn ghost sm" onclick="checkUpdate(this)">${u.phase === "checking" ? "Checking..." : "Check for updates"}</button></div>`;
+  return `<div class="row"><span class="muted">Version <span class="mono">${v}</span></span><button class="btn ghost sm" onclick="checkUpdate(this)">${u.phase === "checking" ? "Checking..." : "Check for updates"}</button></div>`;
 }
 function updateCard() {
   const u = st.update || {};
@@ -189,19 +190,20 @@ function liveChip() {
   const s = st.state, set = st.settings;
   let tone = "green", txt = esc(s.now);
   if (set.paused) { tone = "red"; txt = "Paused"; }
-  else if (s.job) { tone = "blue"; txt = `Applying to <b>${esc(s.job.company)}</b> · ${esc(cleanTitle(s.job.title))}`; }
+  else if (s.job) { tone = "blue"; txt = `Applying to <b>${esc(s.job.company)}</b>, ${esc(cleanTitle(s.job.title))}`; }
   else if (s.now === "searching") { tone = "blue"; txt = "Searching for new jobs"; }
   else if (/review the first/.test(s.now)) { tone = "amber"; txt = "Waiting for you to check the first filled application"; }
-  else if (/cap/.test(s.now)) { tone = "amber"; txt = `Daily limit reached · resumes ${s.resumesAt ? new Date(s.resumesAt).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }) : "tomorrow"}`; }
+  else if (/cap/.test(s.now)) { tone = "amber"; txt = `Daily limit reached, resumes ${s.resumesAt ? new Date(s.resumesAt).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }) : "tomorrow"}`; }
   else if (/waiting between/.test(s.now)) txt = "Pacing between applications";
-  else if (/queue empty/.test(s.now)) txt = "Queue empty · waiting for the next search";
-  return `<div class="live"><span class="dot ${tone} ${set.paused ? "" : "pulse"}"></span><span class="txt">${txt}</span></div>`;
+  else if (/queue empty/.test(s.now)) txt = "Queue empty, waiting for the next search";
+  const busy = !set.paused && (s.job || s.now === "searching");
+  return `<div class="live" role="status"><span class="dot ${tone}"></span>${busy ? '<span class="spin" aria-hidden="true"></span>' : ""}<span class="txt">${txt}</span></div>`;
 }
 function header() {
   const [t, sub] = TITLES[view];
   const list = !["overview", "log", "profile", "settings"].includes(view);
   return `<div class="top"><div><h1>${t}</h1><p>${sub}</p></div><div class="actions">${liveChip()}
-    ${list ? `<div class="search">${icon("search")}<input id="q" placeholder="Search company, role, location" value="${esc(q)}" oninput="q=this.value;renderList()"></div>` : ""}
+    ${list ? `<div class="search">${icon("search")}<input id="q" aria-label="Search jobs" placeholder="Search company, role, location" value="${esc(q)}" oninput="q=this.value;renderList()"></div>` : ""}
     <button class="btn" onclick="addJobDialog()">${icon("plus")}Add a job</button>
     <button class="btn" onclick="searchNow()">${icon("refresh")}Search now</button></div></div><div id="banner-host">${banners()}</div><div id="progress-host">${progressCard()}</div>`;
 }
@@ -232,23 +234,23 @@ function progressCard() {
     const over = cur >= 0 && inStep > curT * 1.5 && inStep > 20;
     return `<div class="card prog">
       <div class="prog-top">${avatar(job.company)}<div class="prog-title"><div class="t">Applying to ${esc(job.company)}</div><div class="s">${esc(cleanTitle(job.title))}</div></div>
-        <div class="prog-meta"><b>${pct}%</b><span>${mmss(now() - p.startedAt)} elapsed · ${over ? "taking longer than usual" : left(remaining)}</span></div></div>
+        <div class="prog-meta"><b>${pct}%</b><span>${meta(`${mmss(now() - p.startedAt)} elapsed`, over ? "taking longer than usual" : left(remaining))}</span></div></div>
       <div class="pbar"><i style="width:${pct}%"></i></div>
       <div class="steps">${steps.map((x, i) => `<div class="stp ${i < cur ? "done" : i === cur ? "cur" : ""}"><div class="ln"></div>
         <div class="lb" title="${esc(x.label)}">${i < cur ? icon("check") : i === cur ? '<span class="spin"></span>' : ""}${esc(SHORT[x.key] || x.label)}</div></div>`).join("")}</div>
-      <div class="prog-foot">Step ${cur + 1} of ${steps.length}: ${esc(cur >= 0 ? steps[cur].label : "Starting")} · ${mmss(inStep * 1000)} on this step
-        ${st.browser && st.browser.open && st.browser.mode !== "headless" ? `· <a href="#" onclick="showBrowser(true);return false" style="color:var(--brand-text)">Show the browser</a> · <a href="#" onclick="showBrowser(false);return false" style="color:var(--brand-text)">Minimize it</a>` : ""}</div></div>`;
+      <div class="prog-foot"><span>Step ${cur + 1} of ${steps.length}: ${esc(cur >= 0 ? steps[cur].label : "Starting")}</span><span><span class="fig">${mmss(inStep * 1000)}</span> on this step</span>
+        ${st.browser && st.browser.open && st.browser.mode !== "headless" ? `<a href="#" onclick="showBrowser(true);return false">Show the browser</a><a href="#" onclick="showBrowser(false);return false">Minimize it</a>` : ""}</div></div>`;
   }
   if (p.kind === "search") {
     const searchShare = 35;
     const frac = p.n ? (p.i + 0.5) / p.n : 0;
     const pct = Math.round(p.phase === "search" ? frac * searchShare : searchShare + frac * (100 - searchShare));
-    const what = p.phase === "search" ? `Search ${Math.min(p.i + 1, p.n)} of ${p.n}${p.label ? ` · "${esc(p.label)}"` : ""}`
-      : `Reviewing new posting ${Math.min(p.i + 1, p.n)} of ${p.n}${p.label ? ` · ${esc(p.label)}` : ""}`;
+    const what = p.phase === "search" ? meta(`Search ${Math.min(p.i + 1, p.n)} of ${p.n}`, p.label ? `“${esc(p.label)}”` : "")
+      : meta(`Reviewing new posting ${Math.min(p.i + 1, p.n)} of ${p.n}`, p.label ? esc(p.label) : "");
     return `<div class="card prog">
-      <div class="prog-top"><span class="ico blue" style="width:40px;height:40px;border-radius:10px">${icon("search")}</span>
+      <div class="prog-top"><span class="ico">${icon("search")}</span>
         <div class="prog-title"><div class="t">${p.phase === "search" ? "Searching for new jobs" : "Checking new jobs for fit"}</div><div class="s">${what}</div></div>
-        <div class="prog-meta"><b>${pct}%</b><span>${mmss(now() - p.startedAt)} elapsed${p.phase === "review" && p.added ? ` · ${p.added} added to the queue` : ""}</span></div></div>
+        <div class="prog-meta"><b>${pct}%</b><span>${meta(`${mmss(now() - p.startedAt)} elapsed`, p.phase === "review" && p.added ? `${p.added} added to the queue` : "")}</span></div></div>
       <div class="pbar"><i style="width:${pct}%"></i></div>
       <div class="prog-foot">${p.phase === "search" ? "Step 1 of 2: searching" : "Step 2 of 2: AI checks each new posting for fit before it joins the queue"}</div></div>`;
   }
@@ -257,9 +259,9 @@ function progressCard() {
     const pct = Math.min(100, Math.round((100 * gone) / span));
     const next = st.next;
     return `<div class="card prog">
-      <div class="prog-top"><span class="ico gray" style="width:40px;height:40px;border-radius:10px">${icon("clock")}</span>
+      <div class="prog-top"><span class="ico">${icon("clock")}</span>
         <div class="prog-title"><div class="t">Next application in ${mmss(p.until - now())}</div>
-        <div class="s">${next ? `Up next: ${esc(next.company)} · ${esc(cleanTitle(next.title))}` : "Nothing queued yet"}</div></div>
+        <div class="s">${next ? `Up next: ${esc(next.company)}, ${esc(cleanTitle(next.title))}` : "Nothing queued yet"}</div></div>
         <div class="prog-meta"><span>Applications are spaced ${st.settings.minutesBetweenApplies} minutes apart</span></div></div>
       <div class="pbar calm"><i style="width:${pct}%"></i></div></div>`;
   }
@@ -282,35 +284,35 @@ async function renderOverview() {
   const pipe = [["Found", seen], ["Screened in", (c.applied || 0) + (c.queued || 0) + (c.failed || 0) + (c.working || 0) + (c.filled || 0) + (c.manual || 0)], ["Attempted", done + stopped], ["Applied", done]];
   $("main").innerHTML = header() + `
   <div class="grid-kpi">
-    ${kpi("applied", "green", "send", "Applications sent", done, `${ago(applied[0] && applied[0].applied_at) ? "Last " + ago(applied[0].applied_at) : "None yet"}`)}
-    <div class="card kpi" onclick="go('applied')"><div class="lbl"><span class="ico blue">${icon("trend")}</span>Today</div>
+    ${kpi("applied", "Applications sent", done, `${ago(applied[0] && applied[0].applied_at) ? "Last " + ago(applied[0].applied_at) : "None yet"}`)}
+    <div class="kpi" onclick="go('applied')"><div class="lbl">Today</div>
       <div class="val">${st.appliedToday}<small>/ ${s.dailyCap}</small></div><div class="bar"><i style="width:${Math.min(100, (100 * st.appliedToday) / Math.max(1, s.dailyCap))}%"></i></div></div>
-    ${kpi("queued", "violet", "clock", "In queue", (c.queued || 0) + (c.working || 0), "Screened as a fit")}
-    ${kpi("failed", "amber", "alert", "Needs attention", stopped, Object.entries(cats).sort((a, b) => b[1] - a[1]).slice(0, 1).map(([k, n]) => `${n} · ${k}`)[0] || "All clear")}
-    ${kpi("all", "gray", "check", "Success rate", rate + "%", `${done} of ${done + stopped} attempts`)}
+    ${kpi("queued", "In queue", (c.queued || 0) + (c.working || 0), "Screened as a fit")}
+    ${kpi("failed", "Needs attention", stopped, Object.entries(cats).sort((a, b) => b[1] - a[1]).slice(0, 1).map(([k, n]) => `${n}: ${k}`)[0] || "All clear")}
+    ${kpi("all", "Success rate", rate + "%", `${done} of ${done + stopped} attempts`)}
   </div>
   <div class="grid-2">
-    <div style="display:grid;gap:20px;align-content:start">
-      <div class="card"><div class="card-h"><h3>Applications per day</h3><span class="sub">Last 14 days</span></div>
-        <div class="card-b"><div class="chart">${per.map((n, i) => `<div class="col"><div class="b ${n ? "" : "zero"}" data-n="${n} applied" style="height:${n ? Math.max(8, (100 * n) / max) : 3}%"></div>
-          <div class="d">${i % 2 === 1 || per.length < 8 ? days[i].toLocaleDateString([], { month: "numeric", day: "numeric" }) : ""}</div></div>`).join("")}</div></div></div>
-      <div class="card"><div class="card-h"><h3>Recent applications</h3><span class="right"><button class="btn ghost sm" onclick="go('applied')">View all</button></span></div>
+    <div class="stack">
+      <div class="card"><div class="card-h"><h2>Recent applications</h2><span class="right"><button class="btn ghost sm" onclick="go('applied')">View all</button></span></div>
         ${applied.length ? applied.slice(0, 6).map(item).join("") : empty("send", "No applications yet", "The first ones will appear here as soon as an employer confirms.")}</div>
+      <div class="card"><div class="card-h"><h2>Applications per day</h2><span class="sub">Last 14 days</span></div>
+        <div class="card-b"><div class="chart">${per.map((n, i) => `<div class="col"><div class="b ${n ? "" : "zero"}" data-n="${n} applied" style="height:${n ? Math.max(8, (100 * n) / max) : 2}%"></div>
+          <div class="d">${i % 2 === 1 || per.length < 8 ? days[i].toLocaleDateString([], { month: "numeric", day: "numeric" }) : ""}</div></div>`).join("")}</div></div></div>
     </div>
-    <div style="display:grid;gap:20px;align-content:start">
-      <div class="card"><div class="card-h"><h3>Pipeline</h3></div><div class="card-b pipeline">
-        ${pipe.map(([l, n]) => `<div class="pipe-row"><span>${l}</span><div class="bar"><i style="width:${seen ? Math.max(2, (100 * n) / seen) : 0}%"></i></div><b>${n}</b></div>`).join("")}</div></div>
-      <div class="card"><div class="card-h"><h3>Up next</h3><span class="right"><button class="btn ghost sm" onclick="go('queued')">Queue</button></span></div>
+    <div class="stack">
+      <div class="card"><div class="card-h"><h2>Up next</h2><span class="right"><button class="btn ghost sm" onclick="go('queued')">Queue</button></span></div>
         ${queue.length ? queue.slice(0, 4).map(item).join("") : empty("clock", "Queue is empty", "New roles are screened in on the next search.")}</div>
-      <div class="card"><div class="card-h"><h3>Activity</h3><span class="right"><button class="btn ghost sm" onclick="go('log')">All activity</button></span></div>
-        <div style="padding:6px 0">${ev.filter(important).slice(0, 7).map(feedItem).join("") || empty("act", "Nothing yet", "")}</div></div>
+      <div class="card"><div class="card-h"><h2>Pipeline</h2></div><div class="card-b pipeline">
+        ${pipe.map(([l, n]) => `<div class="pipe-row"><span>${l}</span><div class="bar"><i style="width:${seen ? Math.max(2, (100 * n) / seen) : 0}%"></i></div><b>${n}</b></div>`).join("")}</div></div>
+      <div class="card"><div class="card-h"><h2>Activity</h2><span class="right"><button class="btn ghost sm" onclick="go('log')">All activity</button></span></div>
+        <div>${ev.filter(important).slice(0, 7).map(feedItem).join("") || empty("act", "Nothing yet", "")}</div></div>
     </div>
   </div>`;
 }
-const kpi = (to, tone, ic, label, val, foot) => `<div class="card kpi" onclick="go('${to}')"><div class="lbl"><span class="ico ${tone}">${icon(ic)}</span>${label}</div><div class="val">${val}</div><div class="foot">${esc(foot)}</div></div>`;
-const item = (j) => `<div class="list-item" onclick="openJob('${esc(j.slug)}')">${avatar(j.company)}<div class="li-main"><div class="t">${esc(cleanTitle(j.title))}</div><div class="s">${esc(j.company)} · ${esc(j.location)}</div></div>
+const kpi = (to, label, val, foot) => `<div class="kpi" onclick="go('${to}')"><div class="lbl">${label}</div><div class="val">${val}</div><div class="foot">${esc(foot)}</div></div>`;
+const item = (j) => `<div class="list-item" onclick="openJob('${esc(j.slug)}')">${avatar(j.company)}<div class="li-main"><div class="t">${esc(cleanTitle(j.title))}</div><div class="s">${meta(esc(j.company), esc(j.location))}</div></div>
   ${badge(category(j))}<span class="time hide-md">${ago(j.applied_at || j.updated_at)}</span></div>`;
-const empty = (ic, t, s) => `<div class="empty"><div class="ico gray">${icon(ic)}</div><h4>${t}</h4><div>${s}</div></div>`;
+const empty = (ic, t, s) => `<div class="empty"><div class="ico">${icon(ic)}</div><h3>${t}</h3><div>${s}</div></div>`;
 const important = (e) => !/^(queued|skipped): /.test(e.message) || /^queued/.test(e.message);
 function evTone(e) {
   if (e.level === "error") return "red";
@@ -339,7 +341,7 @@ function renderList() {
   const whenLabel = view === "applied" ? "Applied" : "Updated";
   host.innerHTML = `<table><thead><tr><th>Role</th><th class="hide-md">Location</th><th class="hide-md">Board</th><th>Status</th><th class="hide-md">${whenLabel}</th></tr></thead><tbody>
     ${rows.map((j) => `<tr onclick="openJob('${esc(j.slug)}')">
-      <td><div class="co-cell">${avatar(j.company)}<div><div class="t">${esc(cleanTitle(j.title))}</div><div class="s">${esc(j.company)}${j.salary ? " · " + esc(j.salary.replace(/^USD /, "$").replace(/\/year$/, "")) : ""}</div></div></div></td>
+      <td><div class="co-cell">${avatar(j.company)}<div><div class="t">${esc(cleanTitle(j.title))}</div><div class="s">${meta(esc(j.company), j.salary ? esc(j.salary.replace(/^USD /, "$").replace(/\/year$/, "")) : "")}</div></div></div></td>
       <td class="hide-md muted">${esc(j.location)}${j.work_mode ? `<div class="reason">${esc(j.work_mode)}</div>` : ""}</td>
       <td class="hide-md"><span class="tag">${esc(SOURCE[j.source] || j.source)}</span></td>
       <td>${badge(category(j))}${j.status !== "applied" ? `<div class="reason">${esc(humanReason(j))}</div>` : ""}</td>
@@ -351,7 +353,7 @@ function renderList() {
 async function renderLog() {
   const ev = await api("/api/events");
   $("main").innerHTML = header() + `<div class="card">${ev.length ? ev.map((e) => `<div class="log-row"><span class="when">${fmtTime(e.at)}</span><span class="dot ${evTone(e)}"></span>
-    <span class="msg">${e.slug ? `<a href="#" onclick="openJob('${esc(e.slug)}');return false">${esc(e.slug.replace(/-[a-z0-9]{8}$/, "").replace(/-/g, " "))}</a> · ` : ""}${evText(e)}</span></div>`).join("") : empty("act", "No activity yet", "")}</div>`;
+    <span class="msg">${e.slug ? `<a href="#" onclick="openJob('${esc(e.slug)}');return false">${esc(e.slug.replace(/-[a-z0-9]{8}$/, "").replace(/-/g, " "))}</a>: ` : ""}${evText(e)}</span></div>`).join("") : empty("act", "No activity yet", "")}</div>`;
 }
 
 // ---------- drawer ----------
@@ -376,7 +378,7 @@ function renderDrawer() {
     j.status === "manual" ? `<button class="btn sm primary" onclick="window.ja.openExternal('${esc(j.apply_url || j.url)}')">${icon("ext")}Open the application</button>
       <button class="btn sm" onclick="act('applied-myself')">${icon("check")}I applied</button>` : "",
     ["queued", "manual"].includes(j.status) ? `<button class="btn sm danger" onclick="act('skip')">${icon("skip")}Skip</button>` : "",
-    ["failed", "skipped", "filled"].includes(j.status) ? `<button class="btn sm primary" onclick="act('retry')">${icon("retry")}${j.status === "skipped" ? "Queue it" : "Try again"}</button>` : "",
+    ["failed", "skipped", "filled"].includes(j.status) ? `<button class="btn sm ${j.status === "filled" && !j.reviewed ? "" : "primary"}" onclick="act('retry')">${icon("retry")}${j.status === "skipped" ? "Queue it" : "Try again"}</button>` : "",
   ].join("");
   $("drawer").innerHTML = `
     <div class="dr-head">
@@ -385,7 +387,7 @@ function renderDrawer() {
       <div class="chips">${badge(c)}${j.location ? `<span class="tag">${icon("pin", 'style="width:13px;height:13px"')}${esc(j.location)}</span>` : ""}
         ${j.salary ? `<span class="tag">${icon("dollar", 'style="width:13px;height:13px"')}${esc(j.salary.replace(/^USD /, "$"))}</span>` : ""}
         <span class="tag">${esc(SOURCE[j.source] || j.source)}</span>${j.posted_at ? `<span class="tag">Posted ${ago(j.posted_at)}</span>` : ""}</div>
-      <div class="callout ${toneCallout}"><div><b>${esc(c.label)}${j.applied_at ? " · " + fmtTime(j.applied_at) : ""}</b>${esc(humanReason(j))}</div></div>
+      <div class="callout ${toneCallout}"><div><b>${esc(c.label)}${j.applied_at ? ", " + fmtTime(j.applied_at) : ""}</b>${esc(humanReason(j))}</div></div>
       <div class="dr-actions">${actions}</div>
     </div>
     <div class="tabs">${tabs.map(([k, l]) => `<div class="${dtab === k ? "on" : ""}" onclick="dtab='${k}';renderDrawer()">${l}</div>`).join("")}</div>
@@ -415,7 +417,7 @@ function drawerTab(j, d) {
   if (dtab === "shots") {
     if (!j.screenshot) return empty("grid", "No screenshots", "Screenshots are taken when the form is filled and after it is submitted.");
     const shots = /-after\./.test(j.screenshot) ? [["After submitting", j.screenshot], ["Filled form", j.screenshot.replace("-after", "-filled")]] : [["Filled form", j.screenshot]];
-    return shots.map(([l, f]) => `<div class="shot-cap"><span>${l}</span><a href="ap-file://shots/${esc(f)}" target="_blank" style="color:var(--brand-text)">Open full size</a></div><img class="shot" loading="lazy" src="ap-file://shots/${esc(f)}" alt="${l}">`).join("");
+    return shots.map(([l, f]) => `<div class="shot-cap"><span>${l}</span><a class="link" href="ap-file://shots/${esc(f)}" target="_blank">Open full size</a></div><img class="shot" loading="lazy" src="ap-file://shots/${esc(f)}" alt="${l}">`).join("");
   }
   if (dtab === "posting") return d.description ? `<div class="posting">${esc(d.description)}</div>` : empty("file", "No posting text", "");
   return "";
@@ -467,7 +469,7 @@ async function showBrowser(show) { const r = await api("/api/browser/show", { sh
 
 // ---------- a job found anywhere: paste its link ----------
 function addJobDialog() {
-  const m = modal(`<h3>Add a job</h3><p class="muted">Found a job on Google, Simplify, HiringCafe, Indeed or a company's website? Copy its link from your browser's address bar and paste it here.</p>
+  const m = modal(`<h2>Add a job</h2><p class="muted">Found a job on Google, Simplify, HiringCafe, Indeed or a company's website? Copy its link from your browser's address bar and paste it here.</p>
     <input class="inp" id="aj-url" placeholder="https://..." style="width:100%;margin-top:8px">
     <div id="aj-msg" style="margin-top:10px"></div>
     <div class="row-actions" style="margin-top:14px"><button class="btn primary" id="aj-go">Add it</button><button class="btn" id="aj-close">Close</button></div>`);
@@ -553,13 +555,13 @@ function modal(html) {
 function goLive() {
   const s = st.settings;
   if (!s.reviewedDryRun) {
-    const m = modal(`<h3>Check a filled application first</h3><p class="muted">Going live is unlocked once you have opened a filled (dry run) application and pressed "I checked these answers".</p>
+    const m = modal(`<h2>Check a filled application first</h2><p class="muted">Going live is unlocked once you have opened a filled (dry run) application and pressed "I checked these answers".</p>
       <div class="row-actions" style="margin-top:16px">${st.firstFilled ? `<button class="btn primary" id="m-open">Review it now</button>` : ""}<button class="btn" id="m-close">Close</button></div>`);
     m.querySelector("#m-close").onclick = () => m.remove();
     const o = m.querySelector("#m-open"); if (o) o.onclick = () => { m.remove(); openJob(st.firstFilled.slug); };
     return;
   }
-  const m = modal(`<h3>Start submitting applications?</h3><p>From now on the app <b>submits</b> applications in your name: up to <b>${s.dailyCap} a day</b>, ${s.minutesBetweenApplies} minutes apart, only when every required answer is filled from your facts.</p>
+  const m = modal(`<h2>Start submitting applications?</h2><p>From now on the app <b>submits</b> applications in your name: up to <b>${s.dailyCap} a day</b>, ${s.minutesBetweenApplies} minutes apart, only when every required answer is filled from your facts.</p>
     <p class="muted">You can pause, or switch back to dry run, at any time.</p>
     <label class="check" style="margin-top:10px"><input type="checkbox" id="m-ok">I have checked a filled application and I am ready.</label>
     <div class="row-actions" style="margin-top:18px"><button class="btn primary" id="m-go" disabled>Go live</button><button class="btn" id="m-close">Cancel</button></div>`);
@@ -578,10 +580,10 @@ let cfg = null;
 async function renderConfig() {
   cfg = await api("/api/config");
   // Each section folds away; the ones people change most start open.
-  const card = (id, title, sub, open) => `<details class="card card-fold" ${open ? "open" : ""}><summary><div class="card-h"><h3>${title}</h3><span class="sub">${sub || ""}</span></div></summary>
-    <div class="sec" id="sec-${id}"></div><div style="padding:0 20px 18px;display:flex;gap:12px;align-items:center"><button class="btn primary" data-save="${id}">${icon("check")}Save changes</button><div id="msg-${id}" style="flex:1"></div></div></details>`;
+  const card = (id, title, sub, open) => `<details class="card card-fold" ${open ? "open" : ""}><summary><div class="card-h"><h2>${title}</h2><span class="sub">${sub || ""}</span></div></summary>
+    <div class="sec" id="sec-${id}"></div><div class="save-bar"><button class="btn primary" data-save="${id}">${icon("check")}Save changes</button><div id="msg-${id}" style="flex:1"></div></div></details>`;
   if (view === "profile") {
-    const fold = (id, title, sub, open) => `<details class="card card-fold" ${open ? "open" : ""}><summary><div class="card-h"><h3>${title}</h3><span class="sub">${sub}</span></div></summary><div class="sec" id="sec-${id}"></div></details>`;
+    const fold = (id, title, sub, open) => `<details class="card card-fold" ${open ? "open" : ""}><summary><div class="card-h"><h2>${title}</h2><span class="sub">${sub}</span></div></summary><div class="sec" id="sec-${id}"></div></details>`;
     $("main").innerHTML = header() + `<div id="cfg-host">
       ${cfg.profile ? fold("studio", "Check &amp; improve", "What a recruiter will notice, and better wording for your lines", true) : ""}
       ${fold("create", "Make a resume with me", "Answer a few questions; the app writes the lines, you approve them", !cfg.profile)}
@@ -597,14 +599,14 @@ async function renderConfig() {
     bindSaves(forms);
   } else {
     $("main").innerHTML = header() + `<div id="cfg-host">
-      <div class="card" style="margin-bottom:20px"><div class="card-h"><h3>Updates</h3></div><div class="sec" id="update-card">${updateCard()}</div></div>
+      <div class="card" style="margin-bottom:12px"><div class="card-h"><h2>Updates</h2></div><div class="sec" id="update-card">${updateCard()}</div></div>
       ${card("prefs", "Jobs to look for", "Job titles, where, and which sites to search", true)}
       ${card("questions", "About you", "The answers application forms ask for")}
       ${card("ai", "AI", "The AI service the app uses")}
       ${card("mailbox", "Mailbox", "Optional: email codes and spotting jobs you already applied to")}
       ${card("running", "Pace and browser", "How many a day, and the browser window")}
-      <div class="card" style="margin-bottom:20px"><div class="card-h"><h3>Application history</h3><span class="sub">So you never apply twice, even after a reinstall</span></div><div class="sec" id="sec-history"></div></div>
-      <div class="card sec"><h3>Your data</h3><p>Everything lives in one folder on this computer: <span class="mono">${esc(cfg.dataDir)}</span>. Version ${esc(cfg.version)}.</p>
+      <div class="card" style="margin-bottom:12px"><div class="card-h"><h2>Application history</h2><span class="sub">So you never apply twice, even after a reinstall</span></div><div class="sec" id="sec-history"></div></div>
+      <div class="card sec"><h2>Your data</h2><p>Everything lives in one folder on this computer: <span class="mono">${esc(cfg.dataDir)}</span>. Version ${esc(cfg.version)}.</p>
         <div class="row-actions"><button class="btn sm" onclick="window.ja.showDataFolder()">${icon("ext")}Open the folder</button>
         <button class="btn sm" onclick="window.ja.go('onboarding.html')">${icon("retry")}Run the setup again</button></div></div></div>`;
     const forms = { prefs: Forms.prefs($("sec-prefs"), cfg), questions: Forms.questions($("sec-questions"), cfg), ai: Forms.ai($("sec-ai"), cfg),
