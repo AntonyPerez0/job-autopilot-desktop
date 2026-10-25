@@ -116,14 +116,21 @@ have Chrome. With neither, the app downloads its own Chromium (about 150 MB,
 once). The app uses its own browser profile, separate from your everyday one,
 so it never sees your bookmarks, passwords or other logins.
 
-The browser window stays **minimized** while it works, in the Dock or the
-taskbar, and it stays open between applications so it doesn't pop up for each
-one. On the Overview, **Show the browser** brings it up to watch, and
-**Minimize it** puts it away again. In Settings > Pace and browser you can
-instead keep it in front, or run with no window at all. With no window, some
-sites are more likely to ask for an emailed security code. On a Mac the browser
-may appear for a moment when it first starts; the app then hands focus back to
-whatever you were using.
+The browser stays out of your way while it works, and it stays open between
+applications so it doesn't pop up for each one:
+
+- **Windows:** the window is minimized to the taskbar.
+- **Mac:** macOS doesn't draw minimized windows, and the app needs the window
+  drawn to take its screenshots. So instead the window sits just past the left
+  edge of the screen, behind your other windows; a thin sliver may show there.
+  When the browser grabs focus (as it starts, or opens a new application), the
+  app hands focus straight back to whatever you were using. The browser can
+  flash to the front for a split second when that happens.
+
+On the Overview, **Show the browser** brings it up to watch, and **Minimize
+it** puts it away again. In Settings > Pace and browser you can instead keep it
+in front, or run with no window at all. With no window, some sites are more
+likely to ask for an emailed security code.
 
 ## What it won't do
 

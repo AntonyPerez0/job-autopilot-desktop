@@ -453,7 +453,7 @@
       <div class="section-t">Browser</div>
       ${fld("Browser to apply with", radios("browser", s.browser, [["auto", "Automatic (Chrome, then Edge, then Chromium)"], ["chrome", "Google Chrome"], ["msedge", "Microsoft Edge"], ["chromium", "Chromium (downloaded by the app)"]]))}
       ${fld("The browser window while applying", radios("windowMode", s.windowMode || (s.headless ? "headless" : "minimized"), [["minimized", "Minimized (recommended)"], ["visible", "In front, so I can watch"], ["headless", "No window at all"]]),
-        "Minimized keeps it out of your way in the Dock or taskbar; \"Show the browser\" on the Overview brings it up. With no window at all, some sites are more likely to ask for a security code.")}
+        "Minimized keeps it out of your way (on a Mac, just past the edge of the screen, behind your windows); \"Show the browser\" on the Overview brings it up. With no window at all, some sites are more likely to ask for a security code.")}
       <div class="row-actions"><button type="button" class="btn sm" data-detect>${icon("search")}Check browsers</button><button type="button" class="btn sm" data-install>${icon("upload")}Download Chromium now</button></div>
       <div data-msg></div></div>`;
     const m = el.querySelector("[data-msg]");
