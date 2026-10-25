@@ -321,3 +321,35 @@ select, textarea { font: inherit; color: inherit; }
 .banner b { display: block; }
 .banner .right { margin-left: auto; display: flex; gap: 8px; }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ---------- easier setup ---------- */
+details.more { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+details.more > summary { list-style: none; cursor: pointer; padding: 12px 14px; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+details.more > summary::-webkit-details-marker { display: none; }
+details.more > summary::before { content: "▸"; color: var(--text-3); width: 12px; transition: transform .15s; }
+details.more[open] > summary::before { transform: rotate(90deg); }
+details.more > summary span { color: var(--text-3); font-size: 13px; }
+details.more > .form { padding: 4px 16px 16px; }
+.steps-list { margin: 0; padding-left: 20px; display: grid; gap: 10px; font-size: 14px; }
+.steps-list li { padding-left: 4px; }
+.steps-list .btn { margin-left: 6px; vertical-align: middle; }
+.board-list { display: grid; gap: 10px; }
+.board { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border: 1px solid var(--border-strong); border-radius: 10px; cursor: pointer; background: var(--surface); }
+.board.on { border-color: var(--brand); background: var(--brand-weak); }
+.board input { margin-top: 3px; accent-color: var(--brand); width: 16px; height: 16px; flex: none; }
+.board small { display: block; color: var(--text-3); font-size: 13px; }
+.ok-line { display: block; color: var(--green); margin-top: 6px; }
+.chips .chip-add { cursor: pointer; border-style: dashed; }
+.chips .chip-add:hover { border-color: var(--brand); color: var(--brand-text); }
+.kind-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 12px; }
+.jobkind { display: grid; gap: 4px; padding: 14px; border: 1px solid var(--border-strong); border-radius: 12px; cursor: pointer; background: var(--surface); }
+.jobkind input { display: none; }
+.jobkind.on { border-color: var(--brand); background: var(--brand-weak); box-shadow: 0 0 0 3px var(--brand-weak); }
+.jobkind small { color: var(--text-3); }
+details.card-fold { margin-bottom: 16px; }
+details.card-fold > summary { list-style: none; cursor: pointer; }
+details.card-fold > summary::-webkit-details-marker { display: none; }
+details.card-fold > summary .card-h { border-bottom: 0; }
+details.card-fold[open] > summary .card-h { border-bottom: 1px solid var(--border); }
+details.card-fold > summary h3::before { content: "▸ "; color: var(--text-3); }
+details.card-fold[open] > summary h3::before { content: "▾ "; }

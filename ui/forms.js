@@ -47,7 +47,12 @@
       const base = prov === guess ? s.apiBase : p.apiBase;
       const model = prov === guess ? s.model : p.model || "";
       el.innerHTML = `<div class="form">
-        ${fld("Where the AI runs", radios("prov", prov, [["openrouter", "OpenRouter (recommended)"], ["custom", "Another OpenAI-compatible API"], ["ollama", "Ollama, on this computer"], ["lmstudio", "LM Studio, on this computer"]]))}
+        ${prov === "openrouter" ? `<ol class="steps-list">
+          <li><b>Make a free OpenRouter account.</b> <button type="button" class="btn sm" data-link="https://openrouter.ai/sign-up">${icon("ext")}Open OpenRouter</button></li>
+          <li><b>Add $5 of credit</b> (Settings, then Credits). That's enough for hundreds of applications.</li>
+          <li><b>Create a key</b> (Settings, then Keys, then Create), copy it, and paste it below. <button type="button" class="btn sm ghost" data-link="https://openrouter.ai/settings/keys">${icon("ext")}Open the Keys page</button></li></ol>` : ""}
+        <details class="more" ${prov === "openrouter" ? "" : "open"}><summary><b>Other ways to connect an AI</b><span>Another service, or a free model on this computer</span></summary>
+          <div class="form">${fld("Where the AI runs", radios("prov", prov, [["openrouter", "OpenRouter (recommended)"], ["custom", "Another OpenAI-compatible service"], ["ollama", "Ollama, on this computer"], ["lmstudio", "LM Studio, on this computer"]]))}</div></details>
         ${p.local ? `<div class="callout blue" style="margin:0"><div><b>A model on your own computer</b>
           Nothing about you leaves this computer for the AI steps, and there is nothing to pay per use. It needs a capable computer
           (16 GB of memory or more, ideally a recent Mac or a graphics card) and a model good at following instructions: about 14 billion
@@ -58,15 +63,16 @@
             : `<li>Install LM Studio and download a model in it.</li><li>Open the Developer tab, load the model with a <b>context length of 16384 or more</b>, and start the server.</li><li>Press <strong>Find models</strong>, pick it, and press <strong>Test</strong>.</li>`}</ol>
           <button type="button" class="btn sm" style="margin-top:8px" data-link="${esc(p.url)}">${icon("ext")}Get ${esc(p.name.replace(/ \(.*/, ""))}</button></div></div>` : ""}
         <div ${prov === "openrouter" ? "hidden" : ""}>${fld("Server address", inp("apiBase", base, 'placeholder="https://api.example.com/v1"'), p.local ? "Leave this as it is unless you changed the port." : "The address that ends in /v1 (for example https://api.openai.com/v1).")}</div>
-        <div ${p.local ? "hidden" : ""}>${fld("API key", `<input name="apiKey" type="password" autocomplete="off" placeholder="${cfg.hasKey ? "Saved. Paste a new key to replace it." : "sk-or-..."}">`,
+        <div ${p.local ? "hidden" : ""}>${fld(prov === "openrouter" ? "Paste your key here" : "API key", `<input name="apiKey" type="password" autocomplete="off" placeholder="${cfg.hasKey ? "Saved. Paste a new key to replace it." : "sk-or-..."}">`,
           `Stored encrypted on this computer only.${prov === "openrouter" ? ` <a href="#" data-link="https://openrouter.ai/settings/keys">Get an OpenRouter key</a> (add a few dollars of credit first).` : ""}`)}</div>
-        <div class="form-row">
+        <div class="form-row" ${prov === "openrouter" ? "data-adv hidden" : ""}>
           ${fld("Model", `<input name="model" list="${listId}" value="${esc(model)}" placeholder="${p.local ? "Press Find models" : ""}">`, prov === "openrouter" ? "Default: z-ai/glm-5.3-flash (fast and cheap)." : "")}
           ${prov === "ollama" ? fld("Context length (tokens)", inp("contextLength", s.contextLength || 16384, 'type="number" min="8192" step="1024"'), "16384 fits a posting and your resume. More needs more memory.") : ""}
         </div>
         <datalist id="${listId}"></datalist>
         <div class="row-actions"><button type="button" class="btn" data-test>${icon("check")}${p.local ? "Test" : "Test key"}</button>
-          <button type="button" class="btn ghost" data-models>${icon("list")}${p.local ? "Find models" : "Show available models"}</button></div>
+          <button type="button" class="btn ghost" data-models ${prov === "openrouter" ? "data-adv hidden" : ""}>${icon("list")}${p.local ? "Find models" : "Show available models"}</button>
+          ${prov === "openrouter" ? `<a href="#" class="muted" data-show-adv>Choose a different model</a>` : ""}</div>
         <div data-msg></div></div>`;
       bind();
     };
@@ -76,6 +82,11 @@
       const m = el.querySelector("[data-msg]");
       el.querySelectorAll("[name=prov]").forEach((r) => r.onchange = () => { prov = val(el, "prov"); tested = false; draw(); });
       el.querySelectorAll("[data-link]").forEach((a) => a.onclick = (e) => { e.preventDefault(); openUrl(a.dataset.link); });
+      const adv = el.querySelector("[data-show-adv]");
+      if (adv) adv.onclick = (e) => { e.preventDefault(); el.querySelectorAll("[data-adv]").forEach((x) => { x.hidden = false; }); adv.remove(); };
+      // Test as soon as a key is pasted: one less button to find.
+      const keyBox = el.querySelector("[name=apiKey]");
+      keyBox.addEventListener("paste", () => setTimeout(() => { if (keyBox.value.trim().length > 20) el.querySelector("[data-test]").click(); }, 50));
       el.querySelector("[data-test]").onclick = async () => {
         msg(m, "info", P[prov].local ? "Testing. A local model can take a minute or two the first time it loads..." : "Testing...");
         const r = await api("/api/ai/test", cur());
@@ -120,7 +131,14 @@
         <small>PDF or Word (.docx). Several versions of your resume give the app more approved pieces to pick from.</small>
         <input type="file" accept=".pdf,.docx" multiple hidden></div>
       <div data-files class="sub-list"></div>
-      <details><summary class="muted" style="cursor:pointer">Or paste your resume as text</summary><div class="fld" style="margin-top:10px"><textarea name="text" rows="8" placeholder="Paste the full text of your resume"></textarea></div></details>
+      <details class="more" data-builder><summary><b>I don't have a resume</b><span>Answer a few questions and the app makes one with you</span></summary><div class="form">
+        <p class="hint" style="margin:0">List your jobs, newest first. Write what you did in your own words; the AI tidies it up, and you check every line on the next screen.</p>
+        <div class="sub-list" data-jobs></div>
+        <div><button type="button" class="btn sm" data-add-job>${icon("plus")}Add a job</button></div>
+        <div class="form-row">${fld("School or training (optional)", inp("bschool", "", 'placeholder="e.g. Lincoln High School, diploma, 2021"'))}${fld("Skills (optional)", inp("bskills", "", 'placeholder="e.g. cash handling, forklift, Spanish, Excel"'))}</div>
+        ${fld("A sentence about you (optional)", inp("bsummary", "", 'placeholder="e.g. Friendly, reliable worker who loves helping customers."'))}
+        <div><button type="button" class="btn primary" data-build>${icon("bolt")}Make my resume</button></div></div></details>
+      <details class="more"><summary><b>Paste your resume as text</b><span>If your file won't upload</span></summary><div class="fld" style="margin-top:10px"><textarea name="text" rows="8" placeholder="Paste the full text of your resume"></textarea></div></details>
       <div class="row-actions"><button type="button" class="btn primary" data-go>${icon("bolt")}Read my resume${cfg.profile ? " again" : ""}</button>
         ${cfg.profile ? `<label class="check"><input type="checkbox" name="merge" checked>Add to what I already approved</label>` : ""}
         <button type="button" class="btn ghost" data-example>Use the example profile to try the app</button></div>
@@ -135,6 +153,30 @@
     drop.ondragleave = () => drop.classList.remove("over");
     drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove("over"); addFiles(e.dataTransfer.files); };
     const b64 = (f) => f.arrayBuffer().then((buf) => { let s = ""; const u = new Uint8Array(buf); for (let i = 0; i < u.length; i += 32768) s += String.fromCharCode.apply(null, u.subarray(i, i + 32768)); return btoa(s); });
+    const jobRow = () => `<div class="sub-item" data-job><div class="form-row">${fld("Job title", inp("jt", "", 'placeholder="e.g. Cashier"'))}${fld("Where", inp("je", "", 'placeholder="e.g. Target, Austin TX"'))}
+      ${fld("From", inp("jf", "", 'placeholder="e.g. June 2022"'))}${fld("To", inp("jto", "", 'placeholder="e.g. Now"'))}</div>
+      ${fld("What you did", `<textarea name="jd" rows="2" placeholder="e.g. ran the register, helped customers find things, closed the store"></textarea>`)}</div>`;
+    const addJob = () => el.querySelector("[data-jobs]").insertAdjacentHTML("beforeend", jobRow());
+    addJob();
+    el.querySelector("[data-add-job]").onclick = addJob;
+    el.querySelector("[data-build]").onclick = async () => {
+      const a = cfg.answers || {};
+      const jobs = [...el.querySelectorAll("[data-job]")].map((r) => ({ t: val(r, "jt"), e: val(r, "je"), f: val(r, "jf"), to: val(r, "jto"), d: r.querySelector("[name=jd]").value.trim() })).filter((j) => j.t || j.e);
+      if (!jobs.length && !val(el, "bschool")) return msg(m, "err", "Add at least one job, or your school.");
+      const name = [a.firstName, a.lastName].filter(Boolean).join(" ") || "Your Name";
+      const text = [name, [a.city, a.email, a.phone].filter(Boolean).join(" | "), "", val(el, "bsummary") ? "SUMMARY\n" + val(el, "bsummary") + "\n" : "",
+        "EXPERIENCE", ...jobs.map((j) => `${j.t}, ${j.e} (${j.f || "?"} to ${j.to || "?"})\n${j.d.split(/[.;\n]+/).map((x) => x.trim()).filter(Boolean).map((x) => "- " + x).join("\n")}`),
+        val(el, "bschool") ? "\nEDUCATION\n" + val(el, "bschool") : "", val(el, "bskills") ? "\nSKILLS\n" + val(el, "bskills") : "",
+        "\n(Written by the candidate in their own words. Turn each thing they did into a short, plain resume bullet that says only what they wrote. Do not add numbers, tools or claims.)"].join("\n");
+      msg(m, "info", "Making your resume. This takes up to a minute...");
+      el.querySelector("[data-build]").disabled = true;
+      const r = await api("/api/resumes/import", { text, merge: val(el, "merge") });
+      el.querySelector("[data-build]").disabled = false;
+      if (r.error) return msg(m, "err", r.error);
+      msg(m, "ok", "Done. Now check every line.");
+      cfg.profile = r.profile; cfg.answers = r.answers;
+      onImported && onImported(r.profile);
+    };
     el.querySelector("[data-go]").onclick = async () => {
       const text = val(el, "text");
       if (!files.length && !text) return msg(m, "err", "Add a resume file or paste its text.");
@@ -179,7 +221,8 @@
       <button type="button" class="btn sm" data-all="${key}">${icon("check")}Approve all</button></span></div>${body || `<div class="rv-item"><span></span><span class="muted">Nothing here.</span></div>`}</div>`;
     const draw = () => {
       const c = counts();
-      let h = `<div class="banner blue"><div><b>${c.ok} of ${c.n} pieces approved</b>Your resume is only ever assembled from pieces you approve here. Edit anything that is not exactly true, delete what you would never send, then tick it.</div></div>`;
+      let h = `<div class="banner blue"><div style="flex:1"><b>${c.ok} of ${c.n} pieces approved</b>Your resume is only ever made from pieces you approve here. Read each line, fix anything that isn't exactly true, delete what you'd never send, and tick the rest.</div>
+        <div class="right"><button type="button" class="btn sm primary" data-approve-everything>${icon("check")}Everything is true: approve all</button></div></div>`;
       h += group("Summaries", "summaries", arr(p.summaries).map((s, i) => item(`summaries.${i}.text`, s.text, s.approved)).join(""), "summary");
       for (const [k, title] of [["experience", "Experience"], ["projects", "Projects"]]) {
         arr(p[k]).forEach((e, ei) => {
@@ -211,6 +254,13 @@
       el.querySelectorAll("[data-flag]").forEach((e) => e.onchange = () => { const [o, k] = at(e.dataset.flag); o[k] = e.checked; });
       el.querySelectorAll("[data-approve]").forEach((e) => e.onchange = () => { const [o] = at(e.dataset.approve); o.approved = e.checked; e.closest(".rv-item").classList.toggle("ok", e.checked); el.querySelector(".banner b").textContent = `${counts().ok} of ${counts().n} pieces approved`; });
       el.querySelectorAll("[data-del]").forEach((e) => e.onclick = () => { const parts = e.dataset.del.split("."); const idx = Number(parts.pop()); let o = p; for (const x of parts) o = o[x]; o.splice(idx, 1); draw(); });
+      const everything = el.querySelector("[data-approve-everything]");
+      if (everything) everything.onclick = () => {
+        if (!confirm("Approve every piece? Only do this if you've read them and every line is true.")) return;
+        for (const k of ["summaries", "headers", "skills", "education", "bases"]) arr(p[k]).forEach((x) => { x.approved = true; });
+        for (const k of ["experience", "projects"]) arr(p[k]).forEach((e) => arr(e.bullets).forEach((x) => { x.approved = true; }));
+        draw();
+      };
       el.querySelectorAll("[data-all]").forEach((e) => e.onclick = () => { let o = p; for (const x of e.dataset.all.split(".")) o = o[x]; arr(o).forEach((x) => { x.approved = true; }); draw(); });
       el.querySelectorAll("[data-add]").forEach((e) => e.onclick = () => {
         const a = e.dataset.add;
@@ -246,7 +296,7 @@
     };
   }
 
-  // ---------- 3. Common questions ----------
+  // ---------- 3. About you: the answers forms ask for ----------
   const DEM = {
     gender: ["Gender", ["decline", "Male", "Female", "Non-binary"]],
     hispanic: ["Hispanic or Latino", ["decline", "Yes", "No"]],
@@ -255,58 +305,68 @@
     disability: ["Disability", ["decline", "No, I do not have a disability", "Yes, I have a disability (or previously had a disability)"]],
     lgbtq: ["Sexual orientation / LGBTQ+", ["decline", "Heterosexual", "Gay or Lesbian", "Bisexual", "Queer"]],
   };
+  const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+  const SHIFTS = ["Mornings", "Afternoons", "Evenings", "Overnight"];
+  const checks = (name, all, on) => `<div class="radio-row">${all.map((v) => `<label><input type="checkbox" name="${name}" value="${esc(v)}" ${(on || []).includes(v) ? "checked" : ""}>${esc(v)}</label>`).join("")}</div>`;
+  const more = (title, hint, body, open) => `<details class="more" ${open ? "open" : ""}><summary><b>${title}</b><span>${hint}</span></summary><div class="form">${body}</div></details>`;
+
   function questions(el, cfg) {
     const a = cfg.answers;
+    const kind = (cfg.prefs && cfg.prefs.jobKind) || "both";
+    const hourly = kind !== "office", office = kind !== "hourly";
     const eduRow = (e = {}) => `<div class="sub-item" data-edu><div class="form-row">
-      ${fld("School", inp("school", e.school))}${fld("Degree", inp("degree", e.degree, 'placeholder="Bachelor of Science, Associate..."'))}${fld("Field of study", inp("field", e.field))}</div>
-      <div class="form-row">${fld("Start", inp("start", e.start, 'type="month"'))}${fld("End (or expected)", inp("end", e.end, 'type="month"'))}
+      ${fld("School", inp("school", e.school, 'placeholder="School, college or program"'))}${fld("What you earned", inp("degree", e.degree, 'placeholder="High school diploma, GED, Associate, Bachelor of Science..."'))}${fld("Subject (optional)", inp("field", e.field))}</div>
+      <div class="form-row">${fld("Started", inp("start", e.start, 'type="month"'))}${fld("Finished (or expect to)", inp("end", e.end, 'type="month"'))}
       <div style="align-self:end"><button type="button" class="btn ghost sm" data-rm-row>${icon("trash")}Remove</button></div></div></div>`;
     const yearsRow = (y = {}) => `<div class="form-row" data-years style="grid-template-columns:1fr 120px auto">
-      <input class="inp" name="ytype" value="${esc(y.type || "")}" placeholder="Kind of work or skill, e.g. Software engineering, Python, Customer support">
+      <input class="inp" name="ytype" value="${esc(y.type || "")}" placeholder="${office ? "e.g. Software engineering, Customer service, Python" : "e.g. Customer service, Retail, Food service, Driving"}">
       <input class="inp" name="yyears" type="number" min="0" step="0.5" value="${esc(y.years ?? "")}" placeholder="Years">
       <button type="button" class="btn ghost sm" data-rm-row>${icon("trash")}</button></div>`;
     el.innerHTML = `<div class="form">
-      <div class="section-t">You</div>
-      <div class="form-row">${fld("First name", inp("firstName", a.firstName))}${fld("Last name", inp("lastName", a.lastName))}${fld("Preferred first name", inp("preferredName", a.preferredName), "Optional")}</div>
-      <div class="form-row">${fld("Email", inp("email", a.email, 'type="email"'), "The address employers will write to.")}${fld("Phone", inp("phone", a.phone, 'type="tel"'))}</div>
-      <div class="form-row">${fld("LinkedIn", inp("linkedin", a.linkedin, 'placeholder="https://www.linkedin.com/in/..."'))}${fld("GitHub", inp("github", a.github))}${fld("Website or portfolio", inp("website", a.website))}</div>
-      ${fld("Other links", inp("otherLinks", a.otherLinks), "Separate with spaces.")}
-      <div class="section-t">Where you live</div>
-      <div class="form-row">${fld("City", inp("city", a.city))}${fld("State / province", inp("state", a.state))}${fld("ZIP / postal code", inp("zip", a.zip))}${fld("Country", inp("country", a.country))}</div>
-      ${fld("Street address", inp("street", a.street), "Optional. Only used when a form requires it; leave empty and those forms wait for you.")}
-      <div class="section-t">Work authorization</div>
-      <div class="form-row">${fld("Country you are applying to work in", inp("authCountry", a.authCountry))}</div>
-      <div class="form-row">${fld("Are you legally authorized to work there?", radios("workAuthorized", a.workAuthorized, [["yes", "Yes"], ["no", "No"]]))}
-        ${fld("Will you need visa sponsorship, now or later?", radios("needsSponsorship", a.needsSponsorship, [["no", "No"], ["yes", "Yes"]]))}</div>
-      <div class="section-t">Education</div>
-      <div class="sub-list" data-edu-list>${(a.education || []).map(eduRow).join("")}</div>
-      <div><button type="button" class="btn sm" data-add-edu>${icon("plus")}Add school</button></div>
-      <div class="section-t">Years of experience</div>
-      <p class="hint" style="margin:-4px 0 0">Forms often ask "how many years of X". The app answers with exactly these numbers and never more. A question about something not listed waits for you.</p>
-      <div class="sub-list" data-years-list>${(a.years || []).map(yearsRow).join("")}</div>
-      <div class="row-actions"><button type="button" class="btn sm" data-add-years>${icon("plus")}Add a kind of experience</button></div>
-      <div class="form-row">${fld("All professional work, any field (years)", inp("totalYears", a.totalYears, 'type="number" min="0" step="0.5"'))}
-        ${fld("Current or most recent employer", inp("currentEmployer", a.currentEmployer))}${fld("Current or most recent job title", inp("currentTitle", a.currentTitle))}</div>
-      <div class="section-t">Availability</div>
-      <div class="form-row">${fld("Notice period", inp("noticePeriod", a.noticePeriod, 'placeholder="2 weeks, None..."'))}${fld("When you can start", inp("startAvailability", a.startAvailability, 'placeholder="Two weeks after accepting an offer"'))}</div>
-      ${fld("Willing to relocate?", radios("relocation", a.relocation, [["no", "No"], ["radius", "Only for jobs inside my search radius"], ["anywhere", "Yes, anywhere"]]))}
-      <div class="form-row">${fld("Willing to travel for work?", radios("travel", a.travel, [["some", "Occasionally"], ["yes", "Yes"], ["no", "No"]]))}
+      <div class="callout blue" style="margin:0"><div>Only the first part is required. Everything below it is optional: the more you answer, the fewer forms stop to ask you.</div></div>
+      <div class="section-t">Required</div>
+      <div class="form-row">${fld("First name", inp("firstName", a.firstName, 'autocomplete="given-name"'))}${fld("Last name", inp("lastName", a.lastName, 'autocomplete="family-name"'))}</div>
+      <div class="form-row">${fld("Email", inp("email", a.email, 'type="email" autocomplete="email"'), "Employers write to this address.")}${fld("Phone", inp("phone", a.phone, 'type="tel" autocomplete="tel"'))}</div>
+      <div class="form-row">${fld("City", inp("city", a.city))}${fld("State", inp("state", a.state))}${fld("ZIP code", inp("zip", a.zip))}${fld("Country", inp("country", a.country))}</div>
+      <div class="form-row">${fld(`Are you allowed to work in ${esc(/^united (states|kingdom)|netherlands|philippines/i.test(a.authCountry || "United States") ? "the " + (a.authCountry || "United States") : a.authCountry)}?`, radios("workAuthorized", a.workAuthorized, [["yes", "Yes"], ["no", "No"]]))}
+        ${fld("Will you need a visa sponsor, now or later?", radios("needsSponsorship", a.needsSponsorship, [["no", "No"], ["yes", "Yes"]]))}
         ${fld("Are you 18 or older?", radios("over18", a.over18, [["yes", "Yes"], ["no", "No"]]))}</div>
-      <div class="form-row">${fld("How you heard about the job", inp("heardAbout", a.heardAbout), "The app finds jobs on a job board, so the default is \"Job board\".")}${fld("Desired salary (optional)", inp("salary", a.salary), "Leave empty and the app uses the posting's range or \"open to discussing\".")}</div>
-      <div class="section-t">Legal agreements</div>
-      ${fld("Arbitration agreements in an application", radios("arbitration", a.arbitration, [["never", "Always ask me (recommended)"], ["plain", "Accept plain arbitration agreements"], ["list", "Accept only for these companies"]]),
-        "Jury, class-action and claim waivers, non-competes and questions about criminal history always wait for you, whatever you pick.")}
-      <div data-arb-list style="${a.arbitration === "list" ? "" : "display:none"}"></div>
-      ${fld("Background checks and drug tests, if you get an offer", radios("screenings", a.screenings, [["ask", "Always ask me"], ["yes", "Yes, I consent"]]),
-        "Only for a plain yes/no question. Anything that also waives rights still waits for you.")}
-      <div class="section-t">Voluntary self-identification</div>
-      <p class="hint" style="margin:-4px 0 0">Answered only when a form asks. "Decline to answer" is the default for each.</p>
-      <div class="form-row">${Object.entries(DEM).map(([k, [label, opts]]) => fld(label, sel("dem_" + k, (a.demographics || {})[k] || "decline", opts.map((o) => [o, o === "decline" ? "Decline to answer" : o])))).join("")}</div>
-      <div class="section-t">Things you can never claim</div>
-      <div data-cannot></div>
-      <small class="hint">Skills, tools, credentials or experience you do not have. Any AI-written answer that mentions one is thrown out, and must-haves on this list count as a fail.</small>
+      ${more("When you can work", "Days, shifts, hours, getting there", `
+        ${fld("Days you can work", checks("days", DAYS, a.daysAvailable))}
+        ${fld("Shifts you can work", checks("shifts", SHIFTS, a.shifts))}
+        <div class="form-row">${fld("Hours you want", radios("hoursWanted", a.hoursWanted, [["either", "Full or part time"], ["full", "Full time"], ["part", "Part time"]]))}
+          ${fld("When you can start", inp("startAvailability", a.startAvailability, 'placeholder="Right away, Two weeks after an offer..."'))}</div>
+        <div class="form-row">${fld("Reliable transportation?", radios("transportation", a.transportation, [["yes", "Yes"], ["no", "No"], ["", "Don't say"]]))}
+          ${fld("Valid driver's license?", radios("driversLicense", a.driversLicense, [["yes", "Yes"], ["no", "No"], ["", "Don't say"]]))}
+          ${fld("Most you can lift (pounds)", inp("canLift", a.canLift, 'type="number" min="0" placeholder="e.g. 50"'), "Leave empty to be asked.")}</div>
+        <div class="form-row">${fld("Notice to give your current job", inp("noticePeriod", a.noticePeriod, 'placeholder="2 weeks, None..."'))}
+          ${fld("Desired pay (optional)", inp("salary", a.salary, 'placeholder="e.g. $18 an hour"'), "Empty: the posted range, or \"open to discussing\".")}</div>
+        <div class="form-row">${fld("Willing to move for a job?", radios("relocation", a.relocation, [["no", "No"], ["radius", "Only nearby"], ["anywhere", "Yes, anywhere"]]))}
+          ${fld("Willing to travel for work?", radios("travel", a.travel, [["some", "Sometimes"], ["yes", "Yes"], ["no", "No"]]))}</div>`, hourly)}
+      ${more("Work and school", "Experience, schooling, current job", `
+        <div class="form-row">${fld("Current or most recent employer", inp("currentEmployer", a.currentEmployer))}${fld("Current or most recent job title", inp("currentTitle", a.currentTitle))}</div>
+        ${fld("Schools", `<div class="sub-list" data-edu-list>${(a.education || []).map(eduRow).join("")}</div><div><button type="button" class="btn sm" data-add-edu>${icon("plus")}Add a school</button></div>`)}
+        ${fld("Years of experience", `<div class="sub-list" data-years-list>${(a.years || []).map(yearsRow).join("")}</div><div><button type="button" class="btn sm" data-add-years>${icon("plus")}Add a kind of work</button></div>`,
+          "Forms often ask \"how many years of X\". The app uses exactly these numbers, never more; anything not listed waits for you.")}
+        ${fld("All work experience, any kind (years)", inp("totalYears", a.totalYears, 'type="number" min="0" step="0.5"'))}`, office)}
+      ${more("Links and address", "LinkedIn, website, street address", `
+        <div class="form-row">${fld("LinkedIn", inp("linkedin", a.linkedin, 'placeholder="https://www.linkedin.com/in/..."'))}${fld("Website or portfolio", inp("website", a.website))}${fld("GitHub", inp("github", a.github))}</div>
+        ${fld("Other links", inp("otherLinks", a.otherLinks), "Separate with spaces.")}
+        ${fld("Street address", inp("street", a.street), "Only used when a form requires it.")}
+        <div class="form-row">${fld("Preferred first name", inp("preferredName", a.preferredName))}${fld("Country you're applying to work in", inp("authCountry", a.authCountry))}
+          ${fld("How you heard about the job", inp("heardAbout", a.heardAbout), "\"Job board\" unless you change it.")}</div>`)}
+      ${more("Legal questions", "Arbitration, background checks, criminal history", `
+        ${fld("Criminal-history questions (\"Have you ever been convicted...\")", radios("convictions", a.convictions, [["ask", "Always ask me"], ["none", "Answer No: I have no convictions"]]))}
+        ${fld("Background checks and drug tests, if you get an offer", radios("screenings", a.screenings, [["ask", "Always ask me"], ["yes", "Yes, I consent"]]), "Only plain yes/no questions. Anything that also waives your rights waits for you.")}
+        ${fld("Arbitration agreements", radios("arbitration", a.arbitration, [["never", "Always ask me (recommended)"], ["plain", "Accept plain ones"], ["list", "Accept only for these companies"]]),
+          "Jury and class-action waivers, non-competes and releases of claims always wait for you.")}
+        <div data-arb-list style="${a.arbitration === "list" ? "" : "display:none"}"></div>`)}
+      ${more("Voluntary self-identification", "Gender, race, veteran, disability: \"Decline\" unless you choose", `
+        <div class="form-row">${Object.entries(DEM).map(([k, [label, opts]]) => fld(label, sel("dem_" + k, (a.demographics || {})[k] || "decline", opts.map((o) => [o, o === "decline" ? "Decline to answer" : o])))).join("")}</div>`)}
+      ${more("Things you can never claim", "Skills or licenses you don't have", `<div data-cannot></div>
+        <small class="hint">Any AI-written answer that mentions one is thrown out, and jobs that require one are skipped.</small>`)}
     </div>`;
-    const cannot = tagInput(el.querySelector("[data-cannot]"), a.cannotClaim, "e.g. Kubernetes, Java, security clearance, management experience");
+    const cannot = tagInput(el.querySelector("[data-cannot]"), a.cannotClaim, office ? "e.g. Java, Kubernetes, security clearance" : "e.g. forklift license, CDL, bilingual Spanish");
     const arbList = tagInput(el.querySelector("[data-arb-list]"), a.arbitrationCompanies, "Company names");
     el.querySelectorAll("[name=arbitration]").forEach((r) => r.onchange = () => { el.querySelector("[data-arb-list]").style.display = val(el, "arbitration") === "list" ? "" : "none"; });
     const bindRm = () => el.querySelectorAll("[data-rm-row]").forEach((b) => b.onclick = () => b.closest("[data-edu], [data-years]").remove());
@@ -318,80 +378,130 @@
       async save() {
         const out = {};
         for (const k of ["firstName", "lastName", "preferredName", "email", "phone", "linkedin", "github", "website", "otherLinks", "street", "city", "state", "zip", "country",
-          "authCountry", "workAuthorized", "needsSponsorship", "travel", "over18", "currentEmployer", "currentTitle", "noticePeriod", "startAvailability", "relocation", "heardAbout", "salary", "arbitration", "screenings"]) out[k] = val(el, k);
+          "authCountry", "workAuthorized", "needsSponsorship", "travel", "over18", "currentEmployer", "currentTitle", "noticePeriod", "startAvailability", "relocation", "heardAbout",
+          "salary", "arbitration", "screenings", "convictions", "hoursWanted", "transportation", "driversLicense", "canLift"]) out[k] = val(el, k);
+        out.daysAvailable = [...el.querySelectorAll("[name=days]:checked")].map((x) => x.value);
+        out.shifts = [...el.querySelectorAll("[name=shifts]:checked")].map((x) => x.value);
         out.totalYears = Number(val(el, "totalYears")) || 0;
         out.education = [...el.querySelectorAll("[data-edu]")].map((r) => ({ school: val(r, "school"), degree: val(r, "degree"), field: val(r, "field"), start: val(r, "start"), end: val(r, "end") })).filter((e) => e.school);
         out.years = [...el.querySelectorAll("[data-years]")].map((r) => ({ type: val(r, "ytype"), years: Number(val(r, "yyears")) || 0 })).filter((y) => y.type);
         out.demographics = Object.fromEntries(Object.keys(DEM).map((k) => [k, val(el, "dem_" + k)]));
         out.cannotClaim = cannot.get();
         out.arbitrationCompanies = arbList.get();
-        if (!out.firstName || !out.lastName) return "Enter your first and last name.";
-        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(out.email)) return "Enter a valid email address.";
-        if (!out.phone) return "Enter your phone number.";
-        if (!out.city) return "Enter your city.";
-        for (const e of out.education) if (e.end && e.start && e.end < e.start) return `${e.school}: the end date is before the start date.`;
+        const missing = [];
+        if (!out.firstName || !out.lastName) missing.push("your first and last name");
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(out.email)) missing.push("a valid email address");
+        if (!out.phone) missing.push("your phone number");
+        if (!out.city) missing.push("your city");
+        if (missing.length) return "Please add " + missing.join(", ") + ".";
+        for (const e of out.education) if (e.end && e.start && e.end < e.start) return `${e.school}: the finish date is before the start date.`;
         cfg.answers = await api("/api/answers/save", { answers: out });
         return null;
       },
     };
   }
 
-  // ---------- 4. Job preferences ----------
-  const LEVELS = [["intern", "Internship"], ["junior", "Entry level / junior"], ["middle", "Mid level"], ["senior", "Senior"], ["lead", "Lead / manager"], ["staff", "Staff"], ["principal", "Principal"]];
+  // ---------- 4. What jobs, where, and where to look ----------
+  const SUGGEST = {
+    office: ["Software Engineer", "Data Analyst", "Customer Success Manager", "Administrative Assistant", "Accountant", "Marketing Coordinator", "Project Coordinator", "IT Support Specialist"],
+    hourly: ["Cashier", "Retail Sales Associate", "Customer Service Representative", "Warehouse Associate", "Barista", "Server", "Line Cook", "Delivery Driver", "Front Desk Agent", "Caregiver", "Medical Assistant", "Janitor"],
+  };
+  const LEVELS = [["junior", "No experience needed or entry level"], ["middle", "Some experience (mid level)"], ["senior", "Senior"], ["lead", "Manager or team lead"], ["intern", "Internships"]];
+  const BOARDS = [
+    ["hiringcafe", "HiringCafe", "Jobs of every kind, straight from employers' own sites. Best for most people."],
+    ["freehire", "freehire", "Office, tech and professional jobs."],
+    ["simplify", "Simplify lists", "New-graduate jobs and internships, mostly tech (Simplify's free lists on GitHub)."],
+    ["google", "Google Jobs", "What Google's job search shows. Needs a free SerpApi key (250 searches a month)."],
+  ];
   function prefs(el, cfg) {
     const p = cfg.prefs;
+    const kind = p.jobKind || "both";
     let cities = [...(p.cities || [])];
+    const boards = { ...(p.boards || {}) };
+    const sugg = kind === "office" ? SUGGEST.office : kind === "hourly" ? SUGGEST.hourly : [...SUGGEST.hourly.slice(0, 6), ...SUGGEST.office.slice(0, 4)];
     el.innerHTML = `<div class="form">
-      ${fld("Job titles to search for", `<div data-titles></div>`, "Each title is searched on its own. Add the variants you would accept (e.g. Software Engineer, Backend Engineer, Web Developer).")}
-      ${fld("What you want the work to involve (optional)", `<div data-keywords></div>`, "Used when the AI screens each posting for fit, e.g. React, payments, healthcare.")}
-      ${fld("Title words that rule a job out (optional)", `<div data-titleex></div>`, "Seniority words are handled by the levels below.")}
-      <div class="section-t">Where</div>
-      <div class="fld"><span>Cities</span><div class="suggest"><input class="inp" data-city placeholder="Start typing a city"><div class="suggest-list" hidden></div></div>
+      ${fld("What jobs do you want?", `<div data-titles></div><div class="chips" data-sugg style="margin-top:8px">${sugg.map((t) => `<button type="button" class="tag chip-add">+ ${esc(t)}</button>`).join("")}</div>`,
+        "Type a job title and press Enter, or click a suggestion. Add a few similar titles to find more jobs.")}
+      <div class="fld"><span>Where?</span><div class="suggest"><input class="inp" data-city placeholder="Type your city, then pick it from the list"><div class="suggest-list" hidden></div></div>
         <div data-cities class="tags" style="margin-top:6px"></div></div>
-      <div class="form-row">${fld("Radius", inp("radius", p.radius, 'type="number" min="0" max="500"'))}${fld("Unit", sel("radiusUnit", p.radiusUnit, [["mi", "miles"], ["km", "km"]]))}</div>
-      <label class="check"><input type="checkbox" name="remote" ${p.remote ? "checked" : ""}>Also remote jobs open to people in</label>
-      <div class="form-row"><div class="fld"><select name="remoteCountry" data-countries></select></div></div>
-      <div class="section-t">Level</div>
-      <div class="fld"><span>Levels you would accept</span><div class="radio-row">${LEVELS.map(([v, l]) => `<label><input type="checkbox" name="lvl" value="${v}" ${(p.seniority || []).includes(v) ? "checked" : ""}>${l}</label>`).join("")}</div></div>
-      <div class="form-row">${fld("Most years of experience a job may require", inp("maxYearsRequired", p.maxYearsRequired, 'type="number" min="0" max="30"'))}
-        ${fld("Only postings from the last", sel("postedWithinDays", p.postedWithinDays, [[3, "3 days"], [7, "7 days"], [14, "14 days"], [30, "30 days"], [60, "60 days"]]))}</div>
-      <div class="section-t">Companies</div>
-      ${fld("Companies to never apply to", `<div data-exclude></div>`, "Your current employer, places you already work with, anywhere you would not go.")}
-      <label class="check"><input type="checkbox" name="excludeAgencies" ${p.excludeAgencies ? "checked" : ""}>Skip recruiting agencies and repost sites (${esc((cfg.agencies || []).slice(0, 5).join(", "))}...)</label>
-      ${fld("Jobs you already applied to elsewhere (optional)", `<textarea name="alreadyApplied" rows="4" placeholder="One per line: a posting link, or Company - Job title">${esc(p.alreadyApplied || "")}</textarea>`, "The app never applies to these.")}
+      <div class="fld"><span>How far are you willing to go? <b data-radius-val>${esc(p.radius)} ${p.radiusUnit === "km" ? "km" : "miles"}</b></span>
+        <input type="range" name="radius" min="1" max="100" value="${esc(Math.min(100, p.radius || 25))}" style="width:100%;max-width:420px"></div>
+      <label class="check"><input type="checkbox" name="remote" ${p.remote ? "checked" : ""}>Also jobs I can do from home (remote)</label>
+      ${fld("What level?", `<div class="radio-row">${LEVELS.map(([v, l]) => `<label><input type="checkbox" name="lvl" value="${v}" ${(v === "intern" ? p.internships : (p.seniority || []).includes(v)) ? "checked" : ""}>${l}</label>`).join("")}</div>`)}
+      <div class="section-t">Where to look</div>
+      <div class="board-list">${BOARDS.map(([id, name, desc]) => `<label class="board ${boards[id] ? "on" : ""}"><input type="checkbox" name="board" value="${id}" ${boards[id] ? "checked" : ""}>
+        <div><b>${name}</b><small>${desc}</small>${id === "google" ? `<div data-google></div>` : ""}</div></label>`).join("")}</div>
+      <small class="hint">Found a job somewhere else (Google, Simplify, Indeed, a company's website)? Use <b>Add a job</b> on the Overview and paste its link.</small>
+      ${more("More options", "Exclusions, posting age, experience limits", `
+        ${fld("What you want the work to involve (optional)", `<div data-keywords></div>`, "The AI favors jobs like these, e.g. healthcare, React, working outdoors.")}
+        ${fld("Words that rule a job title out (optional)", `<div data-titleex></div>`)}
+        ${fld("Companies to never apply to", `<div data-exclude></div>`, "Your current employer, and anywhere you would not go.")}
+        <label class="check"><input type="checkbox" name="excludeAgencies" ${p.excludeAgencies ? "checked" : ""}>Skip recruiting agencies and repost sites</label>
+        <div class="form-row">${fld("Most years of experience a job may require", inp("maxYearsRequired", p.maxYearsRequired, 'type="number" min="0" max="30"'))}
+          ${fld("Only jobs posted in the last", sel("postedWithinDays", p.postedWithinDays, [[3, "3 days"], [7, "7 days"], [14, "14 days"], [30, "30 days"], [60, "60 days"]]))}
+          ${fld("Distance in", sel("radiusUnit", p.radiusUnit, [["mi", "miles"], ["km", "kilometers"]]))}
+          ${fld("Remote jobs open to people in", `<select name="remoteCountry" data-countries></select>`)}</div>
+        ${fld("Jobs you already applied to elsewhere", `<textarea name="alreadyApplied" rows="3" placeholder="One per line: a job link, or Company - Job title">${esc(p.alreadyApplied || "")}</textarea>`, "The app never applies to these.")}`)}
     </div>`;
-    const titles = tagInput(el.querySelector("[data-titles]"), p.titles, "e.g. Software Engineer");
-    const keywords = tagInput(el.querySelector("[data-keywords]"), p.keywords, "e.g. React");
-    const titleEx = tagInput(el.querySelector("[data-titleex]"), p.titleExclude, "e.g. mechanical, sales");
+    const titles = tagInput(el.querySelector("[data-titles]"), p.titles, kind === "office" ? "e.g. Software Engineer" : "e.g. Cashier");
+    el.querySelectorAll(".chip-add").forEach((b) => b.onclick = () => {
+      const input = el.querySelector("[data-titles] input");
+      input.value = b.textContent.replace(/^\+\s*/, "");
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      b.remove();
+    });
+    const keywords = tagInput(el.querySelector("[data-keywords]"), p.keywords, "e.g. healthcare");
+    const titleEx = tagInput(el.querySelector("[data-titleex]"), p.titleExclude, "e.g. night shift, sales");
     const exclude = tagInput(el.querySelector("[data-exclude]"), p.excludeCompanies, "Company name");
+    const unit = () => (val(el, "radiusUnit") === "km" ? "km" : "miles");
+    const r = el.querySelector("[name=radius]");
+    r.oninput = () => { el.querySelector("[data-radius-val]").textContent = `${r.value} ${unit()}`; };
+    el.querySelector("[name=radiusUnit]").onchange = r.oninput;
+    el.querySelectorAll("[name=board]").forEach((b) => b.onchange = () => { b.closest(".board").classList.toggle("on", b.checked); boards[b.value] = b.checked; if (b.value === "google") drawGoogle(); });
+    const drawGoogle = () => {
+      const host = el.querySelector("[data-google]");
+      if (!boards.google) { host.innerHTML = ""; return; }
+      host.innerHTML = cfg.hasSerpKey ? `<small class="ok-line">Key saved · ${esc(cfg.googleUse || 0)} searches used this month <a href="#" data-gremove>Remove key</a></small>`
+        : `<div class="row-actions" style="margin-top:6px"><input class="inp" data-gkey type="password" placeholder="Paste your SerpApi key" style="max-width:280px">
+           <button type="button" class="btn sm" data-gsave>Save key</button><button type="button" class="btn ghost sm" data-glink>Get a free key</button></div><div data-gmsg></div>`;
+      const s = host.querySelector("[data-gsave]");
+      if (s) s.onclick = async (e) => { e.preventDefault(); const k = host.querySelector("[data-gkey]").value; const res = await api("/api/google/save", { key: k });
+        if (res.error) return msg(host.querySelector("[data-gmsg]"), "err", res.error); cfg.hasSerpKey = true; drawGoogle(); };
+      const l = host.querySelector("[data-glink]"); if (l) l.onclick = (e) => { e.preventDefault(); openUrl("https://serpapi.com/users/sign_up"); };
+      const rm = host.querySelector("[data-gremove]"); if (rm) rm.onclick = async (e) => { e.preventDefault(); await api("/api/google/remove", {}); cfg.hasSerpKey = false; drawGoogle(); };
+    };
+    drawGoogle();
     const drawCities = () => {
       const host = el.querySelector("[data-cities]");
-      host.innerHTML = cities.length ? cities.map((c, i) => `<span class="tag">${icon("pin")}${esc(c.label || c.name)}<button type="button" data-i="${i}">&times;</button></span>`).join("") : `<span class="muted" style="padding:0 6px">No cities yet</span>`;
+      host.innerHTML = cities.length ? cities.map((c, i) => `<span class="tag">${icon("pin")}${esc(c.label || c.name)}<button type="button" data-i="${i}">&times;</button></span>`).join("") : `<span class="muted" style="padding:0 6px">No city yet</span>`;
       host.querySelectorAll("button").forEach((b) => b.onclick = () => { cities.splice(Number(b.dataset.i), 1); drawCities(); });
     };
     drawCities();
     const box = el.querySelector("[data-city]"), list = el.querySelector(".suggest-list");
     let t;
     box.oninput = () => { clearTimeout(t); t = setTimeout(async () => {
-      const r = await api("/api/cities?q=" + encodeURIComponent(box.value));
-      list.hidden = !r.length;
-      list.innerHTML = r.map((c, i) => `<div data-i="${i}">${esc(c.label)}</div>`).join("");
-      list.querySelectorAll("div").forEach((d) => d.onclick = () => { const c = r[Number(d.dataset.i)]; if (!cities.some((x) => x.label === c.label)) cities.push(c); box.value = ""; list.hidden = true; drawCities(); });
+      const res = await api("/api/cities?q=" + encodeURIComponent(box.value));
+      list.hidden = !res.length;
+      list.innerHTML = res.map((c, i) => `<div data-i="${i}">${esc(c.label)}</div>`).join("");
+      list.querySelectorAll("div").forEach((d) => d.onclick = () => { const c = res[Number(d.dataset.i)]; if (!cities.some((x) => x.label === c.label)) cities.push(c); box.value = ""; list.hidden = true; drawCities(); });
     }, 150); };
     box.onblur = () => setTimeout(() => { list.hidden = true; }, 200);
     api("/api/countries").then((cs) => { el.querySelector("[data-countries]").innerHTML = cs.map((c) => `<option value="${c.code}" ${c.code === p.remoteCountry ? "selected" : ""}>${esc(c.name)}</option>`).join(""); });
     return {
       async save() {
+        const lv = [...el.querySelectorAll("[name=lvl]:checked")].map((x) => x.value);
         const out = {
           titles: titles.get(), keywords: keywords.get(), titleExclude: titleEx.get(), excludeCompanies: exclude.get(),
-          cities, radius: Number(val(el, "radius")) || 0, radiusUnit: val(el, "radiusUnit"), remote: val(el, "remote"), remoteCountry: val(el, "remoteCountry") || "US",
-          seniority: [...el.querySelectorAll("[name=lvl]:checked")].map((x) => x.value), maxYearsRequired: Number(val(el, "maxYearsRequired")) || 0,
-          postedWithinDays: Number(val(el, "postedWithinDays")) || 14, excludeAgencies: val(el, "excludeAgencies"), alreadyApplied: val(el, "alreadyApplied"),
+          cities, radius: Number(val(el, "radius")) || 25, radiusUnit: val(el, "radiusUnit"), remote: val(el, "remote"), remoteCountry: val(el, "remoteCountry") || p.remoteCountry || "US",
+          seniority: lv.filter((x) => x !== "intern").flatMap((x) => (x === "lead" ? ["lead", "staff", "principal"] : [x])), internships: lv.includes("intern"),
+          maxYearsRequired: Number(val(el, "maxYearsRequired")) || 0, postedWithinDays: Number(val(el, "postedWithinDays")) || 14,
+          excludeAgencies: val(el, "excludeAgencies"), alreadyApplied: val(el, "alreadyApplied"), boards,
         };
-        out.internships = out.seniority.includes("intern");
-        if (!out.titles.length) return "Add at least one job title.";
-        if (!out.cities.length && !out.remote) return "Add a city, or allow remote jobs.";
-        if (!out.seniority.length) return "Pick at least one level.";
+        if (!out.titles.length) return "Add at least one job title (type it and press Enter, or click a suggestion).";
+        if (!out.cities.length && !out.remote) return "Pick your city from the list, or tick remote jobs.";
+        if (!lv.length) return "Pick at least one level.";
+        if (!Object.values(boards).some(Boolean)) return "Pick at least one place to look for jobs.";
+        if (boards.google && !cfg.hasSerpKey) return "Google Jobs needs a SerpApi key: paste it, or untick Google Jobs.";
         cfg.prefs = await api("/api/prefs/save", { prefs: out });
         return null;
       },

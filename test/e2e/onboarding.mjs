@@ -79,11 +79,14 @@ try {
   await shot("1-welcome");
   await win.click("#hist-import");
   await win.waitForSelector('#hist-msg .msg.ok:has-text("Imported 2")');
+  await win.click('.jobkind:has-text("Both")');
   await win.check("#terms");
   await next();
 
   await heading("Connect an AI model");
   // A local model through Ollama: no key, models found on the server, the context window checked.
+  assert.ok(await win.isVisible('.steps-list:has-text("Make a free OpenRouter account")'), "OpenRouter steps shown first");
+  await win.click('summary:has-text("Other ways to connect an AI")');
   await win.check('input[name=prov][value=ollama]');
   await win.fill("input[name=apiBase]", apiBase);
   assert.ok(!(await win.isVisible("input[name=apiKey]")), "no key for a local model");
@@ -104,7 +107,7 @@ try {
   await shot("2-ai");
   await next();
 
-  await heading("Upload your resume");
+  await heading("Your resume");
   await win.setInputFiles("input[type=file]", resumeFile);
   await shot("3-upload");
   await win.click("[data-go]");
@@ -115,7 +118,7 @@ try {
   await shot("4-review-approved");
   await next();
 
-  await heading("Answers to the usual questions");
+  await heading("About you");
   assert.strictEqual(await win.inputValue("input[name=firstName]"), "Jordan");
   assert.strictEqual(await win.inputValue("input[name=email]"), "jordan.lee@example.com");
   await win.fill("input[name=city]", "Austin");
@@ -127,6 +130,9 @@ try {
   await heading("What jobs to look for");
   await win.fill("[data-titles] input", "Software Engineer");
   await win.press("[data-titles] input", "Enter");
+  await win.click('.chip-add:has-text("Cashier")');
+  assert.ok(await win.isVisible('[data-titles] .tag:has-text("Cashier")'), "a suggested title is added with one click");
+  assert.ok(await win.isChecked('.board input[value=hiringcafe]'), "HiringCafe on by default");
   await win.fill("[data-city]", "Austin");
   await win.click('.suggest-list div:has-text("Austin")');
   await shot("6-prefs");
@@ -160,13 +166,38 @@ try {
   assert.deepStrictEqual(jobs.map((j) => `${j.slug}:${j.status}`), ["old-job-1:applied", "old-job-2:failed"]);
   assert.ok(fs.existsSync(path.join(backups, "applied-jobs.json.gz.bak")), "previous backup kept");
 
+  const prefsSaved = JSON.parse(fs.readFileSync(path.join(data, "prefs.json"), "utf8"));
+  assert.deepStrictEqual(prefsSaved.titles, ["Software Engineer", "Cashier"]);
+  assert.ok(prefsSaved.boards.hiringcafe && prefsSaved.boards.freehire);
+  // Add a job by its link.
+  await win.click('button:has-text("Add a job")');
+  await win.fill("#aj-url", "https://www.google.com/search?q=jobs+near+me");
+  await win.click("#aj-go");
+  await win.waitForSelector('#aj-msg .msg.err:has-text("Google search page")');
+  await shot("8b-add-job");
+  // A job on a site that needs an account goes to "Apply yourself", with Open and "I applied".
+  await win.fill("#aj-url", "https://acme.wd5.myworkdayjobs.com/en-US/careers/job/Austin-TX/Cashier_R1");
+  await win.click("#aj-go");
+  await win.waitForSelector('#aj-msg .msg.ok:has-text("Apply yourself")', { timeout: 60000 });
+  await win.click("#aj-close");
+  await win.click('.nav:has-text("Apply yourself")');
+  await win.waitForSelector("tbody tr");
+  await win.click("tbody tr");
+  await win.waitForSelector('#drawer button:has-text("I applied")');
+  await shot("8c-apply-yourself");
+  await win.click('#drawer button:has-text("I applied")');
+  await win.waitForSelector('#drawer .badge:has-text("Applied")');
+  await win.click("#drawer .dr-close");
+  await win.click('.nav:has-text("Overview")');
+
   // Settings and profile pages render.
   await win.click('.nav:has-text("Settings")');
   await win.waitForSelector("#sec-prefs .tags");
-  await win.waitForSelector('#sec-history .hint:has-text("2 so far")');
+  await win.waitForSelector('#sec-history .hint:has-text("3 so far")');
   await win.waitForSelector('#update-card button:has-text("Update now")');
   await shot("9-settings");
   // Playwright inside the packaged app: find the installed browsers, and optionally download Chromium.
+  await win.click('details:has(#sec-running) > summary');
   await win.click("#sec-running [data-detect]");
   const found = await win.waitForSelector('#sec-running .msg.ok:has-text("Chrome:")', { timeout: 180000 });
   console.log("browsers:", await found.innerText());

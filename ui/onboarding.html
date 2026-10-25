@@ -25,11 +25,11 @@
 const { esc, icon, msg } = Forms;
 const STEPS = [
   { id: "welcome", label: "Welcome" },
-  { id: "ai", label: "AI key", title: "Connect an AI model", lead: "Job Autopilot needs an AI model: one you pay for directly with your own key (about a cent or less per application with the default), or a free one running on this computer with Ollama or LM Studio." },
-  { id: "resumes", label: "Your resume", title: "Upload your resume", lead: "The app reads it and splits it into summaries, bullets, skills and a layout. You approve each piece next." },
-  { id: "review", label: "Review", title: "Approve every piece", lead: "Resumes are only ever assembled from what you approve here, so nothing reaches an employer that you did not write and check." },
-  { id: "questions", label: "Common questions", title: "Answers to the usual questions", lead: "Application forms ask these every time. Your answers here are the only source of truth: the app corrects anything the AI says that disagrees with them." },
-  { id: "prefs", label: "Job preferences", title: "What jobs to look for", lead: "The app searches for these on freehire.me, keeps the ones you can apply to without making an account (Greenhouse, Lever, Ashby), and has the AI check each one for fit." },
+  { id: "ai", label: "Connect AI", title: "Connect an AI model", lead: "Job Autopilot needs an AI model: one you pay for directly with your own key (about a cent or less per application with the default), or a free one running on this computer with Ollama or LM Studio." },
+  { id: "resumes", label: "Your resume", title: "Your resume", lead: "Upload the resume you have, and the app splits it into pieces you approve next. No resume? Make one here in a couple of minutes." },
+  { id: "review", label: "Check it", title: "Approve every piece", lead: "Resumes are only ever assembled from what you approve here, so nothing reaches an employer that you did not write and check." },
+  { id: "questions", label: "About you", title: "About you", lead: "Application forms ask these every time. The app always uses your answers here, and corrects the AI if it ever says something different." },
+  { id: "prefs", label: "Jobs to look for", title: "What jobs to look for", lead: "Pick job titles, where you want to work, and where the app should look. It checks every job it finds for fit before applying." },
   { id: "mail", label: "Mailbox", title: "Connect your mailbox (optional)", lead: "For employers that email a security code, and to spot jobs you already applied to." , optional: true },
   { id: "start", label: "Start" },
 ];
@@ -52,7 +52,11 @@ function show(k) {
   if (s.id === "welcome") {
     el.innerHTML = `<h1>Apply to jobs while you do something else</h1>
       <p class="lead">Job Autopilot finds jobs that match what you want, writes a one-page resume for each from pieces you approved, fills in the application in a browser window you can watch, and submits it. It keeps a full record of every application.</p>
-      <div class="card sec"><h3>What it will and won't do</h3><ul class="bul" style="margin-top:10px">
+      <div class="card sec"><h3>What kind of work are you looking for?</h3>
+        <div class="kind-cards">${[["hourly", "Hourly and everyday jobs", "Retail, food, warehouse, driving, healthcare support, customer service"],
+          ["office", "Office, tech and professional jobs", "Software, data, admin, finance, marketing, design"],
+          ["both", "Both", "Show me everything that fits"]].map(([v, t, d]) => `<label class="jobkind ${(cfg.prefs.jobKind || "both") === v ? "on" : ""}"><input type="radio" name="kind" value="${v}" ${(cfg.prefs.jobKind || "both") === v ? "checked" : ""}><b>${t}</b><small>${d}</small></label>`).join("")}</div></div>
+      <div class="card sec" style="margin-top:16px"><h3>What it will and won't do</h3><ul class="bul" style="margin-top:10px">
         <li>It never submits with a required question unanswered, and never guesses legal agreements. Those jobs wait for you.</li>
         <li>It only states facts from your approved resume and your answers. A second AI pass fact-checks every written answer, and answers that fail are not used.</li>
         <li>It starts in <b>dry run</b>: forms are filled but never submitted until you have checked one and switched to live.</li>
@@ -64,6 +68,7 @@ function show(k) {
         <label class="check"><input type="checkbox" id="terms" ${cfg.settings.acceptedTerms ? "checked" : ""}>I understand, and I will check the applications it sends.</label></div>
       <div id="history-found"></div>`;
     offerHistory();
+    document.querySelectorAll("[name=kind]").forEach((r) => r.onchange = () => document.querySelectorAll(".jobkind").forEach((k) => k.classList.toggle("on", k.querySelector("input").checked)));
     return;
   }
   if (s.id === "start") {
@@ -110,6 +115,13 @@ document.getElementById("next").onclick = async () => {
     if (STEPS[i].id === "welcome") {
       if (!document.getElementById("terms").checked) return msg(err, "err", "Tick the box to continue.");
       await window.ja.api("/api/settings", { acceptedTerms: true });
+      // The kind of work sets sensible defaults: where to look and which titles to suggest.
+      const kind = (document.querySelector("[name=kind]:checked") || {}).value || "both";
+      if (kind !== cfg.prefs.jobKind || !cfg.prefs.titles.length) {
+        const boards = { ...cfg.prefs.boards, freehire: kind !== "hourly", hiringcafe: true };
+        const seniority = kind === "hourly" ? ["junior", "middle"] : cfg.prefs.seniority;
+        cfg.prefs = await window.ja.api("/api/prefs/save", { prefs: { jobKind: kind, boards, seniority } });
+      }
     }
     if (form) { const e = await form.save(); if (e) return msg(err, "err", e); }
     if (STEPS[i].id === "start") {

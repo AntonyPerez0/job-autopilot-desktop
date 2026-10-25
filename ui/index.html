@@ -41,6 +41,7 @@ const VIEWS = [
   { id: "applied", label: "Applied", icon: "send", status: "applied" },
   { id: "queued", label: "Queue", icon: "clock", status: "queued" },
   { id: "failed", label: "Needs attention", icon: "alert", status: "failed" },
+  { id: "manual", label: "Apply yourself", icon: "ext", status: "manual" },
   { id: "filled", label: "Filled (dry run)", icon: "eye", status: "filled" },
   { id: "skipped", label: "Skipped", icon: "skip", status: "skipped" },
   { id: "all", label: "All jobs", icon: "list" },
@@ -54,6 +55,7 @@ const TITLES = {
   queued: ["Queue", "Screened as a fit and waiting their turn."],
   failed: ["Needs attention", "Stopped before submitting, so nothing incomplete went out."],
   filled: ["Filled (dry run)", "Filled in and checked, but not submitted."],
+  manual: ["Apply yourself", "Good matches on sites that need an account, a chat bot, or a job board. Open each one, apply, then press \"I applied\"."],
   skipped: ["Skipped", "Closed postings, poor fits, and boards that need an account."],
   all: ["All jobs", "Everything the autopilot has seen."],
   log: ["Activity", "What the autopilot did, newest first."],
@@ -98,6 +100,7 @@ function category(j) {
     case "submitting": return { label: "Submitting", tone: "blue", pulse: true };
     case "queued": return { label: "Queued", tone: "blue" };
     case "filled": return { label: "Filled (dry run)", tone: "violet" };
+    case "manual": return { label: "Apply yourself", tone: "amber" };
     case "skipped":
       if (/^screen:|fails a must-have/.test(r)) return { label: "Not a fit", tone: "gray" };
       if (/closed|404/.test(r)) return { label: "Posting closed", tone: "gray" };
@@ -187,7 +190,7 @@ function liveChip() {
   let tone = "green", txt = esc(s.now);
   if (set.paused) { tone = "red"; txt = "Paused"; }
   else if (s.job) { tone = "blue"; txt = `Applying to <b>${esc(s.job.company)}</b> · ${esc(cleanTitle(s.job.title))}`; }
-  else if (s.now === "searching") { tone = "blue"; txt = "Searching freehire.me for new roles"; }
+  else if (s.now === "searching") { tone = "blue"; txt = "Searching for new jobs"; }
   else if (/review the first/.test(s.now)) { tone = "amber"; txt = "Waiting for you to check the first filled application"; }
   else if (/cap/.test(s.now)) { tone = "amber"; txt = `Daily limit reached · resumes ${s.resumesAt ? new Date(s.resumesAt).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }) : "tomorrow"}`; }
   else if (/waiting between/.test(s.now)) txt = "Pacing between applications";
@@ -199,6 +202,7 @@ function header() {
   const list = !["overview", "log", "profile", "settings"].includes(view);
   return `<div class="top"><div><h1>${t}</h1><p>${sub}</p></div><div class="actions">${liveChip()}
     ${list ? `<div class="search">${icon("search")}<input id="q" placeholder="Search company, role, location" value="${esc(q)}" oninput="q=this.value;renderList()"></div>` : ""}
+    <button class="btn" onclick="addJobDialog()">${icon("plus")}Add a job</button>
     <button class="btn" onclick="searchNow()">${icon("refresh")}Search now</button></div></div><div id="banner-host">${banners()}</div><div id="progress-host">${progressCard()}</div>`;
 }
 
@@ -243,7 +247,7 @@ function progressCard() {
       : `Reviewing new posting ${Math.min(p.i + 1, p.n)} of ${p.n}${p.label ? ` · ${esc(p.label)}` : ""}`;
     return `<div class="card prog">
       <div class="prog-top"><span class="ico blue" style="width:40px;height:40px;border-radius:10px">${icon("search")}</span>
-        <div class="prog-title"><div class="t">${p.phase === "search" ? "Searching freehire.me for new roles" : "Screening new postings"}</div><div class="s">${what}</div></div>
+        <div class="prog-title"><div class="t">${p.phase === "search" ? "Searching for new jobs" : "Checking new jobs for fit"}</div><div class="s">${what}</div></div>
         <div class="prog-meta"><b>${pct}%</b><span>${mmss(now() - p.startedAt)} elapsed${p.phase === "review" && p.added ? ` · ${p.added} added to the queue` : ""}</span></div></div>
       <div class="pbar"><i style="width:${pct}%"></i></div>
       <div class="prog-foot">${p.phase === "search" ? "Step 1 of 2: searching" : "Step 2 of 2: AI checks each new posting for fit before it joins the queue"}</div></div>`;
@@ -275,7 +279,7 @@ async function renderOverview() {
   const cats = {};
   for (const j of failed) { const k = category(j).label; cats[k] = (cats[k] || 0) + 1; }
   const seen = Object.values(c).reduce((a, b) => a + b, 0);
-  const pipe = [["Found", seen], ["Screened in", (c.applied || 0) + (c.queued || 0) + (c.failed || 0) + (c.working || 0) + (c.filled || 0)], ["Attempted", done + stopped], ["Applied", done]];
+  const pipe = [["Found", seen], ["Screened in", (c.applied || 0) + (c.queued || 0) + (c.failed || 0) + (c.working || 0) + (c.filled || 0) + (c.manual || 0)], ["Attempted", done + stopped], ["Applied", done]];
   $("main").innerHTML = header() + `
   <div class="grid-kpi">
     ${kpi("applied", "green", "send", "Applications sent", done, `${ago(applied[0] && applied[0].applied_at) ? "Last " + ago(applied[0].applied_at) : "None yet"}`)}
@@ -369,7 +373,9 @@ function renderDrawer() {
     j.resume_file ? `<a class="btn sm" href="ap-file://resumes/${esc(j.resume_file)}" target="_blank">${icon("file")}${j.status === "applied" ? "Resume sent" : "Resume"}</a>` : "",
     j.status === "filled" && !j.reviewed ? `<button class="btn sm primary" onclick="act('reviewed')">${icon("check")}I checked these answers</button>` : "",
     j.status === "filled" && j.reviewed ? `<span class="tag">${icon("check")}You checked this one</span>` : "",
-    j.status === "queued" ? `<button class="btn sm danger" onclick="act('skip')">${icon("skip")}Skip</button>` : "",
+    j.status === "manual" ? `<button class="btn sm primary" onclick="window.ja.openExternal('${esc(j.apply_url || j.url)}')">${icon("ext")}Open the application</button>
+      <button class="btn sm" onclick="act('applied-myself')">${icon("check")}I applied</button>` : "",
+    ["queued", "manual"].includes(j.status) ? `<button class="btn sm danger" onclick="act('skip')">${icon("skip")}Skip</button>` : "",
     ["failed", "skipped", "filled"].includes(j.status) ? `<button class="btn sm primary" onclick="act('retry')">${icon("retry")}${j.status === "skipped" ? "Queue it" : "Try again"}</button>` : "",
   ].join("");
   $("drawer").innerHTML = `
@@ -417,7 +423,7 @@ function drawerTab(j, d) {
 async function act(action) {
   const r = await api("/api/job/" + encodeURIComponent(open.slug), { action });
   if (r && r.error) { toast(r.error); return; }
-  toast(action === "skip" ? "Skipped" : action === "reviewed" ? "Thanks. You can go live from the sidebar when you are ready." : "Added back to the queue");
+  toast(action === "skip" ? "Skipped" : action === "reviewed" ? "Thanks. You can go live from the sidebar when you are ready." : action === "applied-myself" ? "Marked as applied. It won't be applied to again." : "Added back to the queue");
   await openJob(open.slug); refresh(true);
 }
 
@@ -459,6 +465,30 @@ async function refreshStatusOnly() { st = await api("/api/status"); if (st.serve
 
 async function showBrowser(show) { const r = await api("/api/browser/show", { show }); if (!r.ok) toast("The browser is not open right now"); }
 
+// ---------- a job found anywhere: paste its link ----------
+function addJobDialog() {
+  const m = modal(`<h3>Add a job</h3><p class="muted">Found a job on Google, Simplify, HiringCafe, Indeed or a company's website? Copy its link from your browser's address bar and paste it here.</p>
+    <input class="inp" id="aj-url" placeholder="https://..." style="width:100%;margin-top:8px">
+    <div id="aj-msg" style="margin-top:10px"></div>
+    <div class="row-actions" style="margin-top:14px"><button class="btn primary" id="aj-go">Add it</button><button class="btn" id="aj-close">Close</button></div>`);
+  const input = m.querySelector("#aj-url");
+  input.focus();
+  m.querySelector("#aj-close").onclick = () => m.remove();
+  const go = async () => {
+    const btn = m.querySelector("#aj-go");
+    btn.disabled = true;
+    Forms.msg(m.querySelector("#aj-msg"), "info", "Reading the job...");
+    const r = await api("/api/jobs/add", { url: input.value });
+    btn.disabled = false;
+    if (r.error) return Forms.msg(m.querySelector("#aj-msg"), "err", r.error);
+    Forms.msg(m.querySelector("#aj-msg"), "ok", r.status === "manual" ? `Added ${r.title} at ${r.company} to Apply yourself: ${r.reason.replace(/^Apply yourself: /, "")}.` : `Added ${r.title} at ${r.company}. The app applies to it next.`);
+    input.value = "";
+    refresh();
+  };
+  m.querySelector("#aj-go").onclick = go;
+  input.onkeydown = (e) => { if (e.key === "Enter") go(); };
+}
+
 // ---------- dry run review, going live, updates ----------
 function updateBanner() {
   const u = st.update;
@@ -498,6 +528,9 @@ function banners() {
   if (!st) return "";
   const s = st.settings;
   let h = updateBanner();
+  const mine = (st.counts || {}).manual || 0;
+  if (mine && view === "overview") h += `<div class="banner amber">${icon("ext")}<div><b>${mine} good match${mine === 1 ? "" : "es"} for you to apply to</b>These sites need an account or use a chat bot, so the app can't apply for you. Each takes a few minutes.</div>
+    <div class="right"><button class="btn sm" onclick="go('manual')">Show them</button></div></div>`;
   if (s.dryRun && !s.reviewedDryRun) {
     h += st.firstFilled
       ? `<div class="banner violet">${icon("eye")}<div><b>Your first application is filled in, not sent</b>Check every answer, the resume and the screenshot for ${esc(st.firstFilled.company)}. The autopilot waits until you do.</div>
@@ -544,23 +577,24 @@ function goLive() {
 let cfg = null;
 async function renderConfig() {
   cfg = await api("/api/config");
-  const card = (id, title, sub) => `<div class="card" style="margin-bottom:20px"><div class="card-h"><h3>${title}</h3><span class="sub">${sub || ""}</span>
-    <span class="right"><button class="btn sm primary" data-save="${id}">${icon("check")}Save</button></span></div><div class="sec" id="sec-${id}"></div><div id="msg-${id}" style="padding:0 20px 16px"></div></div>`;
+  // Each section folds away; the ones people change most start open.
+  const card = (id, title, sub, open) => `<details class="card card-fold" ${open ? "open" : ""}><summary><div class="card-h"><h3>${title}</h3><span class="sub">${sub || ""}</span></div></summary>
+    <div class="sec" id="sec-${id}"></div><div style="padding:0 20px 18px;display:flex;gap:12px;align-items:center"><button class="btn primary" data-save="${id}">${icon("check")}Save changes</button><div id="msg-${id}" style="flex:1"></div></div></details>`;
   if (view === "profile") {
     $("main").innerHTML = header() + `<div id="cfg-host">
       <div class="card" style="margin-bottom:20px"><div class="card-h"><h3>Add another resume</h3><span class="sub">New pieces are added unapproved</span></div><div class="sec" id="sec-upload"></div></div>
-      ${card("review", "Approved pieces", "Only approved pieces are ever used")}</div>`;
+      ${card("review", "Approved pieces", "Only approved pieces are ever used", true)}</div>`;
     const forms = { review: Forms.review($("sec-review"), cfg) };
     Forms.resumes($("sec-upload"), cfg, () => { forms.review = Forms.review($("sec-review"), cfg); toast("Added. Review the new pieces below."); });
     bindSaves(forms);
   } else {
     $("main").innerHTML = header() + `<div id="cfg-host">
       <div class="card" style="margin-bottom:20px"><div class="card-h"><h3>Updates</h3></div><div class="sec" id="update-card">${updateCard()}</div></div>
-      ${card("prefs", "Job preferences", "What to search for")}
-      ${card("questions", "Common questions", "Your standard answers and the facts the truth rules enforce")}
-      ${card("ai", "AI provider", "Your key, your costs")}
-      ${card("mailbox", "Mailbox", "Optional: security codes and duplicate checks")}
-      ${card("running", "Pace and browser", "")}
+      ${card("prefs", "Jobs to look for", "Job titles, where, and which sites to search", true)}
+      ${card("questions", "About you", "The answers application forms ask for")}
+      ${card("ai", "AI", "The AI service the app uses")}
+      ${card("mailbox", "Mailbox", "Optional: email codes and spotting jobs you already applied to")}
+      ${card("running", "Pace and browser", "How many a day, and the browser window")}
       <div class="card" style="margin-bottom:20px"><div class="card-h"><h3>Application history</h3><span class="sub">So you never apply twice, even after a reinstall</span></div><div class="sec" id="sec-history"></div></div>
       <div class="card sec"><h3>Your data</h3><p>Everything lives in one folder on this computer: <span class="mono">${esc(cfg.dataDir)}</span>. Version ${esc(cfg.version)}.</p>
         <div class="row-actions"><button class="btn sm" onclick="window.ja.showDataFolder()">${icon("ext")}Open the folder</button>
