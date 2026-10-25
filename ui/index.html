@@ -46,7 +46,7 @@ const VIEWS = [
   { id: "skipped", label: "Skipped", icon: "skip", status: "skipped" },
   { id: "all", label: "All jobs", icon: "list" },
   { id: "log", label: "Activity", icon: "act" },
-  { id: "profile", label: "Profile", icon: "user" },
+  { id: "profile", label: "Resume", icon: "file" },
   { id: "settings", label: "Settings", icon: "gear" },
 ];
 const TITLES = {
@@ -59,7 +59,7 @@ const TITLES = {
   skipped: ["Skipped", "Closed postings, poor fits, and boards that need an account."],
   all: ["All jobs", "Everything the autopilot has seen."],
   log: ["Activity", "What the autopilot did, newest first."],
-  profile: ["Profile", "The approved pieces your resumes are assembled from."],
+  profile: ["Resume", "Check it, improve it, make a new one, and download it."],
   settings: ["Settings", "Everything you set up at the start, and how the autopilot runs."],
 };
 let view = (location.hash.slice(1) || "overview"), st = null, jobsCache = {}, q = "", open = null, dtab = "answers";
@@ -581,11 +581,17 @@ async function renderConfig() {
   const card = (id, title, sub, open) => `<details class="card card-fold" ${open ? "open" : ""}><summary><div class="card-h"><h3>${title}</h3><span class="sub">${sub || ""}</span></div></summary>
     <div class="sec" id="sec-${id}"></div><div style="padding:0 20px 18px;display:flex;gap:12px;align-items:center"><button class="btn primary" data-save="${id}">${icon("check")}Save changes</button><div id="msg-${id}" style="flex:1"></div></div></details>`;
   if (view === "profile") {
+    const fold = (id, title, sub, open) => `<details class="card card-fold" ${open ? "open" : ""}><summary><div class="card-h"><h3>${title}</h3><span class="sub">${sub}</span></div></summary><div class="sec" id="sec-${id}"></div></details>`;
     $("main").innerHTML = header() + `<div id="cfg-host">
-      <div class="card" style="margin-bottom:20px"><div class="card-h"><h3>Add another resume</h3><span class="sub">New pieces are added unapproved</span></div><div class="sec" id="sec-upload"></div></div>
-      ${card("review", "Approved pieces", "Only approved pieces are ever used", true)}</div>`;
+      ${cfg.profile ? fold("studio", "Check &amp; improve", "What a recruiter will notice, and better wording for your lines", true) : ""}
+      ${fold("create", "Make a resume with me", "Answer a few questions; the app writes the lines, you approve them", !cfg.profile)}
+      ${card("review", "All your resume pieces", "Edit, approve or delete each line; only approved ones are ever used")}
+      ${fold("upload", "Add another resume", "Upload a PDF or Word file; its pieces are added unapproved")}</div>`;
     const forms = { review: Forms.review($("sec-review"), cfg) };
-    Forms.resumes($("sec-upload"), cfg, () => { forms.review = Forms.review($("sec-review"), cfg); toast("Added. Review the new pieces below."); });
+    const studio = cfg.profile ? Forms.studio($("sec-studio"), cfg, () => { forms.review = Forms.review($("sec-review"), cfg); }) : null;
+    const added = () => { forms.review = Forms.review($("sec-review"), cfg); const d = $("sec-review").closest("details"); d.open = true; d.scrollIntoView({ behavior: "smooth" }); if (studio) studio.refresh(); toast("Added. Check and approve the new lines below."); };
+    Forms.creator($("sec-create"), cfg, added);
+    Forms.resumes($("sec-upload"), cfg, added);
     bindSaves(forms);
   } else {
     $("main").innerHTML = header() + `<div id="cfg-host">

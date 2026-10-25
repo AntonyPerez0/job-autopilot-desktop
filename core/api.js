@@ -15,6 +15,7 @@ import { browserOpen, detectBrowsers, installChromium, chromiumPath, showBrowser
 import { windowModeOf } from "./apply.js";
 import { AGENCIES } from "./discover.js";
 import { addJob } from "./addjob.js";
+import { applySuggestion, checklist, createFromInterview, rewriteWithAnswer, suggestImprovements } from "./studio.js";
 import { monthUse, testKey as testSerpKey } from "./sources/google.js";
 import { backupFile, collect, exportHistory, importHistory, peekBackup, writeBackup } from "./history.js";
 
@@ -167,9 +168,46 @@ const ROUTES = {
     const r = await Tailor.fit(p, spec, []);
     const file = `preview-${base.id.replace(/[^A-Za-z0-9-]/g, "_")}-${Date.now()}.pdf`;
     fs.writeFileSync(path.join(dataDir("resumes"), file), Buffer.from(r.pdf));
-    return { url: `ap-file://resumes/${file}`, slack: r.slack, overflow: r.overflow, warnings: Array.from(r.warnings) };
+    return { url: `ap-file://resumes/${file}`, file, fileName: Tailor.fileName(p, { employer: "", jobTitle: "" }), slack: r.slack, overflow: r.overflow, warnings: Array.from(r.warnings) };
   },
   "POST /api/answers/save": (b) => saveAnswers(b.answers || {}),
+  // ---------- resume studio: create, check, improve ----------
+  "POST /api/resume/create": async (b) => {
+    if (!aiSettings().apiKey) return bad("Connect an AI first (Settings > AI).");
+    const iv = b.interview || {};
+    if (!(iv.jobs || []).some((j) => j.title || j.employer) && !(iv.education || []).some((e) => e.school)) return bad("Add at least one job or school.");
+    try {
+      const r = await createFromInterview(iv, b.merge ? getProfile() : null, getAnswers());
+      saveProfile(r.profile);
+      const cur = (iv.jobs || []).find((j) => j.current) || (iv.jobs || [])[0];
+      if (cur) saveAnswers(prefillAnswers({ ...r.profile, experience: [{ title: cur.title, org: cur.employer, dates: cur.current ? "Present" : "" }] }));
+      return { profile: r.profile, answers: getAnswers(), rejected: r.rejected, questions: r.questions };
+    } catch (e) { return bad(e.message); }
+  },
+  "POST /api/resume/check": async () => {
+    const raw = getProfile();
+    if (!raw) return bad("No resume yet.");
+    let fit = null;
+    try {
+      const p = loadProfile(raw);
+      const { spec } = Tailor.checkPlan(p, { base: p.bases[0].id });
+      const r = await Tailor.fit(p, spec, []);
+      fit = { overflow: r.overflow, slack: r.slack };
+    } catch { /* not enough approved yet: the list says what is missing */ }
+    return { checks: checklist(raw, getAnswers(), fit) };
+  },
+  "POST /api/resume/improve": async (b) => {
+    if (!getProfile()) return bad("No resume yet.");
+    try { return { suggestions: await suggestImprovements(getProfile(), getAnswers(), { paths: b.paths || null }) }; } catch (e) { return bad(e.message); }
+  },
+  "POST /api/resume/answer": async (b) => {
+    if (!String(b.answer || "").trim()) return bad("Type your answer first.");
+    try { return await rewriteWithAnswer(getProfile(), getAnswers(), b); } catch (e) { return bad(e.message); }
+  },
+  "POST /api/resume/apply": (b) => {
+    if (!String(b.text || "").trim()) return bad("The line is empty.");
+    try { const p = applySuggestion(getProfile(), b); saveProfile(p); return { ok: true, profile: p }; } catch (e) { return bad(e.message); }
+  },
   "POST /api/prefs/save": (b) => savePrefs(b.prefs || {}),
   "GET /api/cities": (_, q) => searchCities(q.get("q") || ""),
   "GET /api/countries": () => countries(),

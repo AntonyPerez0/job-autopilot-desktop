@@ -9,5 +9,6 @@ contextBridge.exposeInMainWorld("ja", {
   go: (page) => ipcRenderer.invoke("go", page),
   saveHistory: () => ipcRenderer.invoke("history-save"),
   pickFolder: () => ipcRenderer.invoke("pick-folder"),
+  saveResume: (file, name) => ipcRenderer.invoke("save-resume", file, name),
   showFile: (f) => ipcRenderer.invoke("show-file", f),
 });

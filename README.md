@@ -85,8 +85,8 @@ change all of it later under **Settings** and **Profile**.
    service instead, or a free model on your own computer (see
    [Using a local model](#using-a-local-model)).
 3. **Your resume.** Drop in one or more resumes (PDF or Word `.docx`). No
-   resume? Open **I don't have a resume**, list your jobs in your own words,
-   and the app makes one with you.
+   resume? Open **I don't have a resume** and answer a few questions; the app
+   writes one with you (see [Making and improving your resume](#making-and-improving-your-resume)).
 4. **Check it.** The app splits your resume into pieces: summaries, bullet
    points, skills, education and a layout. Fix anything that isn't exactly
    true, delete what you'd never send, and approve the rest. **Everything is
@@ -110,6 +110,54 @@ change all of it later under **Settings** and **Profile**.
 7. **Mailbox (optional).** See [Mailbox](#mailbox).
 
 Then press **Start in dry run**.
+
+## Making and improving your resume
+
+The **Resume** page (in the sidebar) has four parts.
+
+**Check & improve.** A checklist of what a recruiter notices first: one page,
+complete contact details, a short summary, lines that start with an action,
+no "I" or "my", no buzzwords ("hard-working team player"), consistent dates,
+and lines that show size or results. Each item says what to change and why.
+**Suggest improvements for every line** (or **Improve these** on one item)
+rewrites your lines the way recruiters like them. Each suggestion sits next to
+your original. You can **Use this**, **Keep both** (the app never puts both on
+one resume), edit it, or say no. When a number would make a line stronger, the
+app asks you ("About how many customers did you serve on a typical day?")
+instead of guessing. Answer only if you know, and it rewrites the line with
+your answer.
+
+**Make a resume with me.** A short interview:
+- the job you want next
+- each job you've had (including part-time, gig and family work): what you did
+  on a normal day, what you're proud of, any numbers you know, and the tools or
+  machines you used
+- school and training
+- certifications, languages and skills
+
+The app writes two to four lines per job and a short summary. Your skills,
+languages and certifications are listed exactly as you typed them. It can
+start a new resume or add to the one you have.
+
+**All your resume pieces** shows every line, where it came from ("From your
+answer: ..."), and whether it's approved. **Add another resume** uploads
+another file. **Download my resume (PDF)** saves the general version, for jobs
+you apply to yourself.
+
+**How the app keeps it honest:**
+- The AI may only reword what you said. Every line it writes is checked:
+  - Rules with no AI involved reject any number, name or tool you didn't give,
+    praise you didn't use about yourself ("proven", "expert"), and any rewrite
+    that drops a word limiting a claim ("helped", "about", "part-time").
+  - A second, separate AI pass then reads each line against your own words.
+    New lines it doubts get a **Check this** note naming the doubtful part.
+    Rewrites it doubts aren't offered.
+- Nothing is used until you approve it, and only approved lines ever reach an
+  employer.
+
+"Recruiter-friendly" here means the app follows widely shared recruiter advice
+(the checklist above). No recruiter reviews your resume, and the app can't
+promise any employer will like it.
 
 ## Where the jobs come from
 
@@ -417,6 +465,7 @@ npm run e2e                            # walks the first-run setup in the real a
 npm start                              # runs the app from source
 JA_API_KEY=... node scripts/live-dry-run.mjs   # one dry run against a live posting, example profile
 JA_API_KEY=... node test/e2e/live-in-app.mjs <freehire-slug>   # the same, inside the real app
+JA_API_KEY=... node scripts/live-studio.mjs     # resume creator and improver with the real AI
 JA_API_KEY=... node scripts/live-hourly.mjs     # HiringCafe search + screen + one dry run (JA_URL=<link> for a given job)
 ```
 
@@ -432,6 +481,7 @@ How the code is laid out:
   - the loop (`worker.js`)
   - the window's API (`api.js`)
 - `main/`: the Electron shell.
+- `core/studio.js`: the resume creator, improver, checklist and honesty checks.
 - `ui/`: the setup wizard and the dashboard.
 - `vendor/apply-helper/`: the Apply Helper add-on's tailoring, PDF and
   form-filling scripts, used unchanged (see `VENDORED.md`).

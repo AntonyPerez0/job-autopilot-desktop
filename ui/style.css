@@ -353,3 +353,13 @@ details.card-fold > summary .card-h { border-bottom: 0; }
 details.card-fold[open] > summary .card-h { border-bottom: 1px solid var(--border); }
 details.card-fold > summary h3::before { content: "▸ "; color: var(--text-3); }
 details.card-fold[open] > summary h3::before { content: "▾ "; }
+/* resume studio */
+.checklist { display: grid; gap: 8px; }
+.check-item { display: flex; gap: 12px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.check-item .muted { font-size: 13px; margin-top: 2px; }
+.ck { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 12px; flex: none; margin-top: 1px; }
+.ck.good { background: var(--green-bg); color: var(--green); }
+.ck.fix { background: var(--amber-bg); color: var(--amber); }
+.ck.tip { background: var(--blue-bg); color: var(--blue); }
+.sugg textarea { width: 100%; border: 1px solid var(--border-strong); border-radius: 8px; padding: 8px 10px; background: var(--surface); }
+.warn-line { display: flex; gap: 6px; align-items: center; color: var(--amber); font-size: 12.5px; padding: 2px 8px; }

@@ -131,13 +131,7 @@
         <small>PDF or Word (.docx). Several versions of your resume give the app more approved pieces to pick from.</small>
         <input type="file" accept=".pdf,.docx" multiple hidden></div>
       <div data-files class="sub-list"></div>
-      <details class="more" data-builder><summary><b>I don't have a resume</b><span>Answer a few questions and the app makes one with you</span></summary><div class="form">
-        <p class="hint" style="margin:0">List your jobs, newest first. Write what you did in your own words; the AI tidies it up, and you check every line on the next screen.</p>
-        <div class="sub-list" data-jobs></div>
-        <div><button type="button" class="btn sm" data-add-job>${icon("plus")}Add a job</button></div>
-        <div class="form-row">${fld("School or training (optional)", inp("bschool", "", 'placeholder="e.g. Lincoln High School, diploma, 2021"'))}${fld("Skills (optional)", inp("bskills", "", 'placeholder="e.g. cash handling, forklift, Spanish, Excel"'))}</div>
-        ${fld("A sentence about you (optional)", inp("bsummary", "", 'placeholder="e.g. Friendly, reliable worker who loves helping customers."'))}
-        <div><button type="button" class="btn primary" data-build>${icon("bolt")}Make my resume</button></div></div></details>
+      <details class="more" data-builder><summary><b>I don't have a resume</b><span>Answer a few questions and the app writes one with you</span></summary><div data-creator style="padding:4px 16px 16px"></div></details>
       <details class="more"><summary><b>Paste your resume as text</b><span>If your file won't upload</span></summary><div class="fld" style="margin-top:10px"><textarea name="text" rows="8" placeholder="Paste the full text of your resume"></textarea></div></details>
       <div class="row-actions"><button type="button" class="btn primary" data-go>${icon("bolt")}Read my resume${cfg.profile ? " again" : ""}</button>
         ${cfg.profile ? `<label class="check"><input type="checkbox" name="merge" checked>Add to what I already approved</label>` : ""}
@@ -153,30 +147,7 @@
     drop.ondragleave = () => drop.classList.remove("over");
     drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove("over"); addFiles(e.dataTransfer.files); };
     const b64 = (f) => f.arrayBuffer().then((buf) => { let s = ""; const u = new Uint8Array(buf); for (let i = 0; i < u.length; i += 32768) s += String.fromCharCode.apply(null, u.subarray(i, i + 32768)); return btoa(s); });
-    const jobRow = () => `<div class="sub-item" data-job><div class="form-row">${fld("Job title", inp("jt", "", 'placeholder="e.g. Cashier"'))}${fld("Where", inp("je", "", 'placeholder="e.g. Target, Austin TX"'))}
-      ${fld("From", inp("jf", "", 'placeholder="e.g. June 2022"'))}${fld("To", inp("jto", "", 'placeholder="e.g. Now"'))}</div>
-      ${fld("What you did", `<textarea name="jd" rows="2" placeholder="e.g. ran the register, helped customers find things, closed the store"></textarea>`)}</div>`;
-    const addJob = () => el.querySelector("[data-jobs]").insertAdjacentHTML("beforeend", jobRow());
-    addJob();
-    el.querySelector("[data-add-job]").onclick = addJob;
-    el.querySelector("[data-build]").onclick = async () => {
-      const a = cfg.answers || {};
-      const jobs = [...el.querySelectorAll("[data-job]")].map((r) => ({ t: val(r, "jt"), e: val(r, "je"), f: val(r, "jf"), to: val(r, "jto"), d: r.querySelector("[name=jd]").value.trim() })).filter((j) => j.t || j.e);
-      if (!jobs.length && !val(el, "bschool")) return msg(m, "err", "Add at least one job, or your school.");
-      const name = [a.firstName, a.lastName].filter(Boolean).join(" ") || "Your Name";
-      const text = [name, [a.city, a.email, a.phone].filter(Boolean).join(" | "), "", val(el, "bsummary") ? "SUMMARY\n" + val(el, "bsummary") + "\n" : "",
-        "EXPERIENCE", ...jobs.map((j) => `${j.t}, ${j.e} (${j.f || "?"} to ${j.to || "?"})\n${j.d.split(/[.;\n]+/).map((x) => x.trim()).filter(Boolean).map((x) => "- " + x).join("\n")}`),
-        val(el, "bschool") ? "\nEDUCATION\n" + val(el, "bschool") : "", val(el, "bskills") ? "\nSKILLS\n" + val(el, "bskills") : "",
-        "\n(Written by the candidate in their own words. Turn each thing they did into a short, plain resume bullet that says only what they wrote. Do not add numbers, tools or claims.)"].join("\n");
-      msg(m, "info", "Making your resume. This takes up to a minute...");
-      el.querySelector("[data-build]").disabled = true;
-      const r = await api("/api/resumes/import", { text, merge: val(el, "merge") });
-      el.querySelector("[data-build]").disabled = false;
-      if (r.error) return msg(m, "err", r.error);
-      msg(m, "ok", "Done. Now check every line.");
-      cfg.profile = r.profile; cfg.answers = r.answers;
-      onImported && onImported(r.profile);
-    };
+    creator(el.querySelector("[data-creator]"), cfg, () => onImported && setTimeout(() => onImported(cfg.profile), 2500));
     el.querySelector("[data-go]").onclick = async () => {
       const text = val(el, "text");
       if (!files.length && !text) return msg(m, "err", "Add a resume file or paste its text.");
@@ -198,6 +169,150 @@
     return { save: async () => (cfg.profile ? null : "Read a resume first (or load the example to try the app).") };
   }
 
+  // ---------- Resume creator: a short interview, then a resume from the answers ----------
+  function creator(el, cfg, onDone) {
+    const jobCard = (n) => `<div class="sub-item" data-cjob>
+      <div class="row-actions" style="justify-content:space-between"><b>Job ${n}</b><button type="button" class="btn ghost sm" data-rm-cjob>${icon("trash")}Remove</button></div>
+      <div class="form-row">${fld("Job title", inp("c_title", "", 'placeholder="e.g. Cashier, Line cook, Office assistant"'))}${fld("Employer", inp("c_employer", "", 'placeholder="e.g. Target"'))}${fld("City", inp("c_location", "", 'placeholder="e.g. Austin, TX"'))}</div>
+      <div class="form-row">${fld("Started", inp("c_start", "", 'placeholder="e.g. Jun 2023"'))}${fld("Ended", inp("c_end", "", 'placeholder="e.g. Aug 2024"'))}
+        <div class="fld" style="align-self:end"><label class="check"><input type="checkbox" name="c_current">I work here now</label></div></div>
+      ${fld("What did you do on a normal day?", `<textarea name="c_daily" rows="3" placeholder="In your own words, e.g. ran the register, stocked shelves, opened and closed the store, answered phones"></textarea>`)}
+      ${fld("What are you proud of, or what went well?", `<textarea name="c_proud" rows="2" placeholder="e.g. trained 3 new people, got employee of the month, never had my cash drawer come up short"></textarea>`, "Optional, but this is what makes a resume stand out.")}
+      <div class="form-row">${fld("Any numbers you know?", inp("c_numbers", "", 'placeholder="e.g. about 150 customers a day, team of 6, $3,000 a shift"'), "Only numbers you're sure of. Rough is fine (about 100).")}
+        ${fld("Tools, machines or software", inp("c_tools", "", 'placeholder="e.g. cash register, forklift, Excel, Square"'))}</div></div>`;
+    const schoolCard = () => `<div class="form-row" data-cschool>${fld("School or training", inp("c_school", "", 'placeholder="e.g. Lincoln High School, Austin Community College"'))}
+      ${fld("What you earned", inp("c_earned", "", 'placeholder="e.g. Diploma, GED, Associate degree, CNA certificate"'))}${fld("Year", inp("c_year", "", 'placeholder="e.g. 2022, or Expected 2027"'))}</div>`;
+    el.innerHTML = `<div class="form">
+      <p class="hint" style="margin:0">Answer in your own words; spelling and wording don't matter. The AI turns your answers into resume lines the way recruiters like them: short, starting with an action, showing results. It never adds anything you didn't say, and you check every line before it's used.</p>
+      <div class="section-t">1. The job you want next</div>
+      ${fld("What kind of job are you looking for?", inp("c_target", (cfg.prefs && (cfg.prefs.titles || [])[0]) || "", 'placeholder="e.g. Retail associate, Warehouse worker, Medical assistant"'))}
+      <div class="section-t">2. Your jobs, newest first</div>
+      <p class="hint" style="margin:-4px 0 0">Include part-time jobs, family businesses, gig work and volunteering. They all count.</p>
+      <div class="sub-list" data-cjobs>${jobCard(1)}</div>
+      <div><button type="button" class="btn sm" data-add-cjob>${icon("plus")}Add another job</button></div>
+      <div class="section-t">3. School and training</div>
+      <div class="sub-list" data-cschools>${schoolCard()}</div>
+      <div><button type="button" class="btn sm" data-add-cschool>${icon("plus")}Add another</button></div>
+      <div class="section-t">4. Skills and the rest</div>
+      <div class="form-row">${fld("Certifications and licenses", inp("c_certs", "", 'placeholder="e.g. Food Handler, forklift, CPR, CDL"'))}${fld("Languages", inp("c_langs", "", 'placeholder="e.g. English, Spanish"'))}</div>
+      ${fld("Skills", inp("c_skills", "", 'placeholder="e.g. cash handling, customer service, Excel, inventory"'))}
+      ${fld("Anything else? (optional)", inp("c_summary", "", 'placeholder="e.g. Reliable, available weekends, love working with people"'), "Used for the short summary at the top.")}
+      ${cfg.profile ? `<label class="check"><input type="checkbox" name="c_merge">Add to my current resume instead of starting a new one</label>` : ""}
+      <div class="row-actions"><button type="button" class="btn primary" data-cgo>${icon("bolt")}Write my resume</button></div>
+      <div data-cmsg></div></div>`;
+    const m = el.querySelector("[data-cmsg]");
+    const renumber = () => el.querySelectorAll("[data-cjob]").forEach((c, i) => { c.querySelector("b").textContent = `Job ${i + 1}`; });
+    const bind = () => el.querySelectorAll("[data-rm-cjob]").forEach((b) => b.onclick = () => { if (el.querySelectorAll("[data-cjob]").length > 1) { b.closest("[data-cjob]").remove(); renumber(); } });
+    bind();
+    el.querySelector("[data-add-cjob]").onclick = () => { el.querySelector("[data-cjobs]").insertAdjacentHTML("beforeend", jobCard(el.querySelectorAll("[data-cjob]").length + 1)); bind(); };
+    el.querySelector("[data-add-cschool]").onclick = () => el.querySelector("[data-cschools]").insertAdjacentHTML("beforeend", schoolCard());
+    el.querySelector("[data-cgo]").onclick = async () => {
+      const jobs = [...el.querySelectorAll("[data-cjob]")].map((c) => ({ title: val(c, "c_title"), employer: val(c, "c_employer"), location: val(c, "c_location"), start: val(c, "c_start"),
+        end: val(c, "c_end"), current: val(c, "c_current"), daily: c.querySelector("[name=c_daily]").value.trim(), proud: c.querySelector("[name=c_proud]").value.trim(), numbers: val(c, "c_numbers"), tools: val(c, "c_tools") }))
+        .filter((j) => j.title || j.employer);
+      const education = [...el.querySelectorAll("[data-cschool]")].map((c) => ({ school: val(c, "c_school"), earned: val(c, "c_earned"), year: val(c, "c_year") })).filter((e) => e.school);
+      if (!jobs.length && !education.length) return msg(m, "err", "Add at least one job (or a school, if you haven't worked yet).");
+      const thin = jobs.find((j) => !j.daily);
+      if (thin) return msg(m, "err", `Tell us what you did at ${thin.title || thin.employer} on a normal day. A few words is enough.`);
+      const interview = { target: val(el, "c_target"), jobs, education, certifications: val(el, "c_certs"), languages: val(el, "c_langs"), skills: val(el, "c_skills"), summary: val(el, "c_summary") };
+      const btn = el.querySelector("[data-cgo]");
+      btn.disabled = true;
+      msg(m, "info", "Writing your resume from your answers. This takes up to a minute...");
+      const r = await api("/api/resume/create", { interview, merge: val(el, "c_merge") });
+      btn.disabled = false;
+      if (r.error) return msg(m, "err", r.error);
+      cfg.profile = r.profile; cfg.answers = r.answers;
+      const lines = r.profile.experience.reduce((n, e) => n + e.bullets.length, 0);
+      m.innerHTML = `<div class="msg ok">Done: ${lines} lines from your answers. Check each one next.${r.rejected.length ? ` ${r.rejected.length} suggestion${r.rejected.length === 1 ? " was" : "s were"} left out because ${r.rejected.length === 1 ? "it" : "they"} added things you didn't say.` : ""}</div>
+        ${r.questions.length ? `<div class="msg info" style="margin-top:8px"><b>To make it stronger later</b>, think about: ${r.questions.map((q) => esc(q.question)).join(" · ")} Then use <b>Check &amp; improve</b> on the Resume page.</div>` : ""}`;
+      onDone && onDone(r);
+    };
+    return { save: async () => (cfg.profile ? null : "Write your resume first.") };
+  }
+
+  // ---------- Check & improve: the recruiter checklist and suggested rewrites ----------
+  function studio(el, cfg, onChange) {
+    let suggestions = [];
+    const levelIcon = { good: `<span class="ck good">✓</span>`, fix: `<span class="ck fix">!</span>`, tip: `<span class="ck tip">i</span>` };
+    el.innerHTML = `<div class="form">
+      <div class="row-actions">
+        <button type="button" class="btn primary" data-improve-all>${icon("bolt")}Suggest improvements for every line</button>
+        <button type="button" class="btn" data-download>${icon("file")}Download my resume (PDF)</button>
+        <button type="button" class="btn ghost" data-preview>${icon("eye")}Preview</button>
+      </div>
+      <div data-smsg></div>
+      <div class="section-t">What recruiters will notice</div>
+      <div data-checks><div class="muted">Checking...</div></div>
+      <div data-sugg-wrap hidden><div class="section-t">Suggested improvements</div>
+        <p class="hint" style="margin:-4px 0 8px">Every suggestion says the same facts you gave, worded the way recruiters like. Anything that added a number or claim you didn't give was left out; you'll see a question instead.</p>
+        <div class="sub-list" data-sugg></div></div></div>`;
+    const sm = el.querySelector("[data-smsg]");
+    const drawChecks = async () => {
+      const r = await api("/api/resume/check", {});
+      const host = el.querySelector("[data-checks]");
+      if (r.error) { host.innerHTML = `<div class="msg info">${esc(r.error)}</div>`; return; }
+      const order = { fix: 0, tip: 1, good: 2 };
+      host.innerHTML = `<div class="checklist">${r.checks.sort((a, b) => order[a.level] - order[b.level]).map((c, i) => `<div class="check-item ${c.level}">${levelIcon[c.level]}
+        <div style="flex:1"><b>${esc(c.title)}</b>${c.detail ? `<div class="muted">${esc(c.detail)}</div>` : ""}
+        ${c.items.length ? `<ul class="bul" style="margin-top:6px">${c.items.slice(0, 5).map((x) => `<li>${esc(x.text)} <span>${esc(x.why || "")}</span></li>`).join("")}</ul>` : ""}</div>
+        ${c.items.some((x) => x.path && x.path.split(".").length >= 2 && !/^experience\.[^.]+$/.test(x.path)) && c.level !== "good" ? `<button type="button" class="btn sm" data-fix="${i}">Improve these</button>` : ""}</div>`).join("")}</div>`;
+      host.querySelectorAll("[data-fix]").forEach((b) => b.onclick = () => improve(r.checks[Number(b.dataset.fix)].items.map((x) => x.path)));
+    };
+    const drawSugg = () => {
+      const wrap = el.querySelector("[data-sugg-wrap]"), host = el.querySelector("[data-sugg]");
+      wrap.hidden = false;
+      if (!suggestions.length) { host.innerHTML = `<div class="msg ok">Nothing to change: these lines already read the way recruiters like.</div>`; return; }
+      host.innerHTML = suggestions.map((s, i) => `<div class="sub-item sugg" data-i="${i}">
+        <div class="muted" style="font-size:12px">${esc(s.kind === "summary" ? "Summary" : s.job || "")}</div>
+        <div><span class="pill">Now</span> ${esc(s.original)}</div>
+        ${s.text ? `<div class="fld"><span><span class="pill ok">Suggested</span> ${esc(s.why || "")}</span><textarea name="t" rows="2">${esc(s.text)}</textarea></div>
+          <div class="row-actions"><button type="button" class="btn sm primary" data-use>${icon("check")}Use this</button><button type="button" class="btn sm" data-both>Keep both</button><button type="button" class="btn sm ghost" data-no>No thanks</button></div>` : ""}
+        ${s.question ? `<div class="fld"><span>${icon("bolt")} ${esc(s.question)}</span><div class="row-actions"><input class="inp" name="a" placeholder="Your answer (only if you know it)" style="flex:1;min-width:220px">
+          <button type="button" class="btn sm" data-answer>Rewrite with my answer</button>${s.text ? "" : `<button type="button" class="btn sm ghost" data-no>Skip</button>`}</div></div>` : ""}
+        <div data-m></div></div>`).join("");
+      host.querySelectorAll(".sugg").forEach((card) => {
+        const i = Number(card.dataset.i), s = suggestions[i], cm = card.querySelector("[data-m]");
+        const apply = async (mode) => {
+          const text = card.querySelector("[name=t]").value.trim();
+          const r = await api("/api/resume/apply", { path: s.path, text, mode });
+          if (r.error) return msg(cm, "err", r.error);
+          cfg.profile = r.profile;
+          suggestions.splice(i, 1); drawSugg(); drawChecks(); onChange && onChange();
+        };
+        const u = card.querySelector("[data-use]"); if (u) u.onclick = () => apply("replace");
+        const b = card.querySelector("[data-both]"); if (b) b.onclick = () => apply("add");
+        card.querySelectorAll("[data-no]").forEach((n) => n.onclick = () => { suggestions.splice(i, 1); drawSugg(); });
+        const a = card.querySelector("[data-answer]");
+        if (a) a.onclick = async () => {
+          msg(cm, "info", "Rewriting...");
+          const r = await api("/api/resume/answer", { path: s.path, original: s.original, question: s.question, answer: val(card, "a") });
+          if (r.error) return msg(cm, "err", r.error);
+          suggestions[i] = { ...s, ...r, question: "" };
+          drawSugg();
+        };
+      });
+    };
+    const improve = async (paths) => {
+      msg(sm, "info", "Reading your resume like a recruiter would. This takes up to a minute...");
+      const r = await api("/api/resume/improve", paths ? { paths } : {});
+      if (r.error) return msg(sm, "err", r.error);
+      msg(sm, "", "");
+      suggestions = r.suggestions;
+      drawSugg();
+      el.querySelector("[data-sugg-wrap]").scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+    el.querySelector("[data-improve-all]").onclick = () => improve(null);
+    const pdf = async () => { const r = await api("/api/profile/preview", {}); if (r.error) { msg(sm, "err", r.error); return null; } return r; };
+    el.querySelector("[data-preview]").onclick = async () => { const r = await pdf(); if (r) window.open(r.url, "_blank"); };
+    el.querySelector("[data-download]").onclick = async () => {
+      const r = await pdf(); if (!r) return;
+      const f = await window.ja.saveResume(r.file, r.fileName || "Resume.pdf");
+      if (f) msg(sm, "ok", "Saved to " + f);
+    };
+    drawChecks();
+    return { save: async () => null, refresh: drawChecks };
+  }
+
   // ---------- 2b. Review: approve every summary, bullet, skill group and layout ----------
   function review(el, cfg) {
     const p = cfg.profile;
@@ -213,7 +328,9 @@
     };
     const item = (path, text, approved, opts = {}) => `<div class="rv-item ${approved ? "ok" : ""}">
       <input type="checkbox" class="approve" data-approve="${path}" ${approved ? "checked" : ""} title="Approve">
-      ${opts.input ? `<input type="text" data-edit="${path}" value="${esc(text)}">` : `<textarea data-edit="${path}" rows="${Math.min(8, Math.max(1, Math.ceil(String(text).length / 72)))}">${esc(text)}</textarea>`}
+      <div>${opts.input ? `<input type="text" data-edit="${path}" value="${esc(text)}">` : `<textarea data-edit="${path}" rows="${Math.min(8, Math.max(1, Math.ceil(String(text).length / 72)))}">${esc(text)}</textarea>`}
+        ${opts.source ? `<small class="hint" style="display:block;padding:0 8px">From your answer: "${esc(String(opts.source).slice(0, 160))}"</small>` : ""}
+        ${opts.warning ? `<small class="warn-line">${icon("alert")} ${esc(opts.warning)}</small>` : ""}</div>
       <div style="display:flex;gap:4px">${opts.preview ? `<button type="button" class="btn ghost sm" data-preview="${esc(opts.preview)}" title="Preview this layout">${icon("eye")}</button>` : ""}
         <button type="button" class="btn ghost sm" data-del="${path}" title="Delete">${icon("trash")}</button></div></div>`;
     const group = (title, key, body, add) => `<div class="rv-group"><div class="rv-head">${title}<span class="right">
@@ -223,7 +340,7 @@
       const c = counts();
       let h = `<div class="banner blue"><div style="flex:1"><b>${c.ok} of ${c.n} pieces approved</b>Your resume is only ever made from pieces you approve here. Read each line, fix anything that isn't exactly true, delete what you'd never send, and tick the rest.</div>
         <div class="right"><button type="button" class="btn sm primary" data-approve-everything>${icon("check")}Everything is true: approve all</button></div></div>`;
-      h += group("Summaries", "summaries", arr(p.summaries).map((s, i) => item(`summaries.${i}.text`, s.text, s.approved)).join(""), "summary");
+      h += group("Summaries", "summaries", arr(p.summaries).map((s, i) => item(`summaries.${i}.text`, s.text, s.approved, { warning: s.warning })).join(""), "summary");
       for (const [k, title] of [["experience", "Experience"], ["projects", "Projects"]]) {
         arr(p[k]).forEach((e, ei) => {
           const head = `<div class="rv-item"><span></span><div class="form-row">
@@ -232,7 +349,7 @@
             <input type="text" data-edit="${k}.${ei}.dates" value="${esc(e.dates || "")}" placeholder="Dates"></div>
             <button type="button" class="btn ghost sm" data-del="${k}.${ei}" title="Delete this entry">${icon("trash")}</button></div>
             ${k === "projects" ? `<div class="rv-item"><span></span><label class="check"><input type="checkbox" data-flag="${k}.${ei}.aiBuilt" ${e.aiBuilt ? "checked" : ""}>Built mostly by AI coding agents (answers must say so, and never "I built it")</label><span></span></div>` : ""}`;
-          h += group(`${title}: ${esc(e.title || "")}${e.org ? " · " + esc(e.org) : ""}`, `${k}.${ei}.bullets`, head + arr(e.bullets).map((b, bi) => item(`${k}.${ei}.bullets.${bi}.text`, b.text, b.approved)).join(""), `bullet:${k}.${ei}`);
+          h += group(`${title}: ${esc(e.title || "")}${e.org ? " · " + esc(e.org) : ""}`, `${k}.${ei}.bullets`, head + arr(e.bullets).map((b, bi) => item(`${k}.${ei}.bullets.${bi}.text`, b.text, b.approved, { source: b.source, warning: b.warning })).join(""), `bullet:${k}.${ei}`);
         });
       }
       h += group("Skills", "skills", arr(p.skills).map((s, i) => `<div class="rv-item ${s.approved ? "ok" : ""}"><input type="checkbox" class="approve" data-approve="skills.${i}.text" ${s.approved ? "checked" : ""}>
@@ -250,7 +367,7 @@
     };
     const at = (path) => { const parts = path.split("."); let o = p; for (let i = 0; i < parts.length - 1; i++) o = o[parts[i]]; return [o, parts[parts.length - 1]]; };
     const bind = () => {
-      el.querySelectorAll("[data-edit]").forEach((e) => e.oninput = () => { const [o, k] = at(e.dataset.edit); o[k] = e.value; });
+      el.querySelectorAll("[data-edit]").forEach((e) => e.oninput = () => { const [o, k] = at(e.dataset.edit); o[k] = e.value; if (k === "text" && o.warning) delete o.warning; });
       el.querySelectorAll("[data-flag]").forEach((e) => e.onchange = () => { const [o, k] = at(e.dataset.flag); o[k] = e.checked; });
       el.querySelectorAll("[data-approve]").forEach((e) => e.onchange = () => { const [o] = at(e.dataset.approve); o.approved = e.checked; e.closest(".rv-item").classList.toggle("ok", e.checked); el.querySelector(".banner b").textContent = `${counts().ok} of ${counts().n} pieces approved`; });
       el.querySelectorAll("[data-del]").forEach((e) => e.onclick = () => { const parts = e.dataset.del.split("."); const idx = Number(parts.pop()); let o = p; for (const x of parts) o = o[x]; o.splice(idx, 1); draw(); });
@@ -621,5 +738,5 @@
   }
   const importedText = (r) => `Imported ${r.total} application${r.total === 1 ? "" : "s"}: ${r.added} added, ${r.updated} marked as applied, ${r.already} already here. None of them will be applied to again.`;
 
-  window.Forms = { ai, resumes, review, questions, prefs, mailbox, running, history, importedText, esc, icon, msg };
+  window.Forms = { ai, resumes, creator, studio, review, questions, prefs, mailbox, running, history, importedText, esc, icon, msg };
 })();

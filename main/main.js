@@ -76,6 +76,15 @@ app.whenReady().then(async () => {
     fs.writeFileSync(r.filePath, history.exportHistory(app.getVersion()));
     return r.filePath;
   });
+  // Save a resume PDF the app made (Resume page > Download) wherever the user likes.
+  ipcMain.handle("save-resume", async (_e, file, suggested) => {
+    const src = path.join(DATA, "resumes", path.basename(String(file || "")));
+    if (!fs.existsSync(src)) return null;
+    const r = await dialog.showSaveDialog(win, { title: "Save your resume", defaultPath: path.join(app.getPath("downloads"), path.basename(String(suggested || "Resume.pdf"))), filters: [{ name: "PDF", extensions: ["pdf"] }] });
+    if (r.canceled || !r.filePath) return null;
+    fs.copyFileSync(src, r.filePath);
+    return r.filePath;
+  });
   ipcMain.handle("pick-folder", async () => {
     const r = await dialog.showOpenDialog(win, { title: "Where to keep your application history", properties: ["openDirectory", "createDirectory"] });
     return r.canceled ? null : r.filePaths[0];

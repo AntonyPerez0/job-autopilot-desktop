@@ -52,6 +52,9 @@ const server = http.createServer((req, res) => {
     const all = (msg.messages || []).map((m) => m.content).join("\n");
     if (/code word/.test(all)) content = { code: "MARIGOLD-7" };
     else if (/Turn this resume into JSON/.test(sys)) content = JSON.parse(JSON.stringify(Profile.EXAMPLE));
+    else if (/experienced recruiter helping/.test(sys)) content = { lines: [{ i: 0, keep: false, text: "Built the Python and PostgreSQL scheduling service that 40 clinics use to book patients", why: "leads with what you built" },
+      { i: 1, keep: false, text: "Set up CI that cut failed deploys by 80%", why: "made up", question: "Roughly how many deploys failed before?" }] };
+    else if (/one-page resume from a person's own answers/.test(sys)) content = { summary: "", jobs: [{ index: 0, bullets: [{ text: "Stocked shelves and helped customers find items", source: "stocked shelves, helped customers" }] }], skills: [] };
     else if (/You screen job postings/.test(sys)) content = { decision: "skip", reason: "mock screen", level: "unclear" };
     reply({ choices: [{ message: { content: JSON.stringify(content) } }] });
   });
@@ -210,9 +213,28 @@ try {
     assert.match(t, /Chromium is ready/);
     assert.ok(done);
   }
-  await win.click('.nav:has-text("Profile")');
-  await win.waitForSelector("#sec-review .rv-group");
-  await shot("10-profile");
+  await win.click('.nav:has-text("Resume")');
+  await win.waitForSelector("#sec-studio .check-item");
+  await shot("10-resume-check");
+  // Improve: one faithful rewrite to accept; one that invented "80%" shows only its question.
+  await win.click('button:has-text("Suggest improvements for every line")');
+  await win.waitForSelector("#sec-studio .sugg");
+  assert.ok(await win.isVisible('#sec-studio .sugg:has-text("Roughly how many deploys")'), "the invented rewrite became a question");
+  assert.ok(!(await win.isVisible('#sec-studio .sugg textarea:has-text("80%")')), "and its text is not offered");
+  await shot("11-resume-improve");
+  await win.click('#sec-studio .sugg:has-text("40 clinics") button:has-text("Use this")');
+  await win.waitForFunction(() => !document.querySelector('#sec-studio .sugg textarea') || ![...document.querySelectorAll('#sec-studio .sugg textarea')].some((t) => /40 clinics/.test(t.value)));
+  const prof = JSON.parse(fs.readFileSync(path.join(data, "profile.json"), "utf8"));
+  assert.ok(prof.experience[0].bullets.some((b) => b.text.startsWith("Built the Python and PostgreSQL scheduling service")), "accepted line saved");
+  // Create: a job from the interview, added to the current resume, waiting for approval.
+  await win.click('details:has(#sec-create) > summary');
+  await win.fill('#sec-create [name=c_title]', "Stock Associate");
+  await win.fill('#sec-create [name=c_employer]', "Corner Market");
+  await win.fill('#sec-create [name=c_daily]', "stocked shelves, helped customers");
+  await win.check('#sec-create [name=c_merge]');
+  await win.click('#sec-create [data-cgo]');
+  await win.waitForSelector('#sec-review .rv-group:has-text("Stock Associate")');
+  await shot("12-resume-created");
   console.log("E2E PASS: onboarding completed; AI calls:", calls.length);
 } catch (e) {
   await shot("failure");
