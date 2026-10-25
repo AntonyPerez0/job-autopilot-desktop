@@ -149,3 +149,11 @@ test("background check consent follows the user's own setting", () => {
   assert.strictEqual(check(label, "Yes", ["Yes", "No"], { screenings: "yes" }).notes.length, 0);
   assert.strictEqual(check("I consent to a background check and waive all claims", "Yes", ["Yes", "No"], { screenings: "yes" }).k.kind, "decide");
 });
+
+test("criminal-history questions: the user's own answer, never the AI's", () => {
+  const label = "Have you ever been convicted of a felony?*";
+  assert.strictEqual(check(label, "No", ["Yes", "No"]).k.kind, "decide", "no answer given: always asks");
+  assert.strictEqual(check(label, "Yes", ["Yes", "No"], { convictions: "none" }).k.value, "No");
+  assert.strictEqual(check(label, "No", ["Yes", "No"], { convictions: "none" }).notes.length, 0);
+  assert.strictEqual(check("I authorize a criminal background check and waive all claims", "Yes", ["Yes", "No"], { convictions: "none", screenings: "yes" }).k.kind, "decide");
+});

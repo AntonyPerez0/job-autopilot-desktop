@@ -94,3 +94,13 @@ test("a look-alike school is not the same entry", async () => {
   assert.ok(!sameEntry("City University of New York", "New York University"));
   assert.ok(sameEntry("Austin, Texas, United States", "Austin", true));
 });
+
+test("hourly-job answers", () => {
+  const s = Object.fromEntries(standardAnswers({ ...exampleAnswers(), daysAvailable: ["Monday", "Saturday"], shifts: ["Evenings"], hoursWanted: "part", transportation: "yes", canLift: "40" }).map((x) => [x.label, x.value]));
+  assert.strictEqual(s["Days available"], "Monday, Saturday");
+  assert.strictEqual(s["Available to work weekends"], "Yes");
+  assert.strictEqual(s["Shifts available"], "Evenings");
+  assert.strictEqual(s["Desired hours"], "Part-time");
+  assert.strictEqual(s["Do you have reliable transportation"], "Yes");
+  assert.strictEqual(s["How much weight can you lift"], "40 pounds");
+});

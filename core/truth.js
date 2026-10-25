@@ -57,6 +57,9 @@ const decline = (o) => pick(o, (x) => DECLINE_RX.test(x));
 export const LEGAL_RX = /arbitration|waive|waiver|jury|non-?compete|non-?solicit|class action|release of (claims|liability)|background (check|screen)|drug (test|screen)|criminal (record|history|conviction|offen[cs]e)|convicted|felony|misdemeanor/i;
 const SCREENING_RX = /^(?!.*(waive|waiver|jury|class action|release of|arbitration|non-?compete|criminal|convicted|felony|misdemeanor)).*(background (check|screen)|drug (test|screen))/i;
 const screeningOk = (a) => a.screenings === "yes";
+// "Have you ever been convicted of a felony?" asked plainly: the user's own answer, when they gave one.
+const CONVICTION_RX = /^(?!.*(waive|waiver|jury|class action|release of|arbitration|authori[sz]e|consent)).*(convicted|conviction|felony|misdemeanor|criminal (record|history|offen[cs]e))/i;
+const noRecord = (a) => a.convictions === "none";
 
 // Each rule: which questions it covers, whether an answer is wrong, and the true answer.
 export function rules(facts, a, ctx = {}) {
@@ -67,8 +70,9 @@ export function rules(facts, a, ctx = {}) {
     // plain arbitration agreements (handled when the form is filled).
     {
       name: "legal agreement", label: LEGAL_RX,
-      bad: (v) => !(screeningOk(a) && SCREENING_RX.test(String(ctx.label || "")) && yes(v)),
-      fix: (o) => (screeningOk(a) && SCREENING_RX.test(String(ctx.label || "")) ? pick(o, (x) => yes(x)) || (o && o.length ? null : "Yes") : null),
+      bad: (v) => !((screeningOk(a) && SCREENING_RX.test(String(ctx.label || "")) && yes(v)) || (noRecord(a) && CONVICTION_RX.test(String(ctx.label || "")) && no(v))),
+      fix: (o) => (screeningOk(a) && SCREENING_RX.test(String(ctx.label || "")) ? pick(o, (x) => yes(x)) || (o && o.length ? null : "Yes")
+        : noRecord(a) && CONVICTION_RX.test(String(ctx.label || "")) ? pick(o, (x) => no(x)) || (o && o.length ? null : "No") : null),
       why: "legal agreements and legal history always wait for you",
     },
     {

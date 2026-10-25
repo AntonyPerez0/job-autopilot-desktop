@@ -3,7 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { getDb, getJob, setJob, appliedToday, log } from "./db.js";
-import { state, kick, forceSearch } from "./worker.js";
+import { state, kick, forceSearch, searchBrowser } from "./worker.js";
 import {
   dataDir, getAnswers, getPrefs, getProfile, getSecret, getSettings, saveAnswers, savePrefs, saveProfile, saveSettings, setSecret,
 } from "./store.js";
@@ -14,6 +14,8 @@ import { countries, searchCities } from "./geo.js";
 import { browserOpen, detectBrowsers, installChromium, chromiumPath, showBrowser } from "./browser.js";
 import { windowModeOf } from "./apply.js";
 import { AGENCIES } from "./discover.js";
+import { addJob } from "./addjob.js";
+import { monthUse, testKey as testSerpKey } from "./sources/google.js";
 import { backupFile, collect, exportHistory, importHistory, peekBackup, writeBackup } from "./history.js";
 
 const EDITABLE = ["paused", "acceptedTerms", "windowMode", "historyBackup", "historyFolder", "dailyCap", "dayStartsAtHour", "minutesBetweenApplies", "postedWithinDays", "searchEveryMinutes", "headless", "browser", "maxAttempts"];
@@ -101,7 +103,7 @@ const ROUTES = {
   // ---------- configuration (onboarding and Settings) ----------
   "GET /api/config": () => ({
     settings: getSettings(), prefs: getPrefs(), answers: getAnswers(), profile: getProfile(),
-    hasKey: !!getSecret("apiKey"), hasMailPassword: !!getSecret("mailPassword"),
+    hasKey: !!getSecret("apiKey"), hasMailPassword: !!getSecret("mailPassword"), hasSerpKey: !!getSecret("serpApiKey"), googleUse: monthUse(),
     presets: PRESETS, agencies: AGENCIES, providers: PROVIDERS, version: VERSION, dataDir: dataDir(),
   }),
   "POST /api/ai/test": async (b) => {
@@ -191,6 +193,18 @@ const ROUTES = {
     return { ok: true, settings: s };
   },
   "POST /api/browser/detect": async () => detectBrowsers(),
+  // ---------- a job from anywhere: the user pastes its link ----------
+  "POST /api/jobs/add": async (b) => {
+    try { const r = await addJob(b.url, { browserPage: searchBrowser }); kick(); return r; } catch (e) { return bad(e.message); }
+  },
+  // ---------- Google Jobs through the user's own SerpApi key ----------
+  "POST /api/google/save": async (b) => {
+    const key = String(b.key || "").trim() || getSecret("serpApiKey");
+    if (!key) return bad("Paste your SerpApi key.");
+    try { const t = await testSerpKey(key); await setSecret("serpApiKey", key); savePrefs({ boards: { ...getPrefs().boards, google: true } }); return { ok: true, ...t }; }
+    catch (e) { return bad("SerpApi refused that key: " + e.message); }
+  },
+  "POST /api/google/remove": async () => { await setSecret("serpApiKey", ""); savePrefs({ boards: { ...getPrefs().boards, google: false } }); return { ok: true }; },
   "POST /api/browser/show": async (b) => ({ ok: await showBrowser(!!b.show) }),
   "POST /api/browser/install": async () => {
     try { return { ok: true, path: chromiumPath() || await installChromium() }; } catch (e) { return bad(e.message); }
@@ -240,6 +254,12 @@ function jobRoute(slug, b) {
     if (b.action === "skip") {
       if (j.status === "applied" || j.status === "submitting") return bad("Already applied.", 409);
       setJob(slug, { status: "skipped", reason: "skipped from the dashboard" });
+    }
+    // From "Apply yourself": the user applied on the site themselves.
+    if (b.action === "applied-myself") {
+      if (j.status === "applied") return bad("Already marked as applied.", 409);
+      setJob(slug, { status: "applied", applied_at: new Date().toISOString(), reason: "applied by you" });
+      log(slug, "you applied to this one yourself");
     }
     if (b.action === "reviewed") {
       if (j.status !== "filled") return bad("Only a filled (dry run) application can be reviewed.", 409);

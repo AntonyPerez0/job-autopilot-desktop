@@ -97,6 +97,16 @@ export function standardAnswers(a) {
   add("Are you 18 years of age or older?", yn(a.over18));
   add("Willing to travel for work", { yes: "Yes", no: "No", some: "Yes, occasionally" }[a.travel]);
   add("Desired salary", a.salary);
+  const days = a.daysAvailable || [];
+  if (days.length) {
+    add("Days available", days.length === 7 ? "Any day of the week" : days.join(", "));
+    add("Available to work weekends", days.includes("Saturday") || days.includes("Sunday") ? "Yes" : "No");
+  }
+  if ((a.shifts || []).length) add("Shifts available", a.shifts.join(", "));
+  add("Desired hours", { full: "Full-time", part: "Part-time", either: "Full-time or part-time" }[a.hoursWanted]);
+  add("Do you have reliable transportation", yn(a.transportation));
+  add("Do you have a valid driver's license", yn(a.driversLicense));
+  if (Number(a.canLift) > 0) add("How much weight can you lift", `${Number(a.canLift)} pounds`);
   const d = a.demographics || {};
   const dem = (v) => (!v || v === "decline" ? DECLINE : v);
   add("Gender", dem(d.gender));
