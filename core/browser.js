@@ -122,31 +122,58 @@ function frontApp() {
 }
 const refocus = (bundleId) => { if (bundleId) execFile("/usr/bin/open", ["-b", bundleId], { timeout: 5000 }, () => {}); };
 
+const BROWSER_APP = /^(com\.google\.Chrome|com\.microsoft\.edgemac|org\.chromium|com\.google\.chrome\.for\.testing)/i;
+const userApp = async () => { const id = await frontApp(); return id && !BROWSER_APP.test(id) ? id : null; };
+
+// Out of the way: minimized on Windows and Linux. macOS does not draw a minimized window, so its
+// screenshots would never come; there the window is parked off the left edge of the screen
+// (macOS keeps a sliver of it on screen) behind the user's other windows.
+export const PARKED_LEFT = -100000;
+export async function tuck(page) {
+  if (process.platform !== "darwin") return setWindowState(page, "minimized");
+  await setWindowState(page, "normal");
+  try {
+    const { s, windowId } = await cdpWindow(page);
+    await s.send("Browser.setWindowBounds", { windowId, bounds: { left: PARKED_LEFT, top: 80, width: 1280, height: 800 } });
+    await s.detach().catch(() => {});
+    return true;
+  } catch { return false; }
+}
+export async function tucked(page) {
+  if (process.platform !== "darwin") return (await windowState(page)) === "minimized";
+  try {
+    const { s, windowId } = await cdpWindow(page);
+    const { bounds } = await s.send("Browser.getWindowBounds", { windowId });
+    await s.detach().catch(() => {});
+    return bounds.windowState === "normal" && bounds.left + bounds.width <= 100;
+  } catch { return false; }
+}
+
 export async function acquireBrowser({ windowMode = "minimized", choice = "auto", onStatus = () => {} } = {}) {
   if (shared && shared.mode === (windowMode === "headless") && shared.choice === choice) {
     try { shared.ctx.pages(); return shared; } catch { shared = null; }
   }
   if (shared) await closeBrowser();
-  const before = windowMode === "visible" ? null : await frontApp();
+  const before = windowMode === "visible" ? null : await userApp();
   const { ctx, channel } = await launch({ headless: windowMode === "headless", choice, onStatus });
   shared = { ctx, channel, mode: windowMode === "headless", choice };
   ctx.on("close", () => { if (shared && shared.ctx === ctx) shared = null; });
-  if (windowMode === "minimized") {
-    const page = ctx.pages()[0] || await ctx.newPage();
-    await setWindowState(page, "minimized");
-  }
-  refocus(before && !/^com\.google\.Chrome|^com\.microsoft\.edgemac|^org\.chromium|^com\.google\.chrome\.for\.testing/i.test(before) ? before : null);
+  if (windowMode === "minimized") await tuck(ctx.pages()[0] || await ctx.newPage());
+  refocus(before);
   return shared;
 }
 
-// A fresh tab for one application, kept in the window state the user chose.
+// A fresh tab for one application, kept in the window state the user chose. On macOS a new tab
+// brings the browser to the front, so whatever the user was in gets focus back.
 export async function newAppPage(b, windowMode) {
+  const before = windowMode === "visible" ? null : await userApp();
   const page = await b.ctx.newPage();
   // Keep one blank tab besides this one, so the window survives when this tab closes.
   const blanks = b.ctx.pages().filter((p) => p !== page && p.url() === "about:blank");
   for (const p of blanks.slice(1)) await p.close().catch(() => {});
-  if (windowMode === "minimized") await setWindowState(page, "minimized");
+  if (windowMode === "minimized") { if (!(await tucked(page))) await tuck(page); }
   else if (windowMode === "visible") await page.bringToFront().catch(() => {});
+  refocus(before);
   return page;
 }
 
@@ -164,7 +191,17 @@ export async function showBrowser(show) {
   const pages = shared.ctx.pages();
   const page = pages[pages.length - 1];
   if (!page) return false;
-  if (show) { await setWindowState(page, "normal"); await page.bringToFront().catch(() => {}); }
-  else await setWindowState(page, "minimized");
+  if (!show) return tuck(page);
+  await setWindowState(page, "normal");
+  if (process.platform === "darwin") {
+    try {
+      const { s, windowId } = await cdpWindow(page);
+      await s.send("Browser.setWindowBounds", { windowId, bounds: { left: 80, top: 80, width: 1280, height: 800 } });
+      await s.detach().catch(() => {});
+    } catch { /* still brought to front below */ }
+    const app = { chrome: "Google Chrome", msedge: "Microsoft Edge" }[shared.channel] || (chromiumPath() || "").replace(/(\.app)\/.*$/, "$1");
+    if (app) execFile("/usr/bin/open", ["-a", app], { timeout: 5000 }, () => {});
+  }
+  await page.bringToFront().catch(() => {});
   return true;
 }
