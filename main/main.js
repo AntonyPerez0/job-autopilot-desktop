@@ -1,7 +1,7 @@
 // The desktop app: one window with the dashboard (or the first-run setup),
 // the autopilot loop running in this process, and everything stored in the
 // OS app-data folder. The window talks to the engine over IPC only.
-import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, net, protocol, shell } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -24,12 +24,24 @@ let win = null, core = null;
 
 function page(name) { return path.join(UI, name); }
 
+// Light, dark, or whatever the computer uses ("system"). Pages follow it through prefers-color-scheme.
+const THEMES = ["system", "light", "dark"];
+const applyTheme = (t) => { nativeTheme.themeSource = THEMES.includes(t) ? t : "system"; };
+// The window's own title bar is replaced by the app's: the page draws the background, and on Windows
+// the minimize/maximize/close buttons sit on top in the app's paper and ink colours.
+const MAC = process.platform === "darwin", WIN = process.platform === "win32";
+const overlay = () => (nativeTheme.shouldUseDarkColors ? { color: "#161210", symbolColor: "#ede7e2", height: 36 } : { color: "#f8f5f2", symbolColor: "#251d19", height: 36 });
+nativeTheme.on("updated", () => { if (WIN) for (const w of BrowserWindow.getAllWindows()) try { w.setTitleBarOverlay(overlay()); } catch { /* a window without an overlay */ } });
+
 function createWindow() {
+  applyTheme(core.store.getSettings().theme);
   win = new BrowserWindow({
     width: 1360, height: 900, minWidth: 960, minHeight: 640, title: "Job Autopilot", show: false,
     // Windows and Linux: no File/Edit/View bar; pressing Alt still shows it, and its shortcuts keep working.
     autoHideMenuBar: true,
-    backgroundColor: "#f8f5f2",
+    // (Linux keeps its own title bar: the overlay crashes some Linux window systems.)
+    ...(MAC ? { titleBarStyle: "hiddenInset", titleBarOverlay: true } : WIN ? { titleBarStyle: "hidden", titleBarOverlay: overlay() } : {}),
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#161210" : "#f8f5f2",
     webPreferences: { preload: path.join(HERE, "preload.cjs"), contextIsolation: true, sandbox: true, nodeIntegration: false, plugins: true },
   });
   win.once("ready-to-show", () => win.show());
@@ -108,6 +120,7 @@ app.whenReady().then(async () => {
   ipcMain.handle("api", (_e, route, body) => api.handle(route, body));
   ipcMain.handle("open-external", (_e, url) => { if (/^https:\/\//.test(String(url))) shell.openExternal(String(url)); });
   ipcMain.handle("show-data-folder", () => shell.openPath(DATA));
+  ipcMain.handle("set-theme", (_e, t) => { applyTheme(t); store.saveSettings({ theme: nativeTheme.themeSource }); return nativeTheme.themeSource; });
   ipcMain.handle("go", (_e, name) => {
     if (!win || !["index.html", "onboarding.html"].includes(name)) return;
     if (name === "index.html" && store.getSettings().onboarded) worker.run();

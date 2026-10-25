@@ -10,6 +10,7 @@ import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { _electron as electron } from "playwright-core";
 import { Tailor, Profile } from "../../core/engine.js";
@@ -88,6 +89,17 @@ app.process().stdout.on("data", (d) => { if (process.env.JA_E2E_LOG) process.std
 app.process().stderr.on("data", (d) => { const t = String(d); if (/Error|unhandled|FATAL/i.test(t) && !/dbus|gl_|EGL|ANGLE|viz_main|Display.cpp|egl_util|ozone|gpu/i.test(t)) process.stdout.write("[app err] " + t); });
 const win = await app.firstWindow();
 win.setDefaultTimeout(60000);
+// The whole screen, so the window's own title bar shows too (on the CI runners; skipped elsewhere).
+async function screenShot(n) {
+  if (!["win32", "darwin"].includes(process.platform)) return;
+  await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows()[0]; w.setSize(1280, 800); w.center(); w.show(); w.focus(); });
+  await new Promise((r) => setTimeout(r, 1200));
+  const f = path.join(OUT, `${n}.png`);
+  try {
+    if (process.platform === "darwin") execFileSync("screencapture", ["-x", f]);
+    else execFileSync("powershell", ["-NoProfile", "-Command", `Add-Type -AssemblyName System.Windows.Forms,System.Drawing; $b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds; $i=New-Object System.Drawing.Bitmap $b.Width,$b.Height; $g=[System.Drawing.Graphics]::FromImage($i); $g.CopyFromScreen($b.Location,[System.Drawing.Point]::Empty,$b.Size); $i.Save('${f}')`]);
+  } catch (e) { console.log("screen capture failed:", e.message.split("\n")[0]); }
+}
 const shot = (n) => win.screenshot({ path: path.join(OUT, `${n}.png`), fullPage: true }).catch(() => {});
 const next = () => win.click("#next");
 const heading = (t) => win.waitForSelector(`h1:has-text("${t}")`);
@@ -176,6 +188,7 @@ try {
   await win.waitForSelector('h1:has-text("Overview")');
   await win.waitForSelector(".banner.violet");
   await shot("8-dashboard");
+  await screenShot("8z-screen");
   assert.ok(await win.isVisible("#live"), "Go live switch shown");
   // "Checking..." while the app's own check runs, then "Check for updates".
   await win.waitForSelector('#update-side button:has-text("Check for updates")', { timeout: 60000 });
@@ -230,6 +243,18 @@ try {
   await win.waitForSelector('#sec-history .hint:has-text("3 so far")');
   await win.waitForSelector('#update-card button:has-text("Update now")');
   await shot("9-settings");
+  // Appearance: Dark switches the whole app through Electron's nativeTheme and is remembered; "Match my computer" undoes it.
+  // (Playwright pins the page's own prefers-color-scheme to light, so the check is on Electron's side.)
+  const theme = () => app.evaluate(({ nativeTheme }) => [nativeTheme.themeSource, nativeTheme.shouldUseDarkColors]);
+  await win.check('#sec-theme input[value=dark]');
+  for (let k = 0; k < 20 && (await theme())[0] !== "dark"; k++) await new Promise((r) => setTimeout(r, 250));
+  assert.deepStrictEqual(await theme(), ["dark", true], "dark mode on");
+  await screenShot("9z-screen-dark");
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(data, "settings.json"), "utf8")).theme, "dark", "the choice is saved");
+  await win.check('#sec-theme input[value=light]');
+  for (let k = 0; k < 20 && (await theme())[0] !== "light"; k++) await new Promise((r) => setTimeout(r, 250));
+  assert.deepStrictEqual(await theme(), ["light", false], "light mode on");
+  await win.check('#sec-theme input[value=system]');
   // Playwright inside the packaged app: find the installed browsers, and optionally download Chromium.
   await win.click('details:has(#sec-running) > summary');
   await win.click("#sec-running [data-detect]");

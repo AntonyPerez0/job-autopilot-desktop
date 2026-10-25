@@ -11,6 +11,8 @@
 </head>
 <body>
 <script src="icons.js"></script>
+<script>document.documentElement.dataset.platform = (window.ja && window.ja.platform) || "";</script>
+<div class="titlebar" aria-hidden="true"></div>
 
 <div class="app">
   <aside class="side">
@@ -602,6 +604,9 @@ async function renderConfig() {
   } else {
     $("main").innerHTML = header() + `<div id="cfg-host">
       <div class="card" style="margin-bottom:12px"><div class="card-h"><h2>Updates</h2></div><div class="sec" id="update-card">${updateCard()}</div></div>
+      <div class="card" style="margin-bottom:12px"><div class="card-h"><h2>Appearance</h2><span class="sub">Light or dark</span></div><div class="sec" id="sec-theme">
+        <div class="radio-row" role="radiogroup" aria-label="Appearance">${[["system", "Match my computer"], ["light", "Light"], ["dark", "Dark"]].map(([v, l]) =>
+          `<label><input type="radio" name="theme" value="${v}" ${(cfg.settings.theme || "system") === v ? "checked" : ""}>${l}</label>`).join("")}</div></div></div>
       ${card("prefs", "Jobs to look for", "Job titles, where, and which sites to search", true)}
       ${card("questions", "About you", "The answers application forms ask for")}
       ${card("ai", "AI", "The AI service the app uses")}
@@ -614,6 +619,9 @@ async function renderConfig() {
     const forms = { prefs: Forms.prefs($("sec-prefs"), cfg), questions: Forms.questions($("sec-questions"), cfg), ai: Forms.ai($("sec-ai"), cfg),
       mailbox: Forms.mailbox($("sec-mailbox"), cfg), running: Forms.running($("sec-running"), cfg) };
     Forms.history($("sec-history"), cfg, () => refreshStatusOnly());
+    document.querySelectorAll("#sec-theme [name=theme]").forEach((r) => r.onchange = async () => {
+      cfg.settings.theme = window.ja.setTheme ? await window.ja.setTheme(r.value) : r.value;
+    });
     bindSaves(forms);
   }
 }

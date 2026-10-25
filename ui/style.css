@@ -36,8 +36,16 @@ svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none;
 .meta > span + span { color: var(--color-muted); }
 
 /* ---------- the shell ---------- */
+/* The app's own title bar: an empty strip you can drag the window by. The window buttons sit over its
+   right end on Windows (titlebar-area-* is set by Electron), the traffic lights over its left end on a Mac. */
+:root { --tb-h: env(titlebar-area-height, 0px); }
+.titlebar { position: fixed; top: 0; left: 0; right: 0; height: var(--tb-h); z-index: var(--z-sticky-nav); -webkit-app-region: drag; app-region: drag;
+  background: linear-gradient(to right, var(--color-paper-2) var(--side-w), var(--color-paper) var(--side-w)); }
+body { padding-top: var(--tb-h); }
+/* A Mac keeps its traffic lights at the top left: make sure the strip is tall enough to hold them. */
+:root[data-platform="darwin"] { --tb-h: max(env(titlebar-area-height, 0px), 28px); }
 .app { min-height: 100vh; padding-left: var(--side-w); }
-.side { position: fixed; left: 0; top: 0; bottom: 0; width: var(--side-w); z-index: var(--z-raised); overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-3xs); padding: var(--space-md) var(--space-sm); background: var(--color-paper-2); }
+.side { position: fixed; left: 0; top: var(--tb-h); bottom: 0; width: var(--side-w); z-index: var(--z-raised); overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-3xs); padding: var(--space-md) var(--space-sm); background: var(--color-paper-2); }
 .brand { display: flex; align-items: center; gap: var(--space-xs); padding: var(--space-2xs) var(--space-xs) var(--space-md); font-weight: 600; font-size: var(--text-md); letter-spacing: -0.01em; }
 .logo { width: 24px; height: 24px; display: grid; place-items: center; color: var(--color-ink); }
 .logo svg { width: 18px; height: 18px; stroke-width: 2; }
@@ -214,7 +222,7 @@ tbody tr:hover { background: var(--color-paper-2); }
 /* ---------- the job drawer ---------- */
 .scrim { position: fixed; inset: 0; background: var(--color-scrim); opacity: 0; pointer-events: none; transition: opacity var(--dur-short) var(--ease-out); z-index: var(--z-modal); }
 .scrim.open { opacity: 1; pointer-events: auto; }
-.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(46rem, 100%); background: var(--color-paper); border-left: 1px solid var(--color-rule-2); transform: translateX(102%); visibility: hidden;
+.drawer { position: fixed; top: var(--tb-h); right: 0; bottom: 0; width: min(46rem, 100%); background: var(--color-paper); border-left: 1px solid var(--color-rule-2); transform: translateX(102%); visibility: hidden;
   transition: transform var(--dur-long) var(--ease-out), visibility 0s linear var(--dur-long); z-index: var(--z-modal); display: flex; flex-direction: column; }
 .drawer.open { transform: none; visibility: visible; transition: transform var(--dur-long) var(--ease-out), visibility 0s; }
 .dr-head { padding: var(--space-lg) var(--space-lg) 0; }
@@ -355,7 +363,7 @@ tbody tr:hover { background: var(--color-paper-2); }
 
 /* ---------- the setup ---------- */
 .wiz { min-height: 100vh; padding-left: var(--side-w); }
-.wiz-side { background: var(--color-paper-2); padding: var(--space-md) var(--space-sm); position: fixed; left: 0; top: 0; bottom: 0; width: var(--side-w); overflow-y: auto; z-index: var(--z-raised); }
+.wiz-side { background: var(--color-paper-2); padding: var(--space-md) var(--space-sm); position: fixed; left: 0; top: var(--tb-h); bottom: 0; width: var(--side-w); overflow-y: auto; z-index: var(--z-raised); }
 #steps { display: grid; gap: var(--space-3xs); counter-reset: none; }
 .wiz-step { display: flex; gap: var(--space-sm); align-items: center; min-height: var(--bar-h); padding: 0 var(--space-xs); border-radius: var(--radius-input); color: var(--color-muted); font-size: var(--text-sm); cursor: default; }
 .wiz-step.done { color: var(--color-ink-2); cursor: pointer; }
@@ -455,8 +463,9 @@ details.card-fold[open] > summary h2::before, details.card-fold[open] > summary 
 /* The shell folds at 860px, where it always has; a desktop window rarely goes narrower. */
 @media (max-width: 860px) {
   .app, .wiz { padding-left: 0; }
+  .titlebar { background: var(--color-paper-2); }
   .side { display: none; }
-  .mobile-bar { display: flex; gap: var(--space-2xs); overflow-x: auto; padding: var(--space-xs) var(--space-md); background: var(--color-paper-2); position: sticky; top: 0; z-index: var(--z-sticky-nav); }
+  .mobile-bar { display: flex; gap: var(--space-2xs); overflow-x: auto; padding: var(--space-xs) var(--space-md); background: var(--color-paper-2); position: sticky; top: var(--tb-h); z-index: var(--z-sticky-nav); }
   .mobile-bar .nav { flex: none; }
   .main { padding: var(--space-md) var(--space-md) var(--space-xl); }
   .top .actions { justify-content: flex-start; }

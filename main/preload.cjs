@@ -11,4 +11,6 @@ contextBridge.exposeInMainWorld("ja", {
   pickFolder: () => ipcRenderer.invoke("pick-folder"),
   saveResume: (file, name) => ipcRenderer.invoke("save-resume", file, name),
   showFile: (f) => ipcRenderer.invoke("show-file", f),
+  setTheme: (mode) => ipcRenderer.invoke("set-theme", mode),
+  platform: process.platform,
 });
