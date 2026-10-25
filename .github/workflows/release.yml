@@ -1,0 +1,91 @@
+name: Build installers
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: Build the macOS .dmg (universal)
+        if: runner.os == 'macOS'
+        run: npm run dist:mac
+      - name: Build the Windows installer
+        if: runner.os == 'Windows'
+        run: npm run dist:win
+
+      # Install the built app the way a user would, launch it, and walk the whole first-run setup.
+      - name: Install from the .dmg and run the setup end to end
+        if: runner.os == 'macOS'
+        run: |
+          DMG=$(ls dist/*.dmg | head -1)
+          hdiutil attach "$DMG" -nobrowse -mountpoint /tmp/ja-dmg
+          cp -R "/tmp/ja-dmg/Job Autopilot.app" "$RUNNER_TEMP/"
+          hdiutil detach /tmp/ja-dmg
+          codesign -dv "$RUNNER_TEMP/Job Autopilot.app" 2>&1 | head -5
+          lipo -archs "$RUNNER_TEMP/Job Autopilot.app/Contents/MacOS/Job Autopilot"
+          JA_E2E_CHROMIUM=1 JA_APP_EXE="$RUNNER_TEMP/Job Autopilot.app/Contents/MacOS/Job Autopilot" node test/e2e/onboarding.mjs
+      - name: Install with the .exe installer and run the setup end to end
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem dist\*.exe | Select-Object -First 1
+          Start-Process -FilePath $exe.FullName -ArgumentList "/S" -Wait
+          $app = Join-Path $env:LOCALAPPDATA "Programs\Job Autopilot\Job Autopilot.exe"
+          if (!(Test-Path $app)) { Get-ChildItem -Recurse (Join-Path $env:LOCALAPPDATA "Programs") -Filter "Job Autopilot.exe" | Select-Object -First 3; throw "installed app not found" }
+          $env:JA_APP_EXE = $app
+          $env:JA_E2E_CHROMIUM = "1"
+          node test/e2e/onboarding.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ runner.os }}
+          path: |
+            dist/*.dmg
+            dist/*.exe
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-screenshots-${{ runner.os }}
+          path: test/out/e2e/*.png
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: installer-*
+          merge-multiple: true
+          path: out
+      - name: Attach installers to the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -la out
+          gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+            gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --title "Job Autopilot $GITHUB_REF_NAME" \
+              --notes "Download the .dmg for macOS (Apple Silicon and Intel) or the Setup .exe for Windows. These builds are not signed yet: see the README for the one-time Open Anyway / Run anyway step." \
+              $([[ "$GITHUB_REF_NAME" == *-* ]] && echo --prerelease)
+          gh release upload "$GITHUB_REF_NAME" out/* -R "$GITHUB_REPOSITORY" --clobber

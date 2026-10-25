@@ -1,0 +1,51 @@
+appId: io.github.antonyperez0.jobautopilot
+productName: Job Autopilot
+copyright: Copyright © 2026 AntonyPerez0
+directories:
+  output: dist
+  buildResources: build
+files:
+  - main/**
+  - core/**
+  - ui/**
+  - vendor/**
+  - package.json
+  - "!**/*.map"
+  - "!**/*.d.ts"
+  - "!**/*.d.mts"
+  - "!**/*.d.cts"
+  # optional native canvas for pdf.js; never needed, and native code does not belong here
+  - "!node_modules/@napi-rs/**"
+# Playwright's installer runs as a separate process (Chromium download), so it must live outside the asar archive.
+asarUnpack:
+  - node_modules/playwright-core/**
+publish: null
+
+mac:
+  target:
+    - target: dmg
+      arch: [universal]
+  category: public.app-category.productivity
+  # Ad-hoc signature: unsigned builds otherwise show as "damaged" on Apple Silicon.
+  # For a Developer ID signature and notarization see docs/SIGNING.md.
+  identity: "-"
+  hardenedRuntime: false
+  gatekeeperAssess: false
+  artifactName: Job-Autopilot-${version}-mac-universal.${ext}
+dmg:
+  title: Job Autopilot ${version}
+  writeUpdateInfo: false
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  artifactName: Job-Autopilot-Setup-${version}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Job Autopilot
+  differentialPackage: false
