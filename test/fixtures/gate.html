@@ -1,0 +1,19 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Gate test (mock Ashby-style form)</title></head>
+<body>
+<header><button type="button">Apply</button></header>
+<form id="app" onsubmit="window.SUBMITTED = true; return false;">
+  <div class="fieldEntry"><label for="name" class="_required">Name *</label><input id="name" required value="Jordan Lee"></div>
+  <div class="fieldEntry"><label for="city" class="_required">City *</label><input id="city" required></div>
+  <div class="fieldEntry"><label class="_required">Do you now or in the future require sponsorship? *</label>
+    <div class="yesno"><button type="button" aria-pressed="false">Yes</button><button type="button" aria-pressed="false">No</button></div></div>
+  <div class="fieldEntry"><label>Would you like to join our talent community?</label>
+    <div class="yesno"><button type="button" aria-pressed="false">Yes</button><button type="button" aria-pressed="false">No</button></div></div>
+  <script>
+    for (const b of document.querySelectorAll('.yesno button')) b.addEventListener('click', () => {
+      for (const x of b.parentElement.children) x.setAttribute('aria-pressed', String(x === b));
+    });
+  </script>
+  <button type="submit">Submit Application</button>
+</form>
+</body></html>

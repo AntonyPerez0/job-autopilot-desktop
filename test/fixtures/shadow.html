@@ -1,0 +1,157 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Easy apply - Associate Software Engineer (shadow DOM mock)</title></head>
+<body>
+<h1>Easy Apply</h1>
+<x-upload></x-upload>
+<h2>Personal information</h2>
+<x-field label="First name" required></x-field>
+<x-field label="Last name" required></x-field>
+<x-field label="Email" required type="email"></x-field>
+<x-field label="Confirm your email" required type="email"></x-field>
+<x-field label="City" required></x-field>
+<x-phone></x-phone>
+<x-section heading="Your Profiles">
+</x-section>
+<h2>Preliminary questions</h2>
+<x-q required><span slot="label">What school do you currently attend or most recently attended? If unlisted, please select "Other"</span></x-q>
+<x-yesno required><span slot="label">Are you legally authorized to work in the country in which you are applying for a role?</span></x-yesno>
+<x-yesno required><span slot="label">Do you now, or will you in the future, require visa sponsorship to work for Initech in the country of hire?</span></x-yesno>
+<x-pick required><span slot="label">Have you ever worked at Initech in any capacity?</span></x-pick>
+<x-rgroup required><span slot="label">A. Within the past 5 years, have you ever been an employee of the U.S. Federal Government?</span>
+  <x-radio value="yes">Yes</x-radio><x-radio value="no">No</x-radio></x-rgroup>
+<x-rgroup><span slot="label">Are you a protected veteran?</span>
+  <x-radio value="y">Yes</x-radio><x-radio value="n">No</x-radio><x-radio value="p">Prefer not to answer</x-radio></x-rgroup>
+<x-auto id="grad" label="Expected Graduation Date?" required options="2025|2026|2027|2028"></x-auto>
+<x-auto id="gender" placeholder="Gender" options="Male|Female|Non-binary|I don't wish to answer"></x-auto>
+<x-q required><span slot="label">Today's date</span></x-q>
+<x-check required><span slot="label">You declare that you have read and understand the privacy notice of Initech.</span></x-check>
+<x-consent></x-consent>
+<button id="submit" onclick="window.SUBMITTED = true">Submit</button>
+<script>
+  // A design-system text field: label and input live in the shadow root; the
+  // component only learns the value from the input event (like Stencil/Lit).
+  customElements.define("x-field", class extends HTMLElement {
+    connectedCallback() {
+      if (this.shadowRoot) return;
+      const r = this.attachShadow({ mode: "open" });
+      const req = this.hasAttribute("required") ? '<span class="req">*</span>' : "";
+      r.innerHTML = `<div class="wrap"><label for="i">${this.getAttribute("label")}${req}</label>
+        <input id="i" type="${this.getAttribute("type") || "text"}"></div>`;
+      r.getElementById("i").addEventListener("input", (e) => { this.value = e.target.value; this.setAttribute("data-value", e.target.value); });
+    }
+  });
+  customElements.define("x-phone", class extends HTMLElement {
+    connectedCallback() {
+      const r = this.attachShadow({ mode: "open" });
+      r.innerHTML = `<label id="pl">Phone number<span>*</span></label>
+        <select id="cc" aria-label="Country code"><option value="us">+1</option><option value="mx">+52</option></select>
+        <input id="ph" type="tel" aria-labelledby="pl">`;
+      r.getElementById("ph").addEventListener("input", (e) => this.setAttribute("data-value", e.target.value));
+    }
+  });
+  customElements.define("x-upload", class extends HTMLElement {
+    connectedCallback() {
+      const r = this.attachShadow({ mode: "open" });
+      r.innerHTML = `<div class="drop"><a href="#">Choose a file</a> or drop it here<div>10MB size limit</div>
+        <input id="f" type="file" style="display:none"></div>`;
+      r.getElementById("f").addEventListener("change", (e) => this.setAttribute("data-file", e.target.files[0] ? e.target.files[0].name : ""));
+    }
+  });
+  // A component inside another component's shadow root.
+  customElements.define("x-section", class extends HTMLElement {
+    connectedCallback() {
+      const r = this.attachShadow({ mode: "open" });
+      r.innerHTML = `<h3>${this.getAttribute("heading")}</h3><x-field label="LinkedIn"></x-field><x-field label="Facebook"></x-field>`;
+    }
+  });
+  // SmartRecruiters-style: the question is light-DOM text projected through a <slot>,
+  // so the shadow label's own text is only the asterisk.
+  customElements.define("x-q", class extends HTMLElement {
+    connectedCallback() {
+      const r = this.attachShadow({ mode: "open" });
+      r.innerHTML = `<label for="i"><slot name="label"></slot><span aria-hidden="true">*</span></label><input id="i">`;
+      r.getElementById("i").addEventListener("input", (e) => this.setAttribute("data-value", e.target.value));
+    }
+  });
+  customElements.define("x-yesno", class extends HTMLElement {
+    connectedCallback() {
+      const r = this.attachShadow({ mode: "open" });
+      r.innerHTML = `<fieldset><legend><slot name="label"></slot> *</legend>
+        <label><input type="radio" name="g" value="yes"> Yes</label><label><input type="radio" name="g" value="no"> No</label></fieldset>`;
+      r.querySelectorAll("input").forEach((i) => i.addEventListener("change", () => this.setAttribute("data-value", i.value)));
+    }
+  });
+  customElements.define("x-pick", class extends HTMLElement {
+    connectedCallback() {
+      const r = this.attachShadow({ mode: "open" });
+      r.innerHTML = `<label id="l"><slot name="label"></slot>*</label>
+        <select aria-labelledby="l"><option value="">Select</option><option value="y">Yes</option><option value="n">No</option></select>`;
+      r.querySelector("select").addEventListener("change", (e) => this.setAttribute("data-value", e.target.value));
+    }
+  });
+  // spl-radio-group: the label and a role=radiogroup fieldset live in the shadow root; the
+  // options are slotted light-DOM <x-radio> elements whose own shadow has a role=radio div.
+  customElements.define("x-rgroup", class extends HTMLElement {
+    connectedCallback() {
+      const r = this.attachShadow({ mode: "open" });
+      const req = this.hasAttribute("required");
+      r.innerHTML = `<label id="gl"><slot name="label"></slot>${req ? " *" : ""}</label>
+        <fieldset role="radiogroup" aria-labelledby="gl" ${req ? 'aria-required="true"' : ""}><slot></slot></fieldset>`;
+      this.addEventListener("x-pick", (e) => {
+        for (const o of this.querySelectorAll("x-radio")) o.setChecked(o === e.target);
+        this.setAttribute("data-value", e.target.getAttribute("value"));
+      });
+    }
+  });
+  customElements.define("x-radio", class extends HTMLElement {
+    connectedCallback() {
+      const r = this.attachShadow({ mode: "open" });
+      r.innerHTML = `<div role="radio" aria-checked="false" tabindex="0"><span>( )</span> <slot></slot></div>`;
+      r.querySelector("[role=radio]").addEventListener("click", () => this.dispatchEvent(new CustomEvent("x-pick", { bubbles: true })));
+    }
+    setChecked(on) { this.shadowRoot.querySelector("[role=radio]").setAttribute("aria-checked", String(on)); on ? this.setAttribute("checked", "") : this.removeAttribute("checked"); }
+  });
+  // spl-autocomplete: the combobox input is in a shadow root, its listbox is a light-DOM child
+  // of the host (slot="menu"), filled only while open, filtered by what is typed.
+  customElements.define("x-auto", class extends HTMLElement {
+    connectedCallback() {
+      const r = this.attachShadow({ mode: "open" });
+      const id = this.id;
+      const lab = this.getAttribute("label");
+      r.innerHTML = (lab ? `<label for="in">${lab}${this.hasAttribute("required") ? " *" : ""}</label>` : "") +
+        `<input id="in" role="combobox" aria-autocomplete="list" aria-controls="menu-${id}" placeholder="${this.getAttribute("placeholder") || ""}"><slot name="menu"></slot>`;
+      const menu = document.createElement("div");
+      menu.slot = "menu"; menu.id = "menu-" + id; menu.setAttribute("role", "listbox"); menu.style.display = "none";
+      this.append(menu);
+      const all = this.getAttribute("options").split("|");
+      const input = r.getElementById("in");
+      const render = () => {
+        const q = input.value.toLowerCase();
+        menu.innerHTML = "";
+        for (const o of all.filter((o) => o.toLowerCase().includes(q))) {
+          const d = document.createElement("div"); d.setAttribute("role", "option"); d.textContent = o;
+          d.addEventListener("click", () => { input.value = o; this.setAttribute("data-value", o); menu.style.display = "none"; });
+          menu.append(d);
+        }
+        menu.style.display = "block";
+      };
+      input.addEventListener("focus", render);
+      input.addEventListener("input", render);
+      input.addEventListener("keydown", (e) => { if (e.key === "Escape") menu.style.display = "none"; });
+    }
+  });
+  customElements.define("x-check", class extends HTMLElement {
+    connectedCallback() {
+      const r = this.attachShadow({ mode: "open" });
+      r.innerHTML = `<input type="checkbox" id="c" aria-required="true" aria-labelledby="cl"><label id="cl" for="c"><slot name="label"></slot> *</label>`;
+      r.getElementById("c").addEventListener("change", (e) => this.setAttribute("data-value", String(e.target.checked)));
+    }
+  });
+  customElements.define("x-consent", class extends HTMLElement {
+    connectedCallback() {
+      const r = this.attachShadow({ mode: "open" });
+      r.innerHTML = `<label><input type="checkbox" id="mk"> Send me marketing emails about new jobs</label>`;
+    }
+  });
+</script>
+</body></html>

@@ -1,0 +1,56 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Software Engineer, Early Career - Globex (mock)</title></head>
+<body>
+<h1>Software Engineer, Early Career</h1>
+<p>We build payments infrastructure. You will write code in Ruby, Java and Go.</p>
+<form id="app" onsubmit="window.SUBMITTED = true; return false;">
+  <div class="field"><label for="first_name">First Name *</label><input id="first_name" required></div>
+  <div class="field"><label for="last_name">Last Name *</label><input id="last_name" required></div>
+  <div class="field"><label for="email">Email *</label><input id="email" type="email" required></div>
+  <div class="field"><label for="phone">Phone</label><input id="phone" type="tel" value=""></div>
+  <div class="field"><div class="label">Resume/CV *</div><button type="button">Attach</button>
+    <input id="resume" type="file" style="display:none" required></div>
+  <div class="field"><div class="label">Cover Letter</div><input id="cover" type="file" style="display:none"></div>
+  <div class="field"><label for="linkedin">LinkedIn Profile, Github, Personal Website, or Portfolio</label><input id="linkedin"></div>
+  <div class="field"><label for="gpa">GPA (optional)</label><input id="gpa"></div>
+  <div class="field"><label for="elig">Are you currently eligible to work in the United States? *</label>
+    <select id="elig" required><option value="">Select...</option>
+      <option value="1">Yes, I am currently eligible to work in the country where this role is based.</option>
+      <option value="0">No, I am not currently eligible to work in the country where this role is based.</option></select></div>
+  <fieldset><legend>Will you require visa sponsorship now or in the future? *</legend>
+    <label><input type="radio" name="spons" value="y"> Yes, I will require visa sponsorship now or in the future to continue working in the country where this role is based.</label>
+    <label><input type="radio" name="spons" value="n"> No, I do not require visa sponsorship now or in the future to continue working in the country where this role is based.</label>
+  </fieldset>
+  <div class="field"><label for="start">When are you available to start full-time? *</label>
+    <select id="start" required><option value="">Select...</option><option>Q3 2026 (July - September)</option><option>Q4 2026 (October - December)</option><option>Q1 2027</option></select></div>
+  <div class="field"><label for="first_loc">First location preference *</label>
+    <select id="first_loc" required><option value="">Select...</option><option>San Francisco, CA, United States</option><option>Seattle, WA</option></select></div>
+  <div class="field"><label for="employer">Current or previous employer *</label><input id="employer" required></div>
+  <div class="field"><label for="jobtitle">Current or previous job title *</label><input id="jobtitle" required></div>
+  <div class="field"><label for="country">Country of residence</label>
+    <select id="country"><option value="">Select...</option><option>Canada</option><option>United States</option></select></div>
+  <div class="field"><label id="loc-lab" for="loc">Location (City) *</label>
+    <div class="select__container"><input id="loc" role="combobox" aria-autocomplete="list" aria-labelledby="loc-lab" required>
+    <div id="loc-menu" role="listbox" style="display:none"></div></div>
+    <input type="hidden" id="loc-value"></div>
+  <script>
+    (() => {
+      const inp = document.getElementById("loc"), menu = document.getElementById("loc-menu");
+      const all = ["Austin, Texas, United States", "Aurora, Colorado, United States", "Frankfurt, Germany"];
+      inp.addEventListener("input", () => {
+        menu.innerHTML = "";
+        for (const c of all.filter((c) => c.toLowerCase().startsWith(inp.value.toLowerCase().split(",")[0]) && inp.value)) {
+          const o = document.createElement("div"); o.setAttribute("role", "option"); o.textContent = c;
+          o.addEventListener("click", () => { inp.value = c; document.getElementById("loc-value").value = c; menu.style.display = "none"; });
+          menu.append(o);
+        }
+        menu.style.display = menu.children.length ? "block" : "none";
+      });
+    })();
+  </script>
+  <div class="field"><label for="why">Why do you want to work here?</label><textarea id="why"></textarea></div>
+  <div class="field"><label for="weird">What is your favorite Globex API? *</label><textarea id="weird" required></textarea></div>
+  <div class="field"><label><input type="checkbox" id="consent" required> I certify that the information I have provided is true and complete.</label></div>
+  <button type="submit" id="submit">Submit application</button>
+</form>
+</body></html>
