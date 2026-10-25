@@ -18,7 +18,7 @@ export const exampleAnswers = () => ({
   years: [{ type: "Software engineering", years: 3 }, { type: "Python", years: 3 }, { type: "TypeScript", years: 2 }],
   totalYears: 4, currentEmployer: "Acme Health", currentTitle: "Software Engineer",
   noticePeriod: "2 weeks", startAvailability: "Two weeks after accepting an offer",
-  relocation: "radius", arbitration: "never", arbitrationCompanies: [], heardAbout: "Job board", salary: "",
+  relocation: "radius", travel: "some", over18: "yes", arbitration: "never", arbitrationCompanies: [], heardAbout: "Job board", salary: "",
   demographics: { gender: "decline", race: "decline", hispanic: "decline", veteran: "decline", disability: "decline", lgbtq: "decline" },
   cannotClaim: ["Rust"],
 });

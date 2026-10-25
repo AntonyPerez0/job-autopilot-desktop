@@ -60,17 +60,20 @@ export function rules(facts, a, ctx = {}) {
   const heard = a.heardAbout || "Job board";
   const out = [
     {
+      name: "work authorization", label: /(legally )?authori[sz]ed to work|eligible to work|right to work|work authori[sz]ation(?! sponsor)|legally (able|permitted) to work/i,
+      // "authorized to work (with or without sponsorship)?" is about authorization; one that also asks
+      // whether you will need sponsorship mixes two facts, and is left to the model and the user's answers.
+      skip: /(require|need)\w*.{0,60}sponsor|sponsor\w*.{0,30}(require|need)/i,
+      bad: (v) => (facts.authorizedToWork ? !yes(v) : !no(v)),
+      fix: (o) => (facts.authorizedToWork ? pick(o, (x) => yes(x)) || (o && o.length ? null : "Yes") : pick(o, (x) => no(x)) || (o && o.length ? null : "No")),
+    },
+    {
       name: "sponsorship", label: /sponsor|visa (status|support)|immigration (case|support)|h-?1b|work permit/i,
+      skip: /authori[sz]ed to work|eligible to work|right to work|legally (able|permitted) to work/i,
       bad: (v) => (facts.needsSponsorship ? !yes(v) : !no(v) && !/^n\/?a$/i.test(String(v).trim())),
       fix: (o) => (facts.needsSponsorship
         ? pick(o, (x) => yes(x) || /will require|do require|need/i.test(x) && !/not|don.?t/i.test(x)) || (o && o.length ? null : "Yes")
         : pick(o, (x) => no(x) || /not? (require|need)|do not/i.test(x)) || (o && o.length ? null : "No")),
-    },
-    {
-      name: "work authorization", label: /(legally )?authori[sz]ed to work|eligible to work|right to work|work authori[sz]ation(?! sponsor)|legally (able|permitted) to work/i,
-      skip: /sponsor/i,
-      bad: (v) => (facts.authorizedToWork ? !yes(v) : !no(v)),
-      fix: (o) => (facts.authorizedToWork ? pick(o, (x) => yes(x)) || (o && o.length ? null : "Yes") : pick(o, (x) => no(x)) || (o && o.length ? null : "No")),
     },
     {
       name: "years of experience", label: /how many years|years of (professional |relevant |work |industry |[a-z+#. -]{1,40})?experience|experience level|years (have you|of)|years.{0,20}experience/i,

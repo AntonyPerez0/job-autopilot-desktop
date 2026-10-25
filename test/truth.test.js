@@ -119,3 +119,16 @@ test("no truthful option means a question for the user", () => {
   const r = check("Will you require sponsorship?", "Yes", ["Yes", "Maybe"]);
   assert.strictEqual(r.k.kind, "decide");
 });
+
+test("'authorized to work (with or without sponsorship)' is an authorization question", () => {
+  // Found in a live dry run: the sponsorship rule used to flip this to "No".
+  const r = check("Are you authorized to work in the United States (with or without sponsorship)?*", "No", ["Yes", "No"]);
+  assert.strictEqual(r.k.value, "Yes");
+  assert.match(r.notes[0], /work authorization/);
+  assert.strictEqual(check("Are you authorized to work in the United States (with or without sponsorship)?*", "Yes", ["Yes", "No"]).notes.length, 0);
+});
+
+test("a question mixing authorization and sponsorship is left to the model", () => {
+  const r = check("Are you legally authorized to work in the US, and will you now or in the future require sponsorship?", "Yes, and I do not require sponsorship", undefined);
+  assert.strictEqual(r.notes.length, 0);
+});

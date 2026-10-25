@@ -186,6 +186,73 @@ async function fixDropdowns(page, kit, labels) {
   }
 }
 
+// Type-to-search lists (Greenhouse's School) can settle on a look-alike when the exact
+// entry is not in the first page of results ("Austin Peay State University" for
+// "University of Texas at Austin"). Check what each one shows against the answer, search
+// again by its telling words, and clear it when the right entry cannot be found.
+const GENERIC = new Set(["university", "college", "of", "the", "at", "in", "and", "school", "institute", "campus", "main"]);
+export const tellingWords = (s) => [...new Set(nk(s).split(" ").filter((w) => w.length > 1 && !GENERIC.has(w)).map((w) => w.replace(/s$/, "")))];
+// A school must name exactly the same entry; a place only needs to contain the city ("Austin" in "Austin, Texas, United States").
+export function sameEntry(shown, want, place = false) {
+  const S = tellingWords(shown), W = tellingWords(want);
+  if (!W.length) return false;
+  return W.every((w) => S.includes(w)) && (place || S.every((w) => W.includes(w)));
+}
+const SHOWN_JS = (el) => {
+  // The chosen option sits beside the input, a few levels up, inside the same field.
+  for (let n = el.parentElement, i = 0; n && i < 8; n = n.parentElement, i++) {
+    const v = n.querySelector("[class*=single-value], [class*=singleValue]");
+    if (v) return v.innerText.trim();
+    if (n.matches("[class*=field], fieldset, form")) break;
+  }
+  return "";
+};
+
+export async function verifyCombos(page, kit, fields) {
+  const notes = [];
+  const combos = (fields || []).filter((f) => f.type === "combo" && /school|university|college|institution|location|city/i.test(f.label));
+  for (const f of combos) {
+    const k = kitAnswer(kit, f.label);
+    if (!k || !k.value || tellingWords(k.value).length === 0) continue;
+    const name = f.label.replace(/\*\s*$/, "").trim().slice(0, 60).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    for (const fr of page.frames()) {
+      const box = fr.getByRole("combobox", { name: new RegExp("^\\s*" + name) }).first();
+      if (!(await box.count().catch(() => 0))) continue;
+      const shown = await box.evaluate(SHOWN_JS).catch(() => "");
+      const place = /location|city/i.test(f.label);
+      const want = place ? String(k.value).split(",")[0] : k.value;
+      if (!shown || sameEntry(shown, want, place)) break;
+      const words = tellingWords(want).sort((a, b) => b.length - a.length);
+      let fixed = false;
+      for (const q of [...new Set([words.join(" "), ...words])]) {
+        try {
+          await box.click();
+          await box.fill("");
+          await box.pressSequentially(q, { delay: 40 });
+          await sleep(1800);
+          const opts = fr.locator("[role=option]:visible");
+          const texts = (await opts.allInnerTexts()).map((t) => t.trim());
+          const hits = texts.map((t, i) => [t, i]).filter(([t]) => sameEntry(t, want, place)).sort((a, b) => a[0].length - b[0].length);
+          if (hits.length) { await opts.nth(hits[0][1]).click(); fixed = true; break; }
+          await page.keyboard.press("Escape");
+        } catch { /* try the next search */ }
+      }
+      if (fixed) notes.push(`"${f.label.slice(0, 60)}": replaced "${shown}" with the entry for "${want}"`);
+      else {
+        // Wrong is worse than empty: clear it and leave it for the user.
+        await box.click().catch(() => {});
+        await box.fill("").catch(() => {});
+        await page.keyboard.press("Backspace").catch(() => {});
+        await page.keyboard.press("Escape").catch(() => {});
+        notes.push(`"${f.label.slice(0, 60)}": the list showed "${shown}", not "${want}", and "${want}" could not be found, so it was cleared`);
+        k.kind = "decide"; k.note = `"${want}" is not in this list; pick it yourself`;
+      }
+      break;
+    }
+  }
+  return notes;
+}
+
 // Does the field with this label visibly hold an answer? (A dropdown shows its chosen option
 // next to an empty search input, so the add-on can miss it.)
 export const SHOWS_VALUE_JS = `(label) => {
@@ -485,6 +552,7 @@ export async function applyTo(job, hooks = {}, opts = {}) {
     const stuck = second.flatMap((r) => [...(r.missing || []), ...(r.decide || []).filter((x) => /^Could not set it/.test(x.note || ""))])
       .map((x) => x.label).filter((l) => !BINDING.test(l));
     if (stuck.length) await fixDropdowns(page, b.kit, stuck);
+    for (const n of await verifyCombos(page, b.kit, fields)) { b.audit.push("list check: " + n); log(job.slug, "list check: " + n); }
     await sleep(2500);
     // A last pass fills nothing new; it reports what is still empty after every fix above.
     const last = stuck.length ? await eachFrame(page, fillMsg) : second;

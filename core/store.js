@@ -79,6 +79,8 @@ export const ANSWERS_DEFAULTS = {
   arbitration: "never",      // never | plain | list
   arbitrationCompanies: [],
   heardAbout: "Job board",
+  over18: "yes",
+  travel: "some",            // yes | some | no
   salary: "",
   demographics: { gender: "decline", race: "decline", hispanic: "decline", veteran: "decline", disability: "decline", lgbtq: "decline" },
   cannotClaim: [],

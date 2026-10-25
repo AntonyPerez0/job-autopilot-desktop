@@ -15,6 +15,16 @@ const nowYm = (d = new Date()) => d.getFullYear() * 12 + d.getMonth();
 export const DECLINE = "Decline to self-identify";
 const yn = (v) => (v === "yes" ? "Yes" : v === "no" ? "No" : "");
 
+// "B.S." -> "Bachelor of Science (B.S.)", so a list that says "Bachelor's Degree" still matches.
+const DEGREES = [[/^(b\.?\s?s\.?c?|bsc)$/i, "Bachelor of Science"], [/^(b\.?\s?a\.?)$/i, "Bachelor of Arts"], [/^(b\.?\s?eng\.?|b\.?e\.?)$/i, "Bachelor of Engineering"],
+  [/^(m\.?\s?s\.?c?|msc)$/i, "Master of Science"], [/^(m\.?\s?a\.?)$/i, "Master of Arts"], [/^m\.?b\.?a\.?$/i, "Master of Business Administration"],
+  [/^ph\.?\s?d\.?$/i, "Doctor of Philosophy"], [/^(a\.?\s?s\.?)$/i, "Associate of Science"], [/^(a\.?\s?a\.?)$/i, "Associate of Arts"]];
+export function degreeText(d) {
+  const t = String(d || "").trim();
+  const hit = DEGREES.find(([rx]) => rx.test(t));
+  return hit ? `${hit[1]} (${t})` : t;
+}
+
 export const fullName = (a) => [a.firstName, a.lastName].filter(Boolean).join(" ").trim();
 
 const US_ABBR = { alabama: "AL", alaska: "AK", arizona: "AZ", arkansas: "AR", california: "CA", colorado: "CO", connecticut: "CT", delaware: "DE",
@@ -71,7 +81,7 @@ export function standardAnswers(a) {
   for (const [i, e] of (a.education || []).entries()) {
     const tag = i === 0 ? "" : ` (${e.school})`;
     add("School" + tag, e.school);
-    add("Degree" + tag, e.degree);
+    add("Degree" + tag, degreeText(e.degree));
     add("Field of study" + tag, e.field);
     add("Education start date" + tag, monthYear(e.start));
     add("Education end date" + tag, monthYear(e.end));
@@ -84,6 +94,8 @@ export function standardAnswers(a) {
   add("Earliest start date", a.startAvailability);
   add("Willing to relocate", { no: "No", anywhere: "Yes", radius: "Only within commuting distance" }[a.relocation]);
   add("How did you hear about us", a.heardAbout || "Job board");
+  add("Are you 18 years of age or older?", yn(a.over18));
+  add("Willing to travel for work", { yes: "Yes", no: "No", some: "Yes, occasionally" }[a.travel]);
   add("Desired salary", a.salary);
   const d = a.demographics || {};
   const dem = (v) => (!v || v === "decline" ? DECLINE : v);
@@ -103,7 +115,7 @@ export function candidateFacts(a, profile, prefs) {
   return {
     name: fullName(a) || (profile && profile.name) || "",
     home: homeLocation(a),
-    education: (a.education || []).map((e) => `${[e.degree, e.field].filter(Boolean).join(", ")} at ${e.school} (${monthYear(e.start) || "?"} to ${monthYear(e.end) || "?"})`),
+    education: (a.education || []).map((e) => `${[degreeText(e.degree), e.field].filter(Boolean).join(", ")} at ${e.school} (${monthYear(e.start) || "?"} to ${monthYear(e.end) || "?"})`),
     graduation: g ? monthYear(g.end) : null,
     stillStudying: stillStudying(a),
     workHistory: ((profile && profile.experience) || []).map((e) => `${e.title}, ${e.org} (${e.dates})`),

@@ -65,3 +65,32 @@ test("two resumes merge: same job joins bullets, layouts are kept, ids stay uniq
   const u = unapproved(m);
   assert.ok(u.summaries.every((s) => s.approved === false));
 });
+
+test("resume text from PDF and DOCX", async () => {
+  const { resumeText } = await import("../core/importer.js");
+  const { spec } = Tailor.checkPlan(Profile.EXAMPLE, { base: Profile.EXAMPLE.bases[0].id });
+  const pdf = await Tailor.fit(Profile.EXAMPLE, spec, []);
+  const t = await resumeText("r.pdf", Buffer.from(pdf.pdf));
+  assert.match(t, /Jordan Lee/);
+  assert.match(t, /appointment scheduling service/);
+  const fs = await import("node:fs");
+  const d = await resumeText("r.docx", fs.readFileSync(new URL("./fixtures/sample-resume.docx", import.meta.url)));
+  assert.match(d, /Acme Health/);
+  await assert.rejects(resumeText("r.doc", Buffer.from("x")), /only PDF and DOCX/);
+});
+
+test("degree abbreviations are spelled out so degree lists match", async () => {
+  const { degreeText } = await import("../core/facts.js");
+  assert.strictEqual(degreeText("B.S."), "Bachelor of Science (B.S.)");
+  assert.strictEqual(degreeText("MBA"), "Master of Business Administration (MBA)");
+  assert.strictEqual(degreeText("Bachelor of Arts"), "Bachelor of Arts");
+});
+
+test("a look-alike school is not the same entry", async () => {
+  const { sameEntry } = await import("../core/apply.js");
+  assert.ok(sameEntry("University of Texas - Austin", "University of Texas at Austin"));
+  assert.ok(!sameEntry("Austin Peay State University", "University of Texas at Austin"));
+  assert.ok(!sameEntry("Ohio University", "Ohio State University"));
+  assert.ok(!sameEntry("City University of New York", "New York University"));
+  assert.ok(sameEntry("Austin, Texas, United States", "Austin", true));
+});
