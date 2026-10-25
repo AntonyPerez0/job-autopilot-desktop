@@ -5,7 +5,20 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
-const FEED = "https://api.github.com/repos/AntonyPerez0/job-autopilot-desktop/releases/latest";
+const REPO = "AntonyPerez0/job-autopilot-desktop";
+const FEED = `https://api.github.com/repos/${REPO}/releases/latest`;
+
+// GitHub's API allows 60 unauthenticated requests an hour per network address, which a shared
+// office or school network can use up. The releases page itself has no such limit: it redirects
+// to the latest tag, and the file names follow from the version.
+async function latestFromPage() {
+  const res = await fetch(`https://github.com/${REPO}/releases/latest`, { redirect: "follow", signal: AbortSignal.timeout(15000) });
+  const tag = (res.url.match(/\/releases\/tag\/(v[^/?#]+)/) || [])[1];
+  if (!res.ok || !tag) throw new Error(`releases page: ${res.status}`);
+  const v = tag.replace(/^v/, "");
+  const dl = (name) => ({ name, browser_download_url: `https://github.com/${REPO}/releases/download/${tag}/${name}` });
+  return { tag_name: tag, html_url: res.url, body: "", assets: [dl(`Job-Autopilot-${v}-mac-universal.zip`), dl(`Job-Autopilot-Setup-${v}.exe`), dl("SHA256SUMS.txt")] };
+}
 
 export function newerVersion(a, b) {
   const x = String(a).replace(/^v/, "").split(/[.-]/).map(Number), y = String(b).replace(/^v/, "").split(/[.-]/).map(Number);
@@ -33,9 +46,11 @@ export function parseSums(text) {
 
 export async function checkForUpdate(current) {
   // JA_UPDATE_FEED points the updater at a test feed (the installer tests use one).
-  const res = await fetch(process.env.JA_UPDATE_FEED || FEED, { headers: { accept: "application/vnd.github+json" }, signal: AbortSignal.timeout(15000) });
-  if (!res.ok) throw new Error(`update check: ${res.status}`);
-  const r = await res.json();
+  let r;
+  const res = await fetch(process.env.JA_UPDATE_FEED || FEED, { headers: { accept: "application/vnd.github+json" }, signal: AbortSignal.timeout(15000) }).catch((e) => ({ ok: false, status: e.message }));
+  if (res.ok) r = await res.json();
+  else if (!process.env.JA_UPDATE_FEED) r = await latestFromPage();
+  else throw new Error(`update check: ${res.status}`);
   const latest = String(r.tag_name || "").replace(/^v/, "");
   const asset = pickAsset(r.assets);
   const sums = (r.assets || []).find((a) => a.name === "SHA256SUMS.txt");

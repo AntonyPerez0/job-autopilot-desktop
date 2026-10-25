@@ -171,7 +171,8 @@ function updateCard() {
   else if (u.phase === "downloading") line = `<b>Downloading version ${esc(u.info.latest)}: ${pct}%</b><div class="bar" style="margin-top:8px;max-width:420px"><i style="width:${pct}%"></i></div>`;
   else if (u.phase === "waiting") line = `<b>Version ${esc(u.info.latest)} is downloaded.</b> The application in progress finishes first, then the app restarts.`;
   else if (u.phase === "installing") line = `<b>Installing version ${esc(u.info.latest)}.</b> The app closes and opens again in a moment.`;
-  else if (u.phase === "error") line = `<b>The update did not work.</b> ${esc(u.error || "")}`;
+  else if (u.phase === "error") line = `<b>The update did not install.</b> ${esc(u.error || "")}`;
+  else if (u.phase === "checkfailed") line = `Version ${cur}. ${esc(u.error || "Could not check for updates.")}`;
   else if (u.phase === "uptodate") line = `You have the latest version, ${cur}${u.checkedAt ? ` (checked ${new Date(u.checkedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })})` : ""}. New versions show up here and in the sidebar with an Update button.`;
   else line = `Version ${cur}. The app checks for new versions when it starts and every few hours.`;
   const canInstall = u.packaged && u.info && u.info.newer && ["available", "error"].includes(u.phase);

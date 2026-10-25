@@ -27,7 +27,11 @@ export async function checkNow() {
   try {
     state.info = await checkForUpdate(app.getVersion());
     state.phase = state.info.newer ? "available" : "uptodate";
-  } catch (e) { state.phase = "error"; state.error = "Could not check for updates: " + e.message; }
+  } catch (e) {
+    // A failed check is not a failed update: keep any update already found, and say what happened.
+    state.phase = state.info && state.info.newer ? "available" : "checkfailed";
+    state.error = "Could not reach GitHub to check for updates (" + e.message + "). The app tries again in a few hours.";
+  }
   state.checkedAt = Date.now();
   return updateState();
 }

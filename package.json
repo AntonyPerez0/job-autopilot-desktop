@@ -1,7 +1,7 @@
 {
   "name": "job-autopilot-desktop",
   "productName": "Job Autopilot",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Finds jobs that fit you and applies to them, with a one-page resume assembled from your own approved content.",
   "author": "AntonyPerez0",
   "license": "MIT",

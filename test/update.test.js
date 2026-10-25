@@ -50,3 +50,19 @@ test("a download that does not match its checksum is thrown away", async () => {
     await assert.rejects(download({ ...info, sumsUrl: null }, dir), /cannot be verified/);
   } finally { delete process.env.JA_UPDATE_FEED; s.close(); }
 });
+
+test("when GitHub's API is rate-limited, the releases page is used instead", async () => {
+  const real = globalThis.fetch;
+  globalThis.fetch = async (u) => {
+    if (String(u).includes("api.github.com")) return new Response("rate limited", { status: 403 });
+    if (String(u).endsWith("/releases/latest")) return Object.defineProperty(new Response("ok"), "url", { value: "https://github.com/AntonyPerez0/job-autopilot-desktop/releases/tag/v9.1.0" });
+    throw new Error("unexpected " + u);
+  };
+  try {
+    const i = await checkForUpdate("0.4.0");
+    assert.strictEqual(i.latest, "9.1.0");
+    assert.ok(i.newer);
+    assert.match(i.sumsUrl, /releases\/download\/v9\.1\.0\/SHA256SUMS\.txt$/);
+    if (i.asset) assert.match(i.asset.url, /releases\/download\/v9\.1\.0\/Job-Autopilot-/);
+  } finally { globalThis.fetch = real; }
+});
