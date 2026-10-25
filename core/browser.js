@@ -123,7 +123,19 @@ function frontApp() {
 const refocus = (bundleId) => { if (bundleId) execFile("/usr/bin/open", ["-b", bundleId], { timeout: 5000 }, () => {}); };
 
 const BROWSER_APP = /^(com\.google\.Chrome|com\.microsoft\.edgemac|org\.chromium|com\.google\.chrome\.for\.testing)/i;
-const userApp = async () => { const id = await frontApp(); return id && !BROWSER_APP.test(id) ? id : null; };
+let lastUserApp = null;
+const userApp = async () => { const id = await frontApp(); if (id && !BROWSER_APP.test(id)) lastUserApp = id; return lastUserApp; };
+
+// Run a browser action that macOS may answer by bringing the browser forward, then hand focus back.
+async function keepFocus(windowMode, fn) {
+  if (process.platform !== "darwin" || windowMode === "visible") return fn();
+  const before = await userApp();
+  const out = await fn();
+  await new Promise((r) => setTimeout(r, 150));
+  const now = await frontApp();
+  if (before && now && BROWSER_APP.test(now)) refocus(before);
+  return out;
+}
 
 // Out of the way: minimized on Windows and Linux. macOS does not draw a minimized window, so its
 // screenshots would never come; there the window is parked off the left edge of the screen
@@ -166,15 +178,22 @@ export async function acquireBrowser({ windowMode = "minimized", choice = "auto"
 // A fresh tab for one application, kept in the window state the user chose. On macOS a new tab
 // brings the browser to the front, so whatever the user was in gets focus back.
 export async function newAppPage(b, windowMode) {
-  const before = windowMode === "visible" ? null : await userApp();
-  const page = await b.ctx.newPage();
+  const page = await keepFocus(windowMode, () => b.ctx.newPage());
   // Keep one blank tab besides this one, so the window survives when this tab closes.
   const blanks = b.ctx.pages().filter((p) => p !== page && p.url() === "about:blank");
   for (const p of blanks.slice(1)) await p.close().catch(() => {});
-  if (windowMode === "minimized") { if (!(await tucked(page))) await tuck(page); }
+  if (windowMode === "minimized") { if (!(await tucked(page))) await keepFocus(windowMode, () => tuck(page)); }
   else if (windowMode === "visible") await page.bringToFront().catch(() => {});
-  refocus(before);
   return page;
+}
+
+// Done with one application. Closing the last tab would close the window (and on most systems the
+// browser), so that one is blanked instead.
+export async function closeAppPage(page, windowMode) {
+  await keepFocus(windowMode, async () => {
+    if (page.context().pages().length > 1) await page.close().catch(() => {});
+    else await page.goto("about:blank").catch(() => {});
+  });
 }
 
 export async function closeBrowser() {
@@ -191,7 +210,7 @@ export async function showBrowser(show) {
   const pages = shared.ctx.pages();
   const page = pages[pages.length - 1];
   if (!page) return false;
-  if (!show) return tuck(page);
+  if (!show) return keepFocus("minimized", () => tuck(page));
   await setWindowState(page, "normal");
   if (process.platform === "darwin") {
     try {

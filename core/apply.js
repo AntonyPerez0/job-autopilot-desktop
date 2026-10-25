@@ -5,7 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { CONTENT_JS, loadProfile, plan, build } from "./engine.js";
 import { log } from "./db.js";
-import { acquireBrowser, closeBrowser, newAppPage } from "./browser.js";
+import { acquireBrowser, closeAppPage, closeBrowser, newAppPage } from "./browser.js";
 import { dataDir, getAnswers, getPrefs, getSettings } from "./store.js";
 import { waitForCode } from "./mail.js";
 import { withinRadius } from "./geo.js";
@@ -675,10 +675,6 @@ export async function applyTo(job, hooks = {}, opts = {}) {
     return { ...result, status: "failed", reason: captcha ? "a CAPTCHA challenge blocked the submit" : "submitted but no confirmation appeared" + (errs.length ? ": " + [...new Set(errs)].join("; ").slice(0, 400) : "") };
   } finally {
     // The browser stays open for the next application; only this job's tab closes.
-    // Closing the last tab would close the window (and on most systems the browser), so that one is blanked instead.
-    if (page) {
-      if (page.context().pages().length > 1) await page.close().catch(() => {});
-      else await page.goto("about:blank").catch(() => {});
-    }
+    if (page) await closeAppPage(page, windowModeOf(settings));
   }
 }

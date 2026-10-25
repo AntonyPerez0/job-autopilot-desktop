@@ -10,7 +10,7 @@ import { pathToFileURL } from "node:url";
 process.env.JA_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "ja-min-"));
 const OUT = path.join(import.meta.dirname, "..", "out", "e2e");
 fs.mkdirSync(OUT, { recursive: true });
-const { acquireBrowser, newAppPage, windowState, showBrowser, closeBrowser, tucked } = await import("../../core/browser.js");
+const { acquireBrowser, newAppPage, closeAppPage, windowState, showBrowser, closeBrowser, tucked } = await import("../../core/browser.js");
 const { execSync } = await import("node:child_process");
 // On macOS, put another app in front first: the browser must not take focus from it.
 const front = () => { try { return execSync('lsappinfo info -only bundleid "$(lsappinfo front)"').toString().trim(); } catch { return ""; } };
@@ -53,7 +53,8 @@ for (let job = 1; job <= 2; job++) {
     assert.ok(await tucked(page), "Minimize puts it away again");
     if (process.platform === "darwin") { execSync("open -a TextEdit"); await new Promise((r) => setTimeout(r, 1500)); }
   }
-  if (page.context().pages().length > 1) await page.close(); else await page.goto("about:blank");
+  await closeAppPage(page, "minimized");
+  await stillFront(`after job ${job}'s tab closes`);
 }
 assert.ok(b.ctx.pages().length >= 1, "the window survives between applications");
 await closeBrowser();
