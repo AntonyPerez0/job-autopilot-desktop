@@ -253,6 +253,40 @@ export async function verifyCombos(page, kit, fields) {
   return notes;
 }
 
+// An "I acknowledge" or "I authorize" question can carry a waiver in the text printed under
+// it rather than in its label. Read the text around the question; if it gives up rights,
+// the answer is the user's to give.
+const WAIVER_RX = /arbitrat|waive|waiver|jury trial|class action|release (of )?(all |any )?(claims|liability)|hold harmless|indemnif/i;
+const ACKISH = /acknowledg|authori[sz]|certif|attest|agree|consent|i (have )?read|terms/i;
+export const NEARBY_JS = `(label) => {
+  const norm = (t) => String(t || '').replace(/[\\s\\u00a0]+/g, ' ').replace(/\\*\\s*$/, '').trim().toLowerCase();
+  const want = norm(label);
+  const lab = [...document.querySelectorAll('label, legend, [class*=label], [class*=question]')].find((l) => norm(l.innerText) === want);
+  if (!lab) return '';
+  let box = lab.closest('[class*=field], fieldset, .question, [class*=question]') || lab.parentElement;
+  let text = box.innerText || '';
+  for (let n = box.nextElementSibling, i = 0; n && i < 3 && text.length < 4000; n = n.nextElementSibling, i++) {
+    if (n.querySelector('input, select, textarea, [role=combobox]')) break;
+    text += '\\n' + (n.innerText || '');
+  }
+  return text.slice(0, 6000);
+}`;
+
+export async function holdBindingAcks(page, kit) {
+  const notes = [];
+  for (const k of kit) {
+    if (k.fieldIndex === undefined || k.kind === "decide" || k.kind === "blank" || k.kind === "file" || !ACKISH.test(k.label)) continue;
+    let text = "";
+    for (const f of page.frames()) { text = await f.evaluate(`(${NEARBY_JS})(${JSON.stringify(k.label)})`).catch(() => ""); if (text) break; }
+    const m = text.replace(k.label, "").match(WAIVER_RX);
+    if (!m) continue;
+    if (allowArbitration && /arbitrat/i.test(m[0]) && !/waive|waiver|jury|class action|release|hold harmless|indemnif/i.test(text)) continue;
+    notes.push(`"${k.label.slice(0, 70)}": the text with it mentions "${m[0]}", so it waits for you`);
+    Object.assign(k, { kind: "decide", value: "", note: `this acknowledgement includes "${m[0]}"; read it and answer it yourself` });
+  }
+  return notes;
+}
+
 // Does the field with this label visibly hold an answer? (A dropdown shows its chosen option
 // next to an empty search input, so the add-on can miss it.)
 export const SHOWS_VALUE_JS = `(label) => {
@@ -441,6 +475,14 @@ async function ensureResume(page, file) {
   }
 }
 
+// The browser of the application in progress, so a timed-out run can be shut down.
+let current = null;
+export async function abortCurrent() {
+  const c = current;
+  current = null;
+  if (c) await c.close().catch(() => {});
+}
+
 const safeName = (s) => String(s).replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 120);
 
 // hooks: progress(stepKey), onFilled(page), status(text), opts: { dryRun, settings, answers, prefs, mailbox, browser }
@@ -461,6 +503,7 @@ export async function applyTo(job, hooks = {}, opts = {}) {
   try {
     const launched = opts.browser ? { ctx: opts.browser } : await launch({ headless: settings.headless, choice: settings.browser, onStatus: (t) => hooks.status && hooks.status(t) });
     browser = launched.ctx;
+    if (!opts.browser) current = browser;
     const page = await browser.newPage();
     for (const p of browser.pages()) if (p !== page && p.url() === "about:blank") await p.close().catch(() => {});
     page.setDefaultTimeout(30000);
@@ -487,16 +530,18 @@ export async function applyTo(job, hooks = {}, opts = {}) {
         ({ text, fields } = await scrapeAll(page));
       }
     }
-    if (fields.length < 3) return { ...result, status: "failed", reason: "no application form found on the page", screenshot: await shot(page, job.slug, "noform") };
-    if (/no longer (accepting|available|open)|position (has been )?filled|job (is )?closed|page not found/i.test(text.slice(0, 3000)) && fields.length < 5) {
+    if (/no longer (accepting|available|open)|position (has been )?filled|job (is )?closed|page not found|job not found|job you requested was not found|posting (is )?(closed|expired)/i.test(text.slice(0, 3000)) && fields.length < 5) {
       return { ...result, status: "skipped", reason: "posting is closed" };
     }
+    if (fields.length < 3) return { ...result, status: "failed", reason: "no application form found on the page", screenshot: await shot(page, job.slug, "noform") };
 
     const postingText = [text, details.description ? "\n\nFULL POSTING (from freehire):\n" + details.description : ""].join("").slice(0, 30000);
     step("plan");
     log(job.slug, `${fields.length} fields; asking ${settings.ai.model} for a plan`);
     const p = await plan(profile, { url: job.apply_url, text: postingText, fields }, a, prefs);
-    const hardFails = ((p.fit || {}).hardFails || []).filter((f) => f && f.requirement);
+    // A "fail" whose own reason says the requirement is met is the model contradicting itself.
+    const metAnyway = (f) => /\b(meets|satisf(ies|y)|exceeds|has (the )?(required|enough))\b/i.test(f.why || "") && !/\b(not|no|lacks?|without|fails?|short)\b|n't/i.test(f.why || "");
+    const hardFails = ((p.fit || {}).hardFails || []).filter((f) => f && f.requirement && !metAnyway(f));
     result.details = { ...details, plan: { employer: p.employer, jobTitle: p.jobTitle, base: p.base, summary: p.summary, notClaimed: p.notClaimed || [] }, hardFails, fields };
     if (hardFails.length) {
       return { ...result, status: "skipped", reason: "fails a must-have: " + hardFails.map((f) => `${f.requirement}${f.why ? " (" + f.why + ")" : ""}`).join("; ").slice(0, 600) };
@@ -520,6 +565,7 @@ export async function applyTo(job, hooks = {}, opts = {}) {
         b.audit.push(`arbitration agreement accepted for ${job.company}, per your settings`);
       }
     }
+    b.audit.push(...await holdBindingAcks(page, b.kit));
     result.details.audit = b.audit;
     for (const a of b.audit) log(job.slug, "truth check: " + a);
 
@@ -632,6 +678,6 @@ export async function applyTo(job, hooks = {}, opts = {}) {
     }
     return { ...result, status: "failed", reason: captcha ? "a CAPTCHA challenge blocked the submit" : "submitted but no confirmation appeared" + (errs.length ? ": " + [...new Set(errs)].join("; ").slice(0, 400) : "") };
   } finally {
-    if (browser && !opts.browser) await browser.close().catch(() => {});
+    if (browser && !opts.browser) { if (current === browser) current = null; await browser.close().catch(() => {}); }
   }
 }

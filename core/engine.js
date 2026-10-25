@@ -10,7 +10,9 @@ import { truthGuard } from "./truth.js";
 
 const VENDOR = new URL("../vendor/apply-helper/", import.meta.url);
 const read = (f) => fs.readFileSync(new URL(f, VENDOR), "utf8");
-const ctx = vm.createContext({ console, setTimeout, TextEncoder, TextDecoder, Uint8Array, fetch, URL });
+// A model call that hangs must not hold an application forever: every request the add-on makes gets a deadline.
+const fetchWithDeadline = (url, opts = {}) => fetch(url, { ...opts, signal: opts.signal || AbortSignal.timeout(Number(process.env.JA_AI_TIMEOUT_MS) || 180000) });
+const ctx = vm.createContext({ console, setTimeout, TextEncoder, TextDecoder, Uint8Array, fetch: fetchWithDeadline, URL });
 for (const f of ["lib/pdf-lib.min.js", "profile.js", "resume_pdf.js", "tailor.js"]) vm.runInContext(read(f), ctx, { filename: f });
 export const { Tailor, Profile, ResumePDF } = ctx;
 

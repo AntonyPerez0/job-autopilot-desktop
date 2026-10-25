@@ -54,11 +54,23 @@ export function yearsType(label, facts) {
 }
 
 const decline = (o) => pick(o, (x) => DECLINE_RX.test(x));
+export const LEGAL_RX = /arbitration|waive|waiver|jury|non-?compete|non-?solicit|class action|release of (claims|liability)|background (check|screen)|drug (test|screen)|criminal (record|history|conviction|offen[cs]e)|convicted|felony|misdemeanor/i;
+const SCREENING_RX = /^(?!.*(waive|waiver|jury|class action|release of|arbitration|non-?compete|criminal|convicted|felony|misdemeanor)).*(background (check|screen)|drug (test|screen))/i;
+const screeningOk = (a) => a.screenings === "yes";
 
 // Each rule: which questions it covers, whether an answer is wrong, and the true answer.
 export function rules(facts, a, ctx = {}) {
   const heard = a.heardAbout || "Job board";
   const out = [
+    // Legal agreements and legal-history questions are never answered by the AI. The only
+    // exceptions are the user's own choices: background checks and drug tests (Settings), and
+    // plain arbitration agreements (handled when the form is filled).
+    {
+      name: "legal agreement", label: LEGAL_RX,
+      bad: (v) => !(screeningOk(a) && SCREENING_RX.test(String(ctx.label || "")) && yes(v)),
+      fix: (o) => (screeningOk(a) && SCREENING_RX.test(String(ctx.label || "")) ? pick(o, (x) => yes(x)) || (o && o.length ? null : "Yes") : null),
+      why: "legal agreements and legal history always wait for you",
+    },
     {
       name: "work authorization", label: /(legally )?authori[sz]ed to work|eligible to work|right to work|work authori[sz]ation(?! sponsor)|legally (able|permitted) to work/i,
       // "authorized to work (with or without sponsorship)?" is about authorization; one that also asks
@@ -182,6 +194,7 @@ export function truthGuard(kit, fields, facts, answers, ctx = {}) {
     // Standard answers (no field index) are the user's own words; only the model's answers are checked.
     if (!k || k.kind === "file" || k.kind === "blank" || k.fieldIndex === undefined) continue;
     const f = (fields || []).find((x) => x.label === k.label) || {};
+    ctx.label = k.label;
     for (const rule of R) {
       if (!rule.label.test(k.label) || (rule.skip && rule.skip.test(k.label))) continue;
       if (k.kind === "decide") break;
@@ -195,6 +208,7 @@ export function truthGuard(kit, fields, facts, answers, ctx = {}) {
         if (!rule.bad(k.value)) break;
         fixed = rule.fix(f.options);
       }
+      why = why || rule.why || "";
       notes.push(`${rule.name}: "${k.value}" corrected to ${fixed ? `"${fixed}"` : "a question for you"} on "${k.label.slice(0, 80)}"${why ? ` (${why})` : ""}`);
       if (fixed) { k.value = fixed; k.kind = "text"; k.note = `corrected by the truth rules (${rule.name})`; }
       else { k.value = ""; k.kind = "decide"; k.note = `no truthful answer for ${rule.name}${why ? ": " + why : ""}`; }

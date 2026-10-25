@@ -132,3 +132,20 @@ test("a question mixing authorization and sponsorship is left to the model", () 
   const r = check("Are you legally authorized to work in the US, and will you now or in the future require sponsorship?", "Yes, and I do not require sponsorship", undefined);
   assert.strictEqual(r.notes.length, 0);
 });
+
+test("legal agreements and legal history are never answered by the AI", () => {
+  for (const label of ["Do you currently have any non-compete or non-solicit agreements?*", "Do you agree to the arbitration agreement?*",
+    "If extended an offer, are you willing to submit to a background check?*", "Have you ever been convicted of a felony?*",
+    "I agree to waive my right to a jury trial"]) {
+    const r = check(label, "Yes", ["Yes", "No"]);
+    assert.strictEqual(r.k.kind, "decide", label);
+    assert.strictEqual(r.k.value, "");
+  }
+});
+
+test("background check consent follows the user's own setting", () => {
+  const label = "If extended an offer, are you willing to submit to a background check?*";
+  assert.strictEqual(check(label, "No", ["Yes", "No"], { screenings: "yes" }).k.value, "Yes");
+  assert.strictEqual(check(label, "Yes", ["Yes", "No"], { screenings: "yes" }).notes.length, 0);
+  assert.strictEqual(check("I consent to a background check and waive all claims", "Yes", ["Yes", "No"], { screenings: "yes" }).k.kind, "decide");
+});

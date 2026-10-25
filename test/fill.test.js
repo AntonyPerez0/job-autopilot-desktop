@@ -131,7 +131,7 @@ test("gate: required empty fields and unanswered button groups are caught; the r
   const { CHECK_JS, GROUPS_JS, SUBMIT_JS, answerGroups } = await import("../core/apply.js");
   const page = await browser.newPage();
   await page.goto(pathToFileURL(path.join(FIX, "gate.html")).href);
-  assert.deepStrictEqual(await page.evaluate(CHECK_JS), ["City *"]);
+  assert.deepStrictEqual(await page.evaluate(CHECK_JS), ["City *", "Please read and acknowledge the statement below *", "I acknowledge the privacy notice *"]);
   const groups = await page.evaluate(GROUPS_JS);
   assert.deepStrictEqual(groups.filter((g) => g.required).map((g) => g.label), ["Do you now or in the future require sponsorship? *"]);
   const left = await answerGroups(page, [{ label: "Do you now or in the future require sponsorship? *", value: "No", kind: "text" }]);
@@ -140,5 +140,20 @@ test("gate: required empty fields and unanswered button groups are caught; the r
   assert.deepStrictEqual((await page.evaluate(GROUPS_JS)).filter((g) => g.required), [], "answered group no longer blocks");
   assert.strictEqual(await page.evaluate(SUBMIT_JS), "submit application", "the form's button, not the header's Apply");
   assert.strictEqual(await page.evaluate(() => !!window.SUBMITTED), false);
+  await page.close();
+});
+
+test("an acknowledgement whose text waives rights waits for the user; a plain one does not", async () => {
+  const { holdBindingAcks } = await import("../core/apply.js");
+  const page = await browser.newPage();
+  await page.goto(pathToFileURL(path.join(FIX, "gate.html")).href);
+  const kit = [
+    { label: "Please read and acknowledge the statement below *", value: "Acknowledge", kind: "text", fieldIndex: 0 },
+    { label: "I acknowledge the privacy notice *", value: "Acknowledge", kind: "text", fieldIndex: 1 },
+  ];
+  const notes = await holdBindingAcks(page, kit);
+  assert.strictEqual(kit[0].kind, "decide");
+  assert.match(notes[0], /waive/);
+  assert.strictEqual(kit[1].kind, "text");
   await page.close();
 });

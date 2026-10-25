@@ -4,7 +4,7 @@ import fs from "node:fs";
 import { getDb, log, setJob, getJob, appliedToday, nextDayStart } from "./db.js";
 import { discover } from "./discover.js";
 import { sameRoleAs } from "./dedupe.js";
-import { applyTo, STEPS } from "./apply.js";
+import { abortCurrent, applyTo, STEPS } from "./apply.js";
 import { call } from "./freehire.js";
 import { findConfirmation } from "./mail.js";
 import { dataDir, getSecret, getSettings } from "./store.js";
@@ -50,7 +50,7 @@ const sleep = (ms) => new Promise((r) => { const t = setTimeout(r, ms); state.wa
 export const kick = () => { if (state.wake) state.wake(); };
 export const forceSearch = () => { state.lastSearch = null; kick(); };
 
-const TRANSIENT = /timeout|timed out|net::|ECONN|socket|Target (page|closed)|browser has been closed|Model API 5|Model API 429|fetch failed/i;
+const TRANSIENT = /timeout|timed out|net::|ECONN|socket|Target (page|closed)|browser has been closed|Model API 5|Model API 429|fetch failed|download failed|No browser could be started|aborted/i;
 
 function nextJob() {
   return db.prepare(`SELECT * FROM jobs WHERE status = 'queued' AND attempts < ?
@@ -118,6 +118,7 @@ async function applyOne(job) {
     log(job.slug, `${r.status}: ${r.reason}`, r.status === "failed" ? "warn" : "info");
     return r.status === "applied" || r.status === "filled";
   } catch (e) {
+    await abortCurrent();
     if ((getJob(job.slug) || {}).status === "submitting") {
       setJob(job.slug, { status: "failed", reason: "error right after pressing Submit (" + e.message.slice(0, 200) + "): it may have gone through. Check your email before using Try again." });
       log(job.slug, "error after Submit, not retried: " + e.message, "error");

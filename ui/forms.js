@@ -273,8 +273,10 @@
       <div class="form-row">${fld("How you heard about the job", inp("heardAbout", a.heardAbout), "The app finds jobs on a job board, so the default is \"Job board\".")}${fld("Desired salary (optional)", inp("salary", a.salary), "Leave empty and the app uses the posting's range or \"open to discussing\".")}</div>
       <div class="section-t">Legal agreements</div>
       ${fld("Arbitration agreements in an application", radios("arbitration", a.arbitration, [["never", "Always ask me (recommended)"], ["plain", "Accept plain arbitration agreements"], ["list", "Accept only for these companies"]]),
-        "Jury, class-action and claim waivers, non-competes, background and drug test consents always wait for you, whatever you pick.")}
+        "Jury, class-action and claim waivers, non-competes and questions about criminal history always wait for you, whatever you pick.")}
       <div data-arb-list style="${a.arbitration === "list" ? "" : "display:none"}"></div>
+      ${fld("Background checks and drug tests, if you get an offer", radios("screenings", a.screenings, [["ask", "Always ask me"], ["yes", "Yes, I consent"]]),
+        "Only for a plain yes/no question. Anything that also waives rights still waits for you.")}
       <div class="section-t">Voluntary self-identification</div>
       <p class="hint" style="margin:-4px 0 0">Answered only when a form asks. "Decline to answer" is the default for each.</p>
       <div class="form-row">${Object.entries(DEM).map(([k, [label, opts]]) => fld(label, sel("dem_" + k, (a.demographics || {})[k] || "decline", opts.map((o) => [o, o === "decline" ? "Decline to answer" : o])))).join("")}</div>
@@ -294,7 +296,7 @@
       async save() {
         const out = {};
         for (const k of ["firstName", "lastName", "preferredName", "email", "phone", "linkedin", "github", "website", "otherLinks", "street", "city", "state", "zip", "country",
-          "authCountry", "workAuthorized", "needsSponsorship", "travel", "over18", "currentEmployer", "currentTitle", "noticePeriod", "startAvailability", "relocation", "heardAbout", "salary", "arbitration"]) out[k] = val(el, k);
+          "authCountry", "workAuthorized", "needsSponsorship", "travel", "over18", "currentEmployer", "currentTitle", "noticePeriod", "startAvailability", "relocation", "heardAbout", "salary", "arbitration", "screenings"]) out[k] = val(el, k);
         out.totalYears = Number(val(el, "totalYears")) || 0;
         out.education = [...el.querySelectorAll("[data-edu]")].map((r) => ({ school: val(r, "school"), degree: val(r, "degree"), field: val(r, "field"), start: val(r, "start"), end: val(r, "end") })).filter((e) => e.school);
         out.years = [...el.querySelectorAll("[data-years]")].map((r) => ({ type: val(r, "ytype"), years: Number(val(r, "yyears")) || 0 })).filter((y) => y.type);

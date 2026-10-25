@@ -54,7 +54,7 @@ export const PREFS_DEFAULTS = {
   radiusUnit: "mi",
   remote: true,
   remoteCountry: "US",
-  seniority: ["intern", "junior", "middle"], // freehire levels the user accepts
+  seniority: ["junior", "middle"], // freehire levels the user accepts
   internships: false,
   maxYearsRequired: 3,
   excludeCompanies: [],
@@ -78,6 +78,7 @@ export const ANSWERS_DEFAULTS = {
   relocation: "no",          // no | radius | anywhere
   arbitration: "never",      // never | plain | list
   arbitrationCompanies: [],
+  screenings: "ask",         // ask | yes: background checks and drug tests if offered a job
   heardAbout: "Job board",
   over18: "yes",
   travel: "some",            // yes | some | no

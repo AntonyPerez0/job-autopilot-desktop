@@ -9,6 +9,12 @@
     <div class="yesno"><button type="button" aria-pressed="false">Yes</button><button type="button" aria-pressed="false">No</button></div></div>
   <div class="fieldEntry"><label>Would you like to join our talent community?</label>
     <div class="yesno"><button type="button" aria-pressed="false">Yes</button><button type="button" aria-pressed="false">No</button></div></div>
+  <div class="field"><label for="ack1">Please read and acknowledge the statement below *</label>
+    <select id="ack1" required><option value="">Select...</option><option>Acknowledge</option></select></div>
+  <div class="statement">I authorize Globex to verify my information. I hereby waive any and all rights and claims I may have against Globex.</div>
+  <div class="field"><label for="ack2">I acknowledge the privacy notice *</label>
+    <select id="ack2" required><option value="">Select...</option><option>Acknowledge</option></select></div>
+  <div class="statement">We process your data to evaluate your application.</div>
   <script>
     for (const b of document.querySelectorAll('.yesno button')) b.addEventListener('click', () => {
       for (const x of b.parentElement.children) x.setAttribute('aria-pressed', String(x === b));

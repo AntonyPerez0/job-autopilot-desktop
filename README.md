@@ -134,10 +134,16 @@ out of sight, turn on **Hide the browser window** in Settings.
     confirm aren't used.
   - Anything that mentions something on your "can never claim" list is thrown
     out.
-- **Agree to legal terms for you.** Arbitration agreements, jury and
-  class-action waivers, non-competes, releases of claims, and background-check
-  or drug-test consents always wait for you. The one exception: you can let it
-  accept plain arbitration agreements in Settings.
+- **Agree to legal terms for you.** These always wait for you:
+  - arbitration agreements
+  - jury and class-action waivers
+  - non-competes and releases of claims
+  - questions about criminal history
+  - any "I acknowledge" or "I authorize" question whose fine print gives up
+    rights
+
+  Settings lets you allow two things: plain arbitration agreements, and plain
+  yes/no background-check and drug-test questions.
 - **Apply twice.**
   - The same posting is never applied to again.
   - The same role on another job board, or under a slightly different title,
@@ -263,6 +269,7 @@ npm test                               # unit tests and form-fill tests in Chrom
 npm run e2e                            # walks the first-run setup in the real app (mock AI)
 npm start                              # runs the app from source
 JA_API_KEY=... node scripts/live-dry-run.mjs   # one dry run against a live posting, example profile
+JA_API_KEY=... node test/e2e/live-in-app.mjs <freehire-slug>   # the same, inside the real app
 ```
 
 How the code is laid out:
