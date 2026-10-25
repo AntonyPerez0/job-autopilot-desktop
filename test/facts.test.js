@@ -1,0 +1,67 @@
+// The user's facts become the profile's answers and the prompt rules; only approved pieces reach a resume.
+import test from "node:test";
+import assert from "node:assert";
+import { approvedExample, exampleAnswers, examplePrefs } from "./helpers.js";
+import { Profile, Tailor, approvedOnly, loadProfile } from "../core/engine.js";
+import { autopilotRules, homeLocation, standardAnswers } from "../core/facts.js";
+import { mergeProfiles, unapproved } from "../core/importer.js";
+
+test("standard answers from the common questions", () => {
+  const a = exampleAnswers();
+  const s = Object.fromEntries(standardAnswers(a).map((x) => [x.label, x.value]));
+  assert.strictEqual(s["Full name"], "Jordan Lee");
+  assert.strictEqual(s["ZIP code"], "78701");
+  assert.strictEqual(s["Location"], "Austin, TX");
+  assert.strictEqual(s["Requires employer sponsorship now or in the future"], "No");
+  assert.strictEqual(s["Graduation date"], "May 2022");
+  assert.strictEqual(s["Years of Software engineering experience"], "3");
+  assert.strictEqual(s["Gender"], "Decline to self-identify");
+  assert.strictEqual(homeLocation({ city: "Toronto", state: "Ontario", country: "Canada" }), "Toronto, Ontario, Canada");
+});
+
+test("prompt rules carry the user's facts, not anyone else's", () => {
+  const r = autopilotRules(exampleAnswers(), approvedExample(Profile), examplePrefs());
+  assert.match(r, /finished school in May 2022/);
+  assert.match(r, /Software engineering: 3/);
+  assert.match(r, /Austin, TX/);
+  assert.match(r, /Internships and co-ops are hard fails/);
+  assert.match(r, /more than 5 years/);
+});
+
+test("nothing unapproved reaches the resume", () => {
+  const p = approvedExample(Profile);
+  p.experience[0].bullets[0].approved = false;
+  p.summaries[0].approved = false;
+  const a = approvedOnly(p);
+  assert.ok(!a.experience[0].bullets.some((b) => b.id === p.experience[0].bullets[0].id));
+  assert.ok(!a.summaries.some((s) => s.id === p.summaries[0].id));
+  assert.strictEqual(a.bases[0].summary, a.summaries[0].id, "a base falls back to an approved summary");
+  const prof = loadProfile(p, exampleAnswers());
+  const { spec } = Tailor.checkPlan(prof, { base: prof.bases[0].id, summary: p.summaries[0].id });
+  assert.notStrictEqual(spec.summary, p.summaries[0].id);
+  assert.throws(() => loadProfile(unapproved(Profile.EXAMPLE), exampleAnswers()), /problems/);
+});
+
+test("contact and answers come from the common questions", () => {
+  const prof = loadProfile(approvedExample(Profile), { ...exampleAnswers(), firstName: "Sam", lastName: "Rivera", email: "sam@example.org" });
+  assert.strictEqual(prof.name, "Sam Rivera");
+  assert.strictEqual(prof.contact.email, "sam@example.org");
+  assert.ok(prof.cannotClaim.includes("Rust"));
+});
+
+test("two resumes merge: same job joins bullets, layouts are kept, ids stay unique", () => {
+  const a = JSON.parse(JSON.stringify(Profile.EXAMPLE));
+  const b = JSON.parse(JSON.stringify(Profile.EXAMPLE));
+  b.experience[0].bullets.push({ id: "scheduler", text: "Led the migration to a new booking calendar." });
+  b.bases[0].description = "Second resume";
+  const m = mergeProfiles(a, b);
+  assert.strictEqual(m.experience.length, a.experience.length);
+  const ids = m.experience[0].bullets.map((x) => x.id);
+  assert.strictEqual(new Set(ids).size, ids.length);
+  assert.ok(m.experience[0].bullets.some((x) => /migration/.test(x.text)));
+  assert.strictEqual(m.bases.length, 2);
+  assert.notStrictEqual(m.bases[1].id, m.bases[0].id);
+  assert.deepStrictEqual(Array.from(Profile.validate(m)), []);
+  const u = unapproved(m);
+  assert.ok(u.summaries.every((s) => s.approved === false));
+});
