@@ -154,7 +154,8 @@ try {
   await win.waitForSelector(".banner.violet");
   await shot("8-dashboard");
   assert.ok(await win.isVisible("#live"), "Go live switch shown");
-  assert.ok(await win.isVisible('#update-side button:has-text("Check for updates")'), "update check in the sidebar");
+  // "Checking..." while the app's own check runs, then "Check for updates".
+  await win.waitForSelector('#update-side button:has-text("Check for updates")', { timeout: 60000 });
   assert.ok(!(await win.$eval("#live", (e) => e.classList.contains("on"))), "starts in dry run");
 
   const settings = JSON.parse(fs.readFileSync(path.join(data, "settings.json"), "utf8"));
