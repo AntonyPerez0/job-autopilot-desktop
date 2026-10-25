@@ -9,6 +9,7 @@ import { acquireBrowser, closeAppPage, closeBrowser, newAppPage } from "./browse
 import { dataDir, getAnswers, getPrefs, getSettings } from "./store.js";
 import { waitForCode } from "./mail.js";
 import { withinRadius } from "./geo.js";
+import { LOGIN_WALL_JS } from "./ats.js";
 
 // The steps of one application, in order, as the dashboard shows them.
 export const STEPS = [
@@ -394,9 +395,27 @@ export function arbitrationAllowed(a, company) {
   return false;
 }
 
+// Some sites (Paycom) render a pop-up form inside a section marked aria-hidden, which the form
+// reader rightly skips. When a box there is plainly on screen and not covered, the mark is wrong:
+// take it off, so the form is read.
+export const UNHIDE_JS = `(() => {
+  let n = 0;
+  for (const el of document.querySelectorAll('input:not([type=hidden]), select, textarea')) {
+    if (el.getAttribute('aria-hidden') === 'true') continue;
+    const h = el.closest('[aria-hidden=true]');
+    if (!h || h.hasAttribute('data-ap-unhid')) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width < 8 || r.height < 8 || r.bottom < 0 || r.top > innerHeight) continue;
+    const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    if (!top || !(top === el || el.contains(top) || top.contains(el) || (el.labels && [...el.labels].some((l) => l.contains(top))))) continue;
+    h.setAttribute('aria-hidden', 'false'); h.setAttribute('data-ap-unhid', '1'); n++;
+  }
+  return n;
+})()`;
+
 async function inject(page) {
   for (const f of page.frames()) {
-    try { await f.evaluate(SHIM + "\n" + CONTENT_JS); } catch { /* detached or blocked frame */ }
+    try { await f.evaluate(UNHIDE_JS); await f.evaluate(SHIM + "\n" + CONTENT_JS); } catch { /* detached or blocked frame */ }
   }
 }
 
@@ -483,6 +502,67 @@ export const windowModeOf = (s) => s.windowMode || (s.headless ? "headless" : "m
 
 const safeName = (s) => String(s).replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 120);
 
+// "Next" on a form split over several pages (Paycom, SmartRecruiters, many hourly-job forms).
+export const NEXT_JS = `(() => {
+  const vis = (e) => e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden' && !e.disabled;
+  const txt = (e) => (e.innerText || e.value || e.getAttribute('aria-label') || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+  const rx = /^(next|next step|next page|continue|save (and|&) continue|save (and|&) next|proceed|continue to next step|next: .{1,40}|continue to .{1,40})(\\s*[>→»])?$/;
+  const b = [...document.querySelectorAll('button, input[type=submit], input[type=button], [role=button], a.btn, a.button')].filter(vis).filter((e) => rx.test(txt(e))).pop();
+  if (!b) return null;
+  b.setAttribute('data-ap-next', '1');
+  return txt(b);
+})()`;
+
+// Buttons and links that open the form from a posting page. Never "Apply with LinkedIn/Indeed".
+const APPLY_RX = /^\s*(apply( now| online| here| today)?|apply for (this|the) (job|position|role)|apply to this (job|position)|i'?m interested|start (your |my )?application|begin application)\s*[>→»]?\s*$/i;
+
+// Cookie banners cover the page and swallow clicks. Decline the optional ones; accept only when there is no other way.
+const COOKIE_NO = /^\s*(decline all|reject all|decline|reject|reject optional|only necessary|necessary only|use necessary cookies only|deny|refuse all)\s*$/i;
+const COOKIE_YES = /^\s*(accept all|accept|accept cookies|allow all|i agree|agree|got it|ok|okay)\s*$/i;
+export async function dismissCookies(page) {
+  for (const rx of [COOKIE_NO, COOKIE_YES]) {
+    for (const f of page.frames()) {
+      const b = f.getByRole("button", { name: rx }).first();
+      if (await b.isVisible().catch(() => false)) { await b.click({ timeout: 5000 }).catch(() => {}); await sleep(600); return true; }
+    }
+  }
+  return false;
+}
+
+// The tab that holds the form on some posting pages (Workable's "Application").
+const TAB_RX = /^\s*(application|apply)\s*$/i;
+
+async function openForm(page, slug) {
+  await dismissCookies(page);
+  let btn = page.getByRole("button", { name: APPLY_RX }).or(page.getByRole("link", { name: APPLY_RX })).first();
+  if (!(await btn.isVisible().catch(() => false))) {
+    btn = page.getByRole("tab", { name: TAB_RX }).or(page.getByRole("link", { name: TAB_RX })).first();
+    if (!(await btn.isVisible().catch(() => false))) return page;
+  }
+  // The form may open in a new tab.
+  const popup = page.context().waitForEvent("page", { timeout: 6000 }).catch(() => null);
+  await btn.click({ timeout: 10000 }).catch(() => btn.click({ force: true, timeout: 5000 }).catch(() => {}));
+  const next = await popup;
+  const target = next || page;
+  await target.waitForLoadState("domcontentloaded", { timeout: 30000 }).catch(() => {});
+  await target.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+  await sleep(2500);
+  if (next) log(slug, "the form opened in a new tab: " + next.url().slice(0, 120));
+  return target;
+}
+
+async function loginWall(page) {
+  let pw = 0, fields = 0, signIn = false;
+  for (const f of page.frames()) {
+    const r = await f.evaluate(LOGIN_WALL_JS).catch(() => null);
+    if (r) { pw += r.pw; fields += r.fields; signIn = signIn || r.signIn; }
+  }
+  return (pw > 0 && fields < 8) || (signIn && fields < 3);
+}
+
+const CLOSED_RX = /no longer (accepting|available|open)|position (has been )?filled|job (is )?closed|page not found|job not found|job you requested was not found|posting (is )?(closed|expired)|this job (has )?expired/i;
+const MAX_PAGES = 8;
+
 // hooks: progress(stepKey), onFilled(page), status(text), opts: { dryRun, settings, answers, prefs, mailbox, browser }
 export async function applyTo(job, hooks = {}, opts = {}) {
   const settings = opts.settings || getSettings();
@@ -496,12 +576,15 @@ export async function applyTo(job, hooks = {}, opts = {}) {
   step("browser");
   const profile = opts.profile || loadProfile();
   const details = JSON.parse(job.details || "{}");
+  const pages = [];
   let page;
   const result = { details };
+  const manual = (reason) => ({ ...result, status: "manual", reason: "Apply yourself: " + reason });
   try {
     const mode = windowModeOf(settings);
     const bh = opts.browser ? { ctx: opts.browser } : await acquireBrowser({ windowMode: mode, choice: settings.browser, onStatus: (t) => hooks.status && hooks.status(t) });
     page = await newAppPage(bh, mode);
+    pages.push(page);
     page.setDefaultTimeout(30000);
     if (process.env.AP_DEBUG) {
       page.on("response", (r) => { if (r.request().method() !== "GET") console.log("NET", r.status(), r.request().method(), r.url().slice(0, 160)); });
@@ -515,118 +598,98 @@ export async function applyTo(job, hooks = {}, opts = {}) {
     await sleep(2000);
 
     step("read");
+    await dismissCookies(page);
     let { text, fields } = await scrapeAll(page);
-    if (fields.length < 3) {
+    if (fields.length < 3 && !CLOSED_RX.test(text.slice(0, 3000))) {
       // A posting page with an "Apply" button in front of the form.
-      const btn = page.getByRole("button", { name: /^\s*apply( now| for this job)?\s*$/i }).or(page.getByRole("link", { name: /^\s*apply( now| for this job)?\s*$/i })).first();
-      if (await btn.isVisible().catch(() => false)) {
-        await btn.click().catch(() => {});
-        await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
-        await sleep(2500);
-        ({ text, fields } = await scrapeAll(page));
-      }
+      const target = await openForm(page, job.slug);
+      if (target !== page) { pages.push(target); page = target; page.setDefaultTimeout(30000); }
+      ({ text, fields } = await scrapeAll(page));
     }
-    if (/no longer (accepting|available|open)|position (has been )?filled|job (is )?closed|page not found|job not found|job you requested was not found|posting (is )?(closed|expired)/i.test(text.slice(0, 3000)) && fields.length < 5) {
-      return { ...result, status: "skipped", reason: "posting is closed" };
-    }
-    if (fields.length < 3) return { ...result, status: "failed", reason: "no application form found on the page", screenshot: await shot(page, job.slug, "noform") };
+    if (CLOSED_RX.test(text.slice(0, 3000)) && fields.length < 5) return { ...result, status: "skipped", reason: "posting is closed" };
+    if (await loginWall(page)) return { ...manual(`${new URL(page.url()).hostname} asks you to sign in or create an account first`), screenshot: await shot(page, job.slug, "signin") };
+    if (fields.length < 3) return { ...manual("the app found no form it can fill on this page (it may be a chat, or a site the app does not know)"), screenshot: await shot(page, job.slug, "noform") };
 
-    const postingText = [text, details.description ? "\n\nFULL POSTING (from freehire):\n" + details.description : ""].join("").slice(0, 30000);
-    step("plan");
-    log(job.slug, `${fields.length} fields; asking ${settings.ai.model} for a plan`);
-    const p = await plan(profile, { url: job.apply_url, text: postingText, fields }, a, prefs);
-    // A "fail" whose own reason says the requirement is met is the model contradicting itself.
-    const metAnyway = (f) => /\b(meets|satisf(ies|y)|exceeds|has (the )?(required|enough))\b/i.test(f.why || "") && !/\b(not|no|lacks?|without|fails?|short)\b|n't/i.test(f.why || "");
-    const hardFails = ((p.fit || {}).hardFails || []).filter((f) => f && f.requirement && !metAnyway(f));
-    result.details = { ...details, plan: { employer: p.employer, jobTitle: p.jobTitle, base: p.base, summary: p.summary, notClaimed: p.notClaimed || [] }, hardFails, fields };
-    if (hardFails.length) {
-      return { ...result, status: "skipped", reason: "fails a must-have: " + hardFails.map((f) => `${f.requirement}${f.why ? " (" + f.why + ")" : ""}`).join("; ").slice(0, 600) };
-    }
-
-    step("build");
-    const b = await build(profile, p, fields, { a, prefs, jobLocal });
-    if (b.overflow) return { ...result, status: "failed", reason: "resume would not fit on one page" };
-    const resumeFile = `${safeName(job.slug)}.pdf`;
-    const resumePath = path.join(RESUMES(), resumeFile);
-    // The upload carries the add-on's name (Lastname_Employer_Title.pdf); keep a copy under that name too.
-    const named = path.join(RESUMES(), safeName(job.slug) + "-" + b.fileName);
-    fs.writeFileSync(resumePath, b.pdf);
-    fs.writeFileSync(named, b.pdf);
-    result.resume_file = resumeFile;
-    result.details.kit = b.kit.filter((k) => k.fieldIndex !== undefined || k.kind === "file");
-    result.details.resume = { fileName: b.fileName, slack: b.slack, warnings: b.warnings };
-    if (allowArbitration) for (const k of b.kit) {
-      if (/arbitration/i.test(k.label) && !BINDING.test(k.label) && (k.kind === "decide" || !k.value)) {
-        Object.assign(k, { kind: "text", value: "Yes", note: `accepted: your settings allow plain arbitration agreements${a.arbitration === "list" ? " for " + job.company : ""}` });
-        b.audit.push(`arbitration agreement accepted for ${job.company}, per your settings`);
-      }
-    }
-    b.audit.push(...await holdBindingAcks(page, b.kit));
-    result.details.audit = b.audit;
-    for (const a of b.audit) log(job.slug, "truth check: " + a);
-
-    step("fill");
-    log(job.slug, "filling the form");
-    const fillMsg = { type: "fill", kit: { fields: b.kit, header: {} }, resume: { name: b.fileName, b64: b.pdf.toString("base64") } };
-    const first = await eachFrame(page, fillMsg);
-    await ensureResume(page, named);
-    // Resume parsers (Ashby's autofill, Lever's) rewrite the form a few seconds after
-    // the upload. Let them finish, then fill again: only empty fields get touched.
-    await sleep(7000);
-    let second = await eachFrame(page, fillMsg);
-    // "Please acknowledge the privacy notice" dropdowns whose option is not literally "Yes".
-    // Never for arbitration, waivers or other binding agreements: those stay with the user.
-    for (const alt of ["Acknowledge", "I acknowledge", "I agree", "Accept"]) {
-      const stuck = second.flatMap((r) => r.decide || []).filter((x) => /^Could not set it/.test(x.note || "") &&
-        ACK.test(x.label) && !BINDING.test(x.label)).map((x) => x.label);
-      if (!stuck.length) break;
-      const kit2 = b.kit.map((k) => (stuck.includes(k.label) ? { ...k, value: alt } : k));
-      const again = await eachFrame(page, { ...fillMsg, kit: { fields: kit2, header: {} } });
-      second = second.map((r) => {
-        const a = again.find((x) => x.frame === r.frame);
-        if (!a) return r;
-        return { ...r, filled: [...(r.filled || []), ...(a.filled || [])], decide: (r.decide || []).filter((x) => !stuck.includes(x.label) || (a.decide || []).some((y) => y.label === x.label)) };
-      });
-    }
-    await ensureResume(page, named);
-    await answerGroups(page, b.kit);
-    await fillCombos(page, b.kit, a.state || a.country || "");
-    const stuck = second.flatMap((r) => [...(r.missing || []), ...(r.decide || []).filter((x) => /^Could not set it/.test(x.note || ""))])
-      .map((x) => x.label).filter((l) => !BINDING.test(l));
-    if (stuck.length) await fixDropdowns(page, b.kit, stuck);
-    for (const n of await verifyCombos(page, b.kit, fields)) { b.audit.push("list check: " + n); log(job.slug, "list check: " + n); }
-    await sleep(2500);
-    // A last pass fills nothing new; it reports what is still empty after every fix above.
-    const last = stuck.length ? await eachFrame(page, fillMsg) : second;
+    const postingText = [text, details.description ? "\n\nFROM THE JOB LISTING:\n" + details.description : ""].join("").slice(0, 30000);
+    const allKit = [], allFields = [], audit = [];
     const rep = { filled: [], kept: [], decide: [], drafts: [], missing: [] };
-    for (const r of [...first, ...second]) for (const k of ["filled", "drafts"]) for (const x of r[k] || []) if (!rep[k].some((y) => y.label === x.label)) rep[k].push({ label: x.label, note: x.note });
-    for (const r of last) for (const k of ["decide", "missing"]) for (const x of r[k] || []) {
-      // a field the add-on calls empty but that visibly holds an answer is answered
-      if ((k === "missing" || /^Could not set it/.test(x.note || "")) && await showsValue(page, x.label)) continue;
-      rep[k].push({ label: x.label, note: x.note });
-    }
-    step("verify");
-    if (hooks.onFilled) await hooks.onFilled(page);
-    const groupsLeft = [];
-    for (const f of page.frames()) {
-      for (const g of await f.evaluate(GROUPS_JS).catch(() => [])) if (g.required) groupsLeft.push(g.label);
-      for (const c of await f.evaluate(COMBOS_JS).catch(() => [])) if (c.required && !(await showsValue(page, c.label))) groupsLeft.push(c.label);
-    }
-    result.details.report = rep;
+    let resume = null; // built on the first page, uploaded wherever a page asks for it
+    for (let n = 1; ; n++) {
+      step("plan");
+      log(job.slug, `${n > 1 ? `page ${n}: ` : ""}${fields.length} fields; asking ${settings.ai.model} for a plan`);
+      const pageNote = n > 1 ? `\n\n(This is page ${n} of the application form; earlier pages are already filled in.)` : "";
+      const p = await plan(profile, { url: page.url(), text: postingText + pageNote, fields }, a, prefs);
+      if (n === 1) {
+        // A "fail" whose own reason says the requirement is met is the model contradicting itself.
+        const metAnyway = (f) => /\b(meets|satisf(ies|y)|exceeds|has (the )?(required|enough))\b/i.test(f.why || "") && !/\b(not|no|lacks?|without|fails?|short)\b|n't/i.test(f.why || "");
+        const hardFails = ((p.fit || {}).hardFails || []).filter((f) => f && f.requirement && !metAnyway(f));
+        result.details = { ...details, plan: { employer: p.employer, jobTitle: p.jobTitle, base: p.base, summary: p.summary, notClaimed: p.notClaimed || [] }, hardFails };
+        // A job the user added by hand is theirs to judge: the must-haves are noted, not a reason to skip.
+        if (hardFails.length && !details.addedByUser) {
+          return { ...result, status: "skipped", reason: "fails a must-have: " + hardFails.map((f) => `${f.requirement}${f.why ? " (" + f.why + ")" : ""}`).join("; ").slice(0, 600) };
+        }
+      }
 
-    // Gates: nothing required may be left empty, guessed, or waiting on a person.
-    const required = new Set(fields.filter((f) => f.required).map((f) => f.label));
-    const blocking = [
-      ...rep.missing.map((x) => `required, no answer: ${x.label}`),
-      ...rep.decide.filter((x) => required.has(x.label)).map((x) => `needs you: ${x.label}${x.note ? " (" + x.note + ")" : ""}`),
-      ...groupsLeft.map((l) => `required, no answer: ${l}`),
-    ];
-    for (const f of page.frames()) {
-      const empty = await f.evaluate(CHECK_JS).catch(() => []);
-      for (const l of empty) if (!blocking.some((x) => x.includes(l))) blocking.push(`still empty: ${l}`);
+      step("build");
+      const b = await build(profile, p, fields, { a, prefs, jobLocal });
+      if (!resume) {
+        if (b.overflow) return { ...result, status: "failed", reason: "resume would not fit on one page" };
+        const resumeFile = `${safeName(job.slug)}.pdf`;
+        const named = path.join(RESUMES(), safeName(job.slug) + "-" + b.fileName);
+        fs.writeFileSync(path.join(RESUMES(), resumeFile), b.pdf);
+        fs.writeFileSync(named, b.pdf);
+        resume = { file: resumeFile, named, fileName: b.fileName, pdf: b.pdf };
+        result.resume_file = resumeFile;
+        result.details.resume = { fileName: b.fileName, slack: b.slack, warnings: b.warnings };
+      } else {
+        for (const k of b.kit) if (k.kind === "file") { k.value = resume.fileName; k.file = resume.fileName; }
+      }
+      if (allowArbitration) for (const k of b.kit) {
+        if (/arbitration/i.test(k.label) && !BINDING.test(k.label) && (k.kind === "decide" || !k.value)) {
+          Object.assign(k, { kind: "text", value: "Yes", note: `accepted: your settings allow plain arbitration agreements${a.arbitration === "list" ? " for " + job.company : ""}` });
+          b.audit.push(`arbitration agreement accepted for ${job.company}, per your settings`);
+        }
+      }
+      b.audit.push(...await holdBindingAcks(page, b.kit));
+      for (const x of b.audit) log(job.slug, "truth check: " + x);
+      audit.push(...b.audit);
+
+      step("fill");
+      log(job.slug, n > 1 ? `filling page ${n}` : "filling the form");
+      const filled = await fillPage(page, b, fields, resume, a, job);
+      audit.push(...filled.notes);
+      for (const k of ["filled", "drafts", "decide", "missing"]) rep[k].push(...filled.rep[k]);
+      allKit.push(...b.kit.filter((k) => k.fieldIndex !== undefined || k.kind === "file").map((k) => (n > 1 ? { ...k, page: n } : k)));
+      allFields.push(...fields);
+      result.details = { ...result.details, kit: allKit, fields: allFields, audit, report: rep, pages: n };
+
+      step("verify");
+      if (hooks.onFilled) await hooks.onFilled(page);
+      result.screenshot = await shot(page, job.slug, n > 1 ? `filled-p${n}` : "filled");
+      if (filled.blocking.length) return { ...result, status: "failed", reason: `could not fill every required field${n > 1 ? ` (page ${n})` : ""}: ` + filled.blocking.slice(0, 6).join("; ") };
+
+      // A form on several pages: "Next" until the page with the real Submit button.
+      let nextFrame = null, nextLabel = null;
+      for (const f of page.frames()) { nextLabel = await f.evaluate(NEXT_JS).catch(() => null); if (nextLabel) { nextFrame = f; break; } }
+      if (!nextFrame) break;
+      // A dry run never moves past the first page: some sites save an application as soon as you press Next.
+      if (dryRun) return { ...result, status: "filled", reason: `dry run: page 1 of a form with several pages filled and checked; later pages are filled when you go live` };
+      if (n >= MAX_PAGES) return { ...result, status: "failed", reason: `the form kept asking for more after ${MAX_PAGES} pages` };
+      const before = page.url(), beforeLabels = fields.map((f) => f.label).join("|");
+      log(job.slug, `pressing "${nextLabel}"`);
+      await nextFrame.locator("[data-ap-next]").first().click({ timeout: 15000 });
+      await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+      await sleep(3000);
+      if (await loginWall(page)) return manual(`after page ${n}, ${new URL(page.url()).hostname} asks you to sign in or create an account`);
+      ({ fields } = await scrapeAll(page));
+      // Still on the same page: the site refused it (an error the app could not see before).
+      if (page.url() === before && fields.map((f) => f.label).join("|") === beforeLabels) {
+        const errs = await pageErrors(page);
+        return { ...result, status: "failed", reason: `page ${n} was not accepted${errs.length ? ": " + errs.join("; ").slice(0, 400) : ""}`, screenshot: await shot(page, job.slug, `stuck-p${n}`) };
+      }
+      // A review page with only a Submit button left.
+      if (!fields.length) break;
     }
-    result.screenshot = await shot(page, job.slug, "filled");
-    if (blocking.length) return { ...result, status: "failed", reason: "could not fill every required field: " + blocking.slice(0, 6).join("; ") };
     if (dryRun) return { ...result, status: "filled", reason: "dry run: filled and checked, not submitted" };
 
     // Submit.
@@ -663,18 +726,110 @@ export async function applyTo(job, hooks = {}, opts = {}) {
     }
     result.screenshot = await shot(page, job.slug, "after");
     if (outcome === "applied") return { ...result, status: "applied", reason: `submitted ("${label}")` };
-    const errs = [];
-    for (const f of page.frames()) {
-      errs.push(...await f.evaluate(() => [...document.querySelectorAll('[class*=error], [role=alert], .invalid-feedback, [aria-invalid=true]')]
-        .map((e) => (e.innerText || e.getAttribute("aria-label") || e.name || "").trim()).filter(Boolean).slice(0, 6)).catch(() => []));
-    }
+    const errs = await pageErrors(page);
     const captcha = await page.$('iframe[src*="recaptcha/api2/bframe"], iframe[src*="hcaptcha"][src*="challenge"]').catch(() => null);
     if (errs.some((e) => /matching images|select all|captcha|i'?m not a robot/i.test(e))) {
       return { ...result, status: "failed", reason: "an image CAPTCHA blocked the submit (cannot be solved unattended)" };
     }
     return { ...result, status: "failed", reason: captcha ? "a CAPTCHA challenge blocked the submit" : "submitted but no confirmation appeared" + (errs.length ? ": " + [...new Set(errs)].join("; ").slice(0, 400) : "") };
   } finally {
-    // The browser stays open for the next application; only this job's tab closes.
-    if (page) await closeAppPage(page, windowModeOf(settings));
+    // The browser stays open for the next application; only this job's tabs close.
+    for (const pg of pages.reverse()) await closeAppPage(pg, windowModeOf(settings));
   }
+}
+
+async function pageErrors(page) {
+  const errs = [];
+  for (const f of page.frames()) {
+    errs.push(...await f.evaluate(() => [...document.querySelectorAll('[class*=error], [role=alert], .invalid-feedback, [aria-invalid=true]')]
+      .map((e) => (e.innerText || e.getAttribute("aria-label") || e.name || "").trim()).filter(Boolean).slice(0, 6)).catch(() => []));
+  }
+  return [...new Set(errs)];
+}
+
+// Some sites fill in a location from the computer's internet address (Workable guesses a nearby
+// city). A box that already holds a place other than the user's own is cleared, so the user's
+// answer goes in instead.
+export const CLEAR_STALE_JS = `([label, want]) => {
+  const norm = (t) => String(t || '').replace(/[\\s\\u00a0]+/g, ' ').replace(/\\(optional\\)|\\*/gi, '').trim().toLowerCase();
+  const target = norm(label);
+  const lab = [...document.querySelectorAll('label, legend')].find((l) => norm(l.innerText) === target);
+  if (!lab) return null;
+  const box = (lab.htmlFor && document.getElementById(lab.htmlFor)) || (lab.closest('[class*=field], fieldset, div') || lab.parentElement).querySelector('input:not([type=hidden]):not([type=checkbox]):not([type=radio]), textarea');
+  if (!box || !box.value || want.some((w) => box.value.toLowerCase().includes(w))) return null;
+  const old = box.value;
+  const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(box), 'value').set;
+  setter.call(box, '');
+  box.dispatchEvent(new Event('input', { bubbles: true }));
+  box.dispatchEvent(new Event('change', { bubbles: true }));
+  return old;
+}`;
+const PLACE_RX = /address|location|city|where do you live|zip|postal/i;
+
+// Fill one page of the form from its kit, with every fix the private version learned, then check it.
+async function fillPage(page, b, fields, resume, a, job) {
+  const notes = [];
+  const fillMsg = { type: "fill", kit: { fields: b.kit, header: {} }, resume: { name: resume.fileName, b64: resume.pdf.toString("base64") } };
+  let first = await eachFrame(page, fillMsg);
+  const want = [a.city, a.zip].filter(Boolean).map((x) => String(x).toLowerCase());
+  let cleared = 0;
+  if (want.length) for (const r of first) for (const k of r.kept || []) {
+    if (!PLACE_RX.test(k.label)) continue;
+    const old = await r.frame.evaluate(`(${CLEAR_STALE_JS})(${JSON.stringify([k.label, want])})`).catch(() => null);
+    if (old) { cleared++; notes.push(`"${k.label.slice(0, 50)}" held "${old.slice(0, 60)}" (the site's guess, not your city), so it was replaced`); }
+  }
+  if (cleared) { await sleep(500); first = await eachFrame(page, fillMsg); }
+  await ensureResume(page, resume.named);
+  // Resume parsers (Ashby's autofill, Lever's) rewrite the form a few seconds after
+  // the upload. Let them finish, then fill again: only empty fields get touched.
+  await sleep(7000);
+  let second = await eachFrame(page, fillMsg);
+  // "Please acknowledge the privacy notice" dropdowns whose option is not literally "Yes".
+  // Never for arbitration, waivers or other binding agreements: those stay with the user.
+  for (const alt of ["Acknowledge", "I acknowledge", "I agree", "Accept"]) {
+    const stuck = second.flatMap((r) => r.decide || []).filter((x) => /^Could not set it/.test(x.note || "") &&
+      ACK.test(x.label) && !BINDING.test(x.label)).map((x) => x.label);
+    if (!stuck.length) break;
+    const kit2 = b.kit.map((k) => (stuck.includes(k.label) ? { ...k, value: alt } : k));
+    const again = await eachFrame(page, { ...fillMsg, kit: { fields: kit2, header: {} } });
+    second = second.map((r) => {
+      const x = again.find((y) => y.frame === r.frame);
+      if (!x) return r;
+      return { ...r, filled: [...(r.filled || []), ...(x.filled || [])], decide: (r.decide || []).filter((y) => !stuck.includes(y.label) || (x.decide || []).some((z) => z.label === y.label)) };
+    });
+  }
+  await ensureResume(page, resume.named);
+  await answerGroups(page, b.kit);
+  await fillCombos(page, b.kit, a.state || a.country || "");
+  const stuck = second.flatMap((r) => [...(r.missing || []), ...(r.decide || []).filter((x) => /^Could not set it/.test(x.note || ""))])
+    .map((x) => x.label).filter((l) => !BINDING.test(l));
+  if (stuck.length) await fixDropdowns(page, b.kit, stuck);
+  for (const n of await verifyCombos(page, b.kit, fields)) { notes.push("list check: " + n); log(job.slug, "list check: " + n); }
+  await sleep(2500);
+  // A last pass fills nothing new; it reports what is still empty after every fix above.
+  const last = stuck.length ? await eachFrame(page, fillMsg) : second;
+  const rep = { filled: [], kept: [], decide: [], drafts: [], missing: [] };
+  for (const r of [...first, ...second]) for (const k of ["filled", "drafts"]) for (const x of r[k] || []) if (!rep[k].some((y) => y.label === x.label)) rep[k].push({ label: x.label, note: x.note });
+  for (const r of last) for (const k of ["decide", "missing"]) for (const x of r[k] || []) {
+    // a field the add-on calls empty but that visibly holds an answer is answered
+    if ((k === "missing" || /^Could not set it/.test(x.note || "")) && await showsValue(page, x.label)) continue;
+    rep[k].push({ label: x.label, note: x.note });
+  }
+  const groupsLeft = [];
+  for (const f of page.frames()) {
+    for (const g of await f.evaluate(GROUPS_JS).catch(() => [])) if (g.required) groupsLeft.push(g.label);
+    for (const c of await f.evaluate(COMBOS_JS).catch(() => [])) if (c.required && !(await showsValue(page, c.label))) groupsLeft.push(c.label);
+  }
+  // Gates: nothing required may be left empty, guessed, or waiting on a person.
+  const required = new Set(fields.filter((f) => f.required).map((f) => f.label));
+  const blocking = [
+    ...rep.missing.map((x) => `required, no answer: ${x.label}`),
+    ...rep.decide.filter((x) => required.has(x.label)).map((x) => `needs you: ${x.label}${x.note ? " (" + x.note + ")" : ""}`),
+    ...groupsLeft.map((l) => `required, no answer: ${l}`),
+  ];
+  for (const f of page.frames()) {
+    const empty = await f.evaluate(CHECK_JS).catch(() => []);
+    for (const l of empty) if (!blocking.some((x) => x.includes(l))) blocking.push(`still empty: ${l}`);
+  }
+  return { rep, blocking, notes };
 }

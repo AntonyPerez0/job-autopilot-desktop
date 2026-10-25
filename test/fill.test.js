@@ -157,3 +157,14 @@ test("an acknowledgement whose text waives rights waits for the user; a plain on
   assert.strictEqual(kit[1].kind, "text");
   await page.close();
 });
+
+test("a location the site guessed is cleared when it is not the user's city", async () => {
+  const { CLEAR_STALE_JS } = await import("../core/apply.js");
+  const page = await browser.newPage();
+  await page.setContent(`<div class="field"><label for="ad">Address (Optional)</label><input id="ad" value="San Jose, United States of America"></div>
+    <div class="field"><label for="c2">City</label><input id="c2" value="Austin, TX"></div>`);
+  assert.strictEqual(await page.evaluate(`(${CLEAR_STALE_JS})(${JSON.stringify(["Address", ["austin"]])})`), "San Jose, United States of America");
+  assert.strictEqual(await page.$eval("#ad", (e) => e.value), "");
+  assert.strictEqual(await page.evaluate(`(${CLEAR_STALE_JS})(${JSON.stringify(["City", ["austin"]])})`), null, "the user's own city stays");
+  await page.close();
+});
