@@ -30,20 +30,29 @@ const server = http.createServer((req, res) => {
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 
 const dataDir = process.platform === "darwin" ? path.join(os.homedir(), "Library", "Application Support", "Job Autopilot") : path.join(process.env.APPDATA || "", "Job Autopilot");
+// Start past the setup, paused, so the dashboard (with its update button) opens.
+fs.mkdirSync(dataDir, { recursive: true });
+fs.writeFileSync(path.join(dataDir, "settings.json"), JSON.stringify({ onboarded: true, acceptedTerms: true, paused: true }));
 const launches = () => { try { return JSON.parse(fs.readFileSync(path.join(dataDir, "launches.json"), "utf8")); } catch { return []; } };
 
 const app = await electron.launch({ executablePath: exe, args: [], env: { ...process.env, JA_UPDATE_FEED: `http://127.0.0.1:${server.address().port}/latest` }, timeout: 120000 });
 const win = await app.firstWindow();
 const api = (p, b) => win.evaluate(([p, b]) => window.ja.api(p, b), [p, b]);
-const checked = await api("/api/update/check", {});
+// The way a user does it: Check for updates in the sidebar, then the Update button that appears.
+await win.waitForSelector('#update-side button:has-text("Check for updates")', { timeout: 60000 });
+await win.click('#update-side button:has-text("Check for updates")');
+await win.waitForSelector('#update-side button:has-text("Update to 99.0.0")', { timeout: 60000 });
+await win.click('.nav:has-text("Settings")');
+await win.waitForSelector('#update-card button:has-text("Update now"):not([disabled])');
+await win.screenshot({ path: path.join(import.meta.dirname, "..", "out", "e2e", "update-available.png") }).catch(() => {});
+const checked = await api("/api/update");
 console.log("check:", checked.phase, checked.info && checked.info.latest, "packaged:", checked.packaged);
 assert.strictEqual(checked.phase, "available");
 const before = launches().length;
 const bundleOf = () => path.resolve(exe, "..", "..", "..");
 const inodeBefore = process.platform === "darwin" ? fs.statSync(bundleOf()).ino : null;
 const t0 = Date.now();
-const started = await api("/api/update/install", {});
-assert.ok(!started.error, started.error);
+await win.click('#update-card button:has-text("Update now")');
 let last = "";
 const closed = new Promise((r) => app.on("close", r));
 const poll = (async () => {

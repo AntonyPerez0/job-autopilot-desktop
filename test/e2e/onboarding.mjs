@@ -143,6 +143,7 @@ try {
   await win.waitForSelector(".banner.violet");
   await shot("8-dashboard");
   assert.ok(await win.isVisible("#live"), "Go live switch shown");
+  assert.ok(await win.isVisible('#update-side button:has-text("Check for updates")'), "update check in the sidebar");
   assert.ok(!(await win.$eval("#live", (e) => e.classList.contains("on"))), "starts in dry run");
 
   const settings = JSON.parse(fs.readFileSync(path.join(data, "settings.json"), "utf8"));
@@ -163,6 +164,7 @@ try {
   await win.click('.nav:has-text("Settings")');
   await win.waitForSelector("#sec-prefs .tags");
   await win.waitForSelector('#sec-history .hint:has-text("2 so far")');
+  await win.waitForSelector('#update-card button:has-text("Update now")');
   await shot("9-settings");
   // Playwright inside the packaged app: find the installed browsers, and optionally download Chromium.
   await win.click("#sec-running [data-detect]");

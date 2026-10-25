@@ -22,6 +22,7 @@
       <div class="row"><span>Day starts</span><span class="muted" id="daystart"></span></div>
       <div class="row"><span>Daily limit</span><div class="stepper"><button id="cap-dn" aria-label="Lower">&minus;</button><span id="cap">0</span><button id="cap-up" aria-label="Raise">+</button></div></div>
       <div class="muted" id="model" style="font-size:12px"></div>
+      <div id="update-side"></div>
     </div>
   </aside>
   <div>
@@ -144,6 +145,41 @@ function renderControls() {
   $("cap").textContent = s.dailyCap;
   $("daystart").textContent = new Date(2000, 0, 1, s.dayStartsAtHour || 0).toLocaleTimeString([], { hour: "numeric" });
   $("model").textContent = "Model · " + st.model;
+  $("update-side").innerHTML = updateSide();
+  const card = $("update-card"); if (card) card.innerHTML = updateCard();
+}
+// The update button lives in three places: the sidebar (always), Settings > Updates, and a banner when one is out.
+function updateSide() {
+  const u = st.update || {};
+  const v = esc(st.version);
+  if (u.info && u.info.newer && u.packaged && ["available", "error"].includes(u.phase)) {
+    return `<button class="btn sm primary" style="width:100%;justify-content:center" onclick="installUpdate()">${icon("upload")}Update to ${esc(u.info.latest)}</button>`;
+  }
+  if (["downloading", "waiting", "installing"].includes(u.phase)) {
+    return `<div class="muted" style="font-size:12px">${u.phase === "downloading" ? `Downloading update · ${Math.round((u.progress || 0) * 100)}%` : u.phase === "waiting" ? "Update ready · finishing the current application" : "Installing update · restarting"}</div>`;
+  }
+  return `<div class="row" style="font-size:12px"><span class="muted">Version ${v}</span><button class="btn ghost sm" onclick="checkUpdate(this)">${u.phase === "checking" ? "Checking..." : "Check for updates"}</button></div>`;
+}
+function updateCard() {
+  const u = st.update || {};
+  const cur = esc(st.version);
+  const pct = Math.round((u.progress || 0) * 100);
+  let line, btn = "";
+  if (!u.packaged) line = `You're running Job Autopilot from source (version ${cur}); updates install only in the installed app.`;
+  else if (u.phase === "checking") line = "Checking for a new version...";
+  else if (u.info && u.info.newer && u.phase === "available") line = `<b>Version ${esc(u.info.latest)} is available.</b> You have ${cur}. Press Update now: the app downloads it, finishes any application in progress, then restarts with the new version. Your data and settings stay.`;
+  else if (u.phase === "downloading") line = `<b>Downloading version ${esc(u.info.latest)}: ${pct}%</b><div class="bar" style="margin-top:8px;max-width:420px"><i style="width:${pct}%"></i></div>`;
+  else if (u.phase === "waiting") line = `<b>Version ${esc(u.info.latest)} is downloaded.</b> The application in progress finishes first, then the app restarts.`;
+  else if (u.phase === "installing") line = `<b>Installing version ${esc(u.info.latest)}.</b> The app closes and opens again in a moment.`;
+  else if (u.phase === "error") line = `<b>The update did not work.</b> ${esc(u.error || "")}`;
+  else if (u.phase === "uptodate") line = `You have the latest version, ${cur}${u.checkedAt ? ` (checked ${new Date(u.checkedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })})` : ""}. New versions show up here and in the sidebar with an Update button.`;
+  else line = `Version ${cur}. The app checks for new versions when it starts and every few hours.`;
+  const canInstall = u.packaged && u.info && u.info.newer && ["available", "error"].includes(u.phase);
+  const busy = ["checking", "downloading", "waiting", "installing"].includes(u.phase);
+  btn = `<button class="btn sm primary" onclick="installUpdate()" ${canInstall ? "" : "disabled"} title="${canInstall ? "" : "No new version to install right now"}">${icon("upload")}${u.phase === "error" ? "Try again" : "Update now"}</button>
+    <button class="btn sm" onclick="checkUpdate(this)" ${busy ? "disabled" : ""}>${icon("refresh")}Check for updates</button>
+    ${u.info && u.info.url ? `<button class="btn sm ghost" onclick="window.ja.openExternal('${esc(u.info.url)}')">${icon("ext")}${u.info.newer ? "What's new" : "Releases page"}</button>` : ""}`;
+  return `<p style="margin:0 0 12px">${line}</p><div class="row-actions">${btn}</div>`;
 }
 function liveChip() {
   const s = st.state, set = st.settings;
@@ -451,10 +487,10 @@ async function installUpdate() {
   refreshStatusOnly(true);
 }
 async function checkUpdate(el) {
-  el.disabled = true;
+  if (el) el.disabled = true;
   const u = await api("/api/update/check", {});
-  el.disabled = false;
-  toast(u.error || (u.phase === "available" ? `Version ${u.info.latest} is available` : u.phase === "uptodate" ? `You have the latest version (${u.info.current})` : "Could not check for updates"));
+  if (el) el.disabled = false;
+  toast(u.error || (u.phase === "available" ? `Version ${u.info.latest} is available: press Update now` : u.phase === "uptodate" ? `You have the latest version (${u.info.current})` : u.error || "Could not check for updates"));
   refreshStatusOnly(true);
 }
 function banners() {
@@ -518,6 +554,7 @@ async function renderConfig() {
     bindSaves(forms);
   } else {
     $("main").innerHTML = header() + `<div id="cfg-host">
+      <div class="card" style="margin-bottom:20px"><div class="card-h"><h3>Updates</h3></div><div class="sec" id="update-card">${updateCard()}</div></div>
       ${card("prefs", "Job preferences", "What to search for")}
       ${card("questions", "Common questions", "Your standard answers and the facts the truth rules enforce")}
       ${card("ai", "AI provider", "Your key, your costs")}
@@ -526,8 +563,7 @@ async function renderConfig() {
       <div class="card" style="margin-bottom:20px"><div class="card-h"><h3>Application history</h3><span class="sub">So you never apply twice, even after a reinstall</span></div><div class="sec" id="sec-history"></div></div>
       <div class="card sec"><h3>Your data</h3><p>Everything lives in one folder on this computer: <span class="mono">${esc(cfg.dataDir)}</span>. Version ${esc(cfg.version)}.</p>
         <div class="row-actions"><button class="btn sm" onclick="window.ja.showDataFolder()">${icon("ext")}Open the folder</button>
-        <button class="btn sm" onclick="window.ja.go('onboarding.html')">${icon("retry")}Run the setup again</button>
-        <button class="btn sm" onclick="checkUpdate(this)">${icon("refresh")}Check for updates</button></div></div></div>`;
+        <button class="btn sm" onclick="window.ja.go('onboarding.html')">${icon("retry")}Run the setup again</button></div></div></div>`;
     const forms = { prefs: Forms.prefs($("sec-prefs"), cfg), questions: Forms.questions($("sec-questions"), cfg), ai: Forms.ai($("sec-ai"), cfg),
       mailbox: Forms.mailbox($("sec-mailbox"), cfg), running: Forms.running($("sec-running"), cfg) };
     Forms.history($("sec-history"), cfg, () => refreshStatusOnly());

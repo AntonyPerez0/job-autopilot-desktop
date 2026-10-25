@@ -47,8 +47,11 @@ your keychain. Click **Always Allow**: that's where the key is kept, encrypted.
 ### Updates
 
 The app checks for a new version when it starts and every few hours after.
-When one is out, the Overview shows **Update now**, and Settings has **Check
-for updates**. Press Update now and the app does the rest:
+The sidebar always shows your version. When a new one is out, the sidebar
+shows an **Update to x.y.z** button, the Overview shows a banner, and **Settings
+> Updates** (at the top of Settings) has **Update now**. **Check for updates**
+in either place checks right away. If you already have the latest version,
+Update now stays greyed out. Press it and the app does the rest:
 
 1. It downloads the new version and checks it against the release's
    checksums.
