@@ -27,7 +27,9 @@ function page(name) { return path.join(UI, name); }
 function createWindow() {
   win = new BrowserWindow({
     width: 1360, height: 900, minWidth: 960, minHeight: 640, title: "Job Autopilot", show: false,
-    backgroundColor: "#f7f8fa",
+    // Windows and Linux: no File/Edit/View bar; pressing Alt still shows it, and its shortcuts keep working.
+    autoHideMenuBar: true,
+    backgroundColor: "#f8f5f2",
     webPreferences: { preload: path.join(HERE, "preload.cjs"), contextIsolation: true, sandbox: true, nodeIntegration: false, plugins: true },
   });
   win.once("ready-to-show", () => win.show());
@@ -37,7 +39,7 @@ function createWindow() {
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//.test(url)) shell.openExternal(url);
     else if (url.startsWith("ap-file://")) {
-      const child = new BrowserWindow({ width: 1000, height: 900, webPreferences: { sandbox: true, plugins: true } });
+      const child = new BrowserWindow({ width: 1000, height: 900, autoHideMenuBar: true, webPreferences: { sandbox: true, plugins: true } });
       child.loadURL(url);
     }
     return { action: "deny" };
