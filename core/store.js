@@ -44,6 +44,7 @@ export const SETTINGS_DEFAULTS = {
   // windowMode: minimized | visible | headless (unset: minimized, or headless for the old switch)
   browser: "auto",           // auto | chrome | msedge | chromium
   mailbox: null,
+  googleMonthlyCap: 200,     // SerpApi searches a month (its free plan has 250)
   historyBackup: true,       // keep applied-jobs.json.gz outside the app (survives reinstalls)
   historyFolder: null,       // null: Documents/Job Autopilot             // { preset, host, port, user } ; the password lives in secrets
 };
@@ -65,6 +66,8 @@ export const PREFS_DEFAULTS = {
   postedWithinDays: 14,
   alreadyApplied: "",        // pasted list: URLs or "Company - Title" lines
   sources: ["greenhouse", "lever", "ashby"],
+  jobKind: "both",           // office | hourly | both: what the setup suggests and screens for
+  boards: { freehire: true, hiringcafe: true, simplify: false, google: false }, // where to look for jobs
 };
 
 export const ANSWERS_DEFAULTS = {
@@ -81,7 +84,15 @@ export const ANSWERS_DEFAULTS = {
   relocation: "no",          // no | radius | anywhere
   arbitration: "never",      // never | plain | list
   arbitrationCompanies: [],
-  screenings: "ask",         // ask | yes: background checks and drug tests if offered a job
+  screenings: "ask",
+  // questions hourly-job forms ask a lot
+  daysAvailable: [],         // ["Monday", ...]
+  shifts: [],                // ["Mornings", "Afternoons", "Evenings", "Overnight"]
+  hoursWanted: "either",     // full | part | either
+  transportation: "",        // yes | no
+  driversLicense: "",        // yes | no
+  canLift: "",               // pounds the user can lift, e.g. "50"
+  convictions: "ask",        // ask | none: criminal-history questions         // ask | yes: background checks and drug tests if offered a job
   heardAbout: "Job board",
   over18: "yes",
   travel: "some",            // yes | some | no

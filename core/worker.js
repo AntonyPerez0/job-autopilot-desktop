@@ -5,7 +5,18 @@ import { getDb, log, setJob, getJob, appliedToday, nextDayStart } from "./db.js"
 import { discover } from "./discover.js";
 import { sameRoleAs, sameUrlAs } from "./dedupe.js";
 import { abortCurrent, applyTo, STEPS } from "./apply.js";
-import { closeBrowser } from "./browser.js";
+import { acquireBrowser, closeAppPage, closeBrowser, newAppPage } from "./browser.js";
+import { windowModeOf } from "./apply.js";
+
+// Sources that are read in a browser (HiringCafe) get a tab in the same out-of-the-way window.
+const searchBrowser = {
+  async page() {
+    const s = getSettings();
+    const b = await acquireBrowser({ windowMode: windowModeOf(s), choice: s.browser });
+    return newAppPage(b, windowModeOf(s));
+  },
+  done: (page) => closeAppPage(page, windowModeOf(getSettings())),
+};
 import { isLocal } from "./llm.js";
 import { call } from "./freehire.js";
 import { findConfirmation } from "./mail.js";
@@ -51,12 +62,13 @@ function applyProgress(job) {
 const sleep = (ms) => new Promise((r) => { const t = setTimeout(r, ms); state.wake = () => { clearTimeout(t); r(); }; });
 export const kick = () => { if (state.wake) state.wake(); };
 export const forceSearch = () => { state.lastSearch = null; kick(); };
+export { searchBrowser };
 
 const TRANSIENT = /timeout|timed out|net::|ECONN|socket|Target (page|closed)|browser has been closed|Model API 5|Model API 429|fetch failed|download failed|No browser could be started|aborted/i;
 
 function nextJob() {
   return db.prepare(`SELECT * FROM jobs WHERE status = 'queued' AND attempts < ?
-    ORDER BY (work_mode = 'remote') ASC, posted_at DESC LIMIT 1`).get(CONFIG.maxAttempts);
+    ORDER BY (details LIKE '%"addedByUser":true%') DESC, (work_mode = 'remote') ASC, posted_at DESC LIMIT 1`).get(CONFIG.maxAttempts);
 }
 
 // Applied, mid-submit, or possibly sent (an interrupted submit, here or on another computer).
@@ -117,6 +129,10 @@ async function applyOne(job) {
     // A model on the user's own computer can take many minutes per step.
     const limit = (isLocal(getSettings().ai) ? 60 : 12) * 60000;
     const r = await withTimeout(applyTo(job, { progress, status: (t) => { state.now = t; } }, { dryRun, mailbox: mailbox() }), limit);
+    // A job added by its link gets its real title and employer once the AI has read the page.
+    const p = (r.details && r.details.plan) || {};
+    const known = (x) => x && !/\b(not stated|unknown|n\/a)\b/i.test(x);
+    if (JSON.parse(job.details || "{}").addedByUser && known(p.employer) && known(p.jobTitle)) setJob(job.slug, { company: p.employer, title: p.jobTitle });
     setJob(job.slug, {
       status: r.status, reason: r.reason, details: r.details || null,
       resume_file: r.resume_file || null, screenshot: r.screenshot || null,
@@ -169,7 +185,7 @@ export async function run() {
       if (due) {
         state.now = "searching";
         state.progress = { kind: "search", startedAt: Date.now(), phase: "search", i: 0, n: 0 };
-        try { await discover((u) => Object.assign(state.progress, u)); } catch (e) { log(null, "discovery failed: " + e.message, "error"); }
+        try { await discover((u) => Object.assign(state.progress, u), { browser: searchBrowser }); } catch (e) { log(null, "discovery failed: " + e.message, "error"); }
         state.progress = null;
         state.lastSearch = Date.now();
         state.nextSearch = state.lastSearch + CONFIG.searchEveryMinutes * 60000;
