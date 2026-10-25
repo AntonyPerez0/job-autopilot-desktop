@@ -84,7 +84,8 @@ const exe = process.env.JA_APP_EXE || require("electron");
 const args = process.env.JA_APP_EXE ? [] : [ROOT];
 if (process.platform === "linux") args.push("--no-sandbox", ...(process.env.DISPLAY ? [] : ["--ozone-platform=headless"]));
 console.log("launching", exe);
-const app = await electron.launch({ executablePath: exe, args, env: { ...process.env, JA_DATA_DIR: data, JA_BACKUP_DIR: backups }, timeout: 120000 });
+// colorScheme null: the page follows the app's own light/dark setting instead of Playwright's default of light.
+const app = await electron.launch({ executablePath: exe, args, env: { ...process.env, JA_DATA_DIR: data, JA_BACKUP_DIR: backups }, timeout: 120000, colorScheme: null });
 app.process().stdout.on("data", (d) => { if (process.env.JA_E2E_LOG) process.stdout.write("[app] " + d); });
 app.process().stderr.on("data", (d) => { const t = String(d); if (/Error|unhandled|FATAL/i.test(t) && !/dbus|gl_|EGL|ANGLE|viz_main|Display.cpp|egl_util|ozone|gpu/i.test(t)) process.stdout.write("[app err] " + t); });
 const win = await app.firstWindow();
@@ -92,7 +93,7 @@ win.setDefaultTimeout(60000);
 // The whole screen, so the window's own title bar shows too (on the CI runners; skipped elsewhere).
 async function screenShot(n) {
   if (!["win32", "darwin"].includes(process.platform)) return;
-  await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows()[0]; w.setSize(1280, 800); w.center(); w.show(); w.focus(); });
+  await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows()[0]; w.setBounds({ x: 0, y: process.platform === "darwin" ? 30 : 0, width: 1000, height: 680 }); w.show(); w.focus(); });
   await new Promise((r) => setTimeout(r, 1200));
   const f = path.join(OUT, `${n}.png`);
   try {
@@ -244,16 +245,17 @@ try {
   await win.waitForSelector('#update-card button:has-text("Update now")');
   await shot("9-settings");
   // Appearance: Dark switches the whole app through Electron's nativeTheme and is remembered; "Match my computer" undoes it.
-  // (Playwright pins the page's own prefers-color-scheme to light, so the check is on Electron's side.)
   const theme = () => app.evaluate(({ nativeTheme }) => [nativeTheme.themeSource, nativeTheme.shouldUseDarkColors]);
   await win.check('#sec-theme input[value=dark]');
   for (let k = 0; k < 20 && (await theme())[0] !== "dark"; k++) await new Promise((r) => setTimeout(r, 250));
   assert.deepStrictEqual(await theme(), ["dark", true], "dark mode on");
+  await win.waitForFunction(() => matchMedia("(prefers-color-scheme: dark)").matches, null, { timeout: 10000 });
   await screenShot("9z-screen-dark");
   assert.strictEqual(JSON.parse(fs.readFileSync(path.join(data, "settings.json"), "utf8")).theme, "dark", "the choice is saved");
   await win.check('#sec-theme input[value=light]');
   for (let k = 0; k < 20 && (await theme())[0] !== "light"; k++) await new Promise((r) => setTimeout(r, 250));
   assert.deepStrictEqual(await theme(), ["light", false], "light mode on");
+  await win.waitForFunction(() => !matchMedia("(prefers-color-scheme: dark)").matches, null, { timeout: 10000 });
   await win.check('#sec-theme input[value=system]');
   // Playwright inside the packaged app: find the installed browsers, and optionally download Chromium.
   await win.click('details:has(#sec-running) > summary');
