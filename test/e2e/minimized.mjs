@@ -16,7 +16,7 @@ const { SHIM } = await import("../../core/apply.js");
 
 const t0 = Date.now();
 const b = await acquireBrowser({ windowMode: "minimized", choice: process.env.JA_BROWSER || "auto" });
-console.log(`launched ${b.channel} in ${Date.now() - t0} ms`);
+console.log(`launched ${b.channel} in ${Date.now() - t0} ms; window ${await windowState(b.ctx.pages()[0])}`);
 for (let job = 1; job <= 2; job++) {
   const page = await newAppPage(b, "minimized");
   assert.strictEqual(await windowState(page), "minimized", `job ${job}: minimized after a new tab`);

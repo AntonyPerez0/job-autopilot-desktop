@@ -45,7 +45,7 @@ let preferred = null; // the channel that worked last time
 export async function launch({ headless = false, choice = "auto", onStatus = () => {} } = {}) {
   const order = choice === "auto" ? [preferred, "chrome", "msedge", "chromium"].filter((x, i, a) => x && a.indexOf(x) === i) : [choice];
   const userDataDir = dataDir("browser-profile");
-  const base = { headless, viewport: null, args: ["--window-size=1366,900", "--no-first-run", "--no-default-browser-check"], timeout: 60000 };
+  const base = { headless, viewport: null, args: ["--window-size=1280,800", "--no-first-run", "--no-default-browser-check"], timeout: 60000 };
   let last;
   for (const ch of order) {
     try {
@@ -82,10 +82,22 @@ async function cdpWindow(page) {
 export async function setWindowState(page, state) {
   try {
     const { s, windowId } = await cdpWindow(page);
-    // A minimized window must be restored to "normal" before it can take other bounds.
-    await s.send("Browser.setWindowBounds", { windowId, bounds: { windowState: state } });
+    const now = async () => (await s.send("Browser.getWindowBounds", { windowId })).bounds.windowState;
+    for (let i = 0; i < 3; i++) {
+      const cur = await now();
+      if (cur === state) break;
+      // A maximized or full-screen window (macOS treats one larger than the screen as maximized)
+      // has to go back to "normal" before it can be minimized.
+      if (cur !== "normal" && state !== "normal") {
+        await s.send("Browser.setWindowBounds", { windowId, bounds: { windowState: "normal" } });
+        await new Promise((r) => setTimeout(r, 300));
+      }
+      await s.send("Browser.setWindowBounds", { windowId, bounds: { windowState: state } });
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    const ok = (await now()) === state;
     await s.detach().catch(() => {});
-    return true;
+    return ok;
   } catch { return false; }
 }
 
