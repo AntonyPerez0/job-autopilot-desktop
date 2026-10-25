@@ -1,7 +1,7 @@
 {
   "name": "job-autopilot-desktop",
   "productName": "Job Autopilot",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Finds jobs that fit you and applies to them, with a one-page resume assembled from your own approved content.",
   "author": "AntonyPerez0",
   "license": "MIT",
@@ -11,7 +11,7 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test --test-concurrency=1 test/*.test.js",
-    "test:unit": "node --test test/truth.test.js test/dedupe.test.js test/mail.test.js test/geo.test.js test/tailor.test.js test/facts.test.js test/llm.test.js test/update.test.js test/history.test.js test/sources.test.js test/studio.test.js",
+    "test:unit": "node --test test/truth.test.js test/dedupe.test.js test/mail.test.js test/geo.test.js test/tailor.test.js test/facts.test.js test/llm.test.js test/update.test.js test/history.test.js test/sources.test.js test/studio.test.js test/github.test.js",
     "e2e": "node test/e2e/onboarding.mjs",
     "dist:mac": "electron-builder --mac --universal --publish never",
     "dist:win": "electron-builder --win --x64 --publish never"

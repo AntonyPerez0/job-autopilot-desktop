@@ -37,6 +37,18 @@ const server = http.createServer((req, res) => {
   req.on("data", (c) => (body += c));
   req.on("end", () => {
     const reply = (obj) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify(obj)); };
+    // Mock GitHub API.
+    if (req.url.startsWith("/gh/")) {
+      const u = req.url.slice(3).split("?")[0];
+      const repo = { name: "bird-feeder-cam", description: "Bird feeder camera", language: "Python", stargazers_count: 2, fork: false, pushed_at: "2026-09-01T00:00:00Z", html_url: "https://github.com/jordanlee-example/bird-feeder-cam", topics: [] };
+      if (u === "/users/jordanlee-example") return reply({ login: "jordanlee-example" });
+      if (u === "/users/jordanlee-example/repos") return reply([repo]);
+      if (u === "/repos/jordanlee-example/bird-feeder-cam") return reply(repo);
+      if (u.endsWith("/readme")) { res.writeHead(200, { "content-type": "text/plain" }); return res.end("# Bird Feeder Cam\nStreams live video of a bird feeder from a Raspberry Pi."); }
+      if (u.endsWith("/languages")) return reply({ Python: 100 });
+      if (u.endsWith("/contributors")) return reply([{ login: "jordanlee-example", contributions: 9 }]);
+      res.writeHead(404); return res.end("{}");
+    }
     if (req.url.endsWith("/models")) return reply({ data: [{ id: "z-ai/glm-5.3-flash", name: "GLM 5.3 Flash" }, { id: "mock/other", name: "Other" }] });
     const msg = JSON.parse(body || "{}");
     // Ollama's own API: the app sends the context length here.
@@ -56,6 +68,7 @@ const server = http.createServer((req, res) => {
       { i: 1, keep: false, text: "Set up CI that cut failed deploys by 80%", why: "made up", question: "Roughly how many deploys failed before?" }] };
     else if (/help someone remember/.test(sys)) content = { occupation: 0, questions: [{ q: "Did you restock shelves when they ran low?", t: [0, 0] }, { q: "Did you help unload deliveries?", t: [0, 1] }] };
     else if (/confirmed they did at a job/.test(sys)) content = { lines: [{ text: "Restocked shelves when they ran low, about twice a shift", from: [0] }] };
+    else if (/resume project lines for a person's own GitHub/.test(sys)) content = { projects: [{ i: 0, title: "Bird Feeder Cam", lines: ["Streams live video of a bird feeder from a Raspberry Pi"] }] };
     else if (/one-page resume from a person's own answers/.test(sys)) content = { summary: "", jobs: [{ index: 0, bullets: [{ text: "Stocked shelves and helped customers find items", source: "stocked shelves, helped customers" }] }], skills: [] };
     else if (/You screen job postings/.test(sys)) content = { decision: "skip", reason: "mock screen", level: "unclear" };
     reply({ choices: [{ message: { content: JSON.stringify(content) } }] });
@@ -63,6 +76,7 @@ const server = http.createServer((req, res) => {
 });
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const apiBase = `http://127.0.0.1:${server.address().port}/v1`;
+process.env.JA_GITHUB_API = `http://127.0.0.1:${server.address().port}/gh`;
 
 const require = createRequire(import.meta.url);
 const exe = process.env.JA_APP_EXE || require("electron");
@@ -114,6 +128,15 @@ try {
 
   await heading("Your resume");
   await win.setInputFiles("input[type=file]", resumeFile);
+  // Projects from GitHub first; the resume read next is added to them.
+  await win.click('summary:has-text("Add projects from my GitHub")');
+  await win.fill("[name=gh_user]", "jordanlee-example");
+  await win.click("[data-gh-look]");
+  await win.check('[data-repo="bird-feeder-cam"] input[value=ai]');
+  assert.ok(await win.isChecked('[data-repo="bird-feeder-cam"] [data-pick]'), "own project ticked by default");
+  await win.click("[data-gh-add]");
+  await win.waitForSelector('[data-gh-out] .msg.ok:has-text("Added 1 project")');
+  await shot("3b-github");
   await shot("3-upload");
   await win.click("[data-go]");
   await heading("Approve every piece");
@@ -165,6 +188,11 @@ try {
   assert.ok(!secrets.includes("test-key-not-real"), "the API key is not stored in plain text");
   const profile = JSON.parse(fs.readFileSync(path.join(data, "profile.json"), "utf8"));
   assert.ok(profile.summaries.every((s) => s.approved), "approved on the review screen");
+  const cam = profile.projects.find((x) => x.github);
+  assert.ok(cam && cam.aiBuilt && cam.bullets[0].text.startsWith("Built with AI coding agents"), "the GitHub project, marked as built with AI");
+  assert.ok(cam.bullets.every((b) => b.approved), "its lines approved on the review screen");
+  assert.ok(profile.bases.filter((b) => b.approved).some((b) => b.sections.some((x) => x.kind === "projects" && x.items.some((it) => it.id === cam.id))), "and in a layout");
+  assert.strictEqual(profile.name, "Jordan Lee", "the resume's name, not a placeholder");
 
   // The imported history is in this install, and the backup was rewritten with it.
   const { DatabaseSync } = await import("node:sqlite");

@@ -586,12 +586,14 @@ async function renderConfig() {
       ${cfg.profile ? fold("studio", "Check &amp; improve", "What a recruiter will notice, and better wording for your lines", true) : ""}
       ${fold("create", "Make a resume with me", "Answer a few questions; the app writes the lines, you approve them", !cfg.profile)}
       ${card("review", "All your resume pieces", "Edit, approve or delete each line; only approved ones are ever used")}
+      ${fold("github", "Projects from GitHub", "Pick your public projects; the app writes lines about them for you to approve")}
       ${fold("upload", "Add another resume", "Upload a PDF or Word file; its pieces are added unapproved")}</div>`;
     const forms = { review: Forms.review($("sec-review"), cfg) };
     const studio = cfg.profile ? Forms.studio($("sec-studio"), cfg, () => { forms.review = Forms.review($("sec-review"), cfg); }) : null;
     const added = () => { forms.review = Forms.review($("sec-review"), cfg); const d = $("sec-review").closest("details"); d.open = true; d.scrollIntoView({ behavior: "smooth" }); if (studio) studio.refresh(); toast("Added. Check and approve the new lines below."); };
     Forms.creator($("sec-create"), cfg, added);
-    Forms.resumes($("sec-upload"), cfg, added);
+    Forms.resumes($("sec-upload"), cfg, added, { withGithub: false });
+    Forms.github($("sec-github"), cfg, added);
     bindSaves(forms);
   } else {
     $("main").innerHTML = header() + `<div id="cfg-host">

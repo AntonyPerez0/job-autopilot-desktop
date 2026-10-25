@@ -16,6 +16,7 @@ import { windowModeOf } from "./apply.js";
 import { AGENCIES } from "./discover.js";
 import { addJob } from "./addjob.js";
 import { addRecalled, applySuggestion, checklist, createFromInterview, recallFor, rewriteWithAnswer, suggestImprovements } from "./studio.js";
+import { importProjects, listRepos, placeProjects, usernameOf } from "./github.js";
 import { monthUse, testKey as testSerpKey } from "./sources/google.js";
 import { backupFile, collect, exportHistory, importHistory, peekBackup, writeBackup } from "./history.js";
 
@@ -141,7 +142,7 @@ const ROUTES = {
     } catch (e) { return bad(e.message); }
     if (b.merge && getProfile()) {
       const { mergeProfiles } = await import("./importer.js");
-      profile = mergeProfiles(getProfile(), profile);
+      profile = placeProjects(mergeProfiles(getProfile(), profile));
     }
     saveProfile(profile);
     saveAnswers(prefillAnswers(profile));
@@ -178,10 +179,27 @@ const ROUTES = {
     if (!(iv.jobs || []).some((j) => j.title || j.employer) && !(iv.education || []).some((e) => e.school)) return bad("Add at least one job or school.");
     try {
       const r = await createFromInterview(iv, b.merge ? getProfile() : null, getAnswers());
+      placeProjects(r.profile);
       saveProfile(r.profile);
       const cur = (iv.jobs || []).find((j) => j.current) || (iv.jobs || [])[0];
       if (cur) saveAnswers(prefillAnswers({ ...r.profile, experience: [{ title: cur.title, org: cur.employer, dates: cur.current ? "Present" : "" }] }));
       return { profile: r.profile, answers: getAnswers(), rejected: r.rejected, questions: r.questions };
+    } catch (e) { return bad(e.message); }
+  },
+  // Projects from the user's public GitHub repositories.
+  "GET /api/github/repos": async (_, q) => {
+    try { return await listRepos(q.get("user")); } catch (e) { return bad(e.message); }
+  },
+  "POST /api/github/import": async (b) => {
+    if (!aiSettings().apiKey) return bad("Connect an AI first (Settings > AI).");
+    const u = usernameOf(b.user);
+    if (!u) return bad("Type your GitHub username first.");
+    if (!(b.repos || []).length) return bad("Tick at least one project.");
+    try {
+      const r = await importProjects(getProfile(), u, b.repos, getAnswers());
+      saveProfile(r.profile);
+      if (!getAnswers().github) saveAnswers({ github: `https://github.com/${u}` });
+      return { ...r, answers: getAnswers() };
     } catch (e) { return bad(e.message); }
   },
   // Jog the memory: "Did you also ...?" from the official task list for that kind of job.

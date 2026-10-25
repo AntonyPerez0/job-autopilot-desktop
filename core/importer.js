@@ -36,6 +36,8 @@ function freeId(id, taken) {
 // Fold profile `b` into `a`: same job (org + title) or project (title) joins bullets, same skills label joins items.
 export function mergeProfiles(a, b) {
   const out = JSON.parse(JSON.stringify(a));
+  // Only projects so far (from GitHub): the resume brings the name and contact details.
+  if (!a.name || /^your name$/i.test(a.name)) { out.name = b.name || out.name; out.contact = { ...(b.contact || {}), ...(a.contact || {}) }; }
   const map = { summaries: {}, headers: {}, skills: {}, experience: {}, projects: {}, bullets: {} };
   for (const k of ["summaries", "headers"]) {
     const taken = new Set(arr(out[k]).map((x) => x.id));

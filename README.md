@@ -87,6 +87,8 @@ change all of it later under **Settings** and **Profile**.
 3. **Your resume.** Drop in one or more resumes (PDF or Word `.docx`). No
    resume? Open **I don't have a resume** and answer a few questions; the app
    writes one with you (see [Making and improving your resume](#making-and-improving-your-resume)).
+   Have projects on GitHub? Open **Add projects from my GitHub** (see
+   [Projects from GitHub](#projects-from-github)).
 4. **Check it.** The app splits your resume into pieces: summaries, bullet
    points, skills, education and a layout. Fix anything that isn't exactly
    true, delete what you'd never send, and approve the rest. **Everything is
@@ -113,7 +115,7 @@ Then press **Start in dry run**.
 
 ## Making and improving your resume
 
-The **Resume** page (in the sidebar) has four parts.
+The **Resume** page (in the sidebar) has five parts.
 
 **Check & improve.** A checklist of what a recruiter notices first: one page,
 complete contact details, a short summary, lines that start with an action,
@@ -153,6 +155,8 @@ Jobs already on your resume get the same thing on the **Check & improve**
 part, under **Remember more**: answer the questions, then **Add what I said
 yes to**. The new lines wait for your approval.
 
+**Projects from GitHub** is described [below](#projects-from-github).
+
 **All your resume pieces** shows every line, where it came from ("From your
 answer: ..."), and whether it's approved. **Add another resume** uploads
 another file. **Download my resume (PDF)** saves the general version, for jobs
@@ -168,6 +172,32 @@ you apply to yourself.
     Rewrites it doubts aren't offered.
 - Nothing is used until you approve it, and only approved lines ever reach an
   employer.
+
+### Projects from GitHub
+
+Type your GitHub username (or paste your profile link) and press **Look up my
+projects**. The app lists your public projects, with your own best ones ticked
+and copies of other people's projects (forks) at the bottom. Tick the ones you
+want on your resume, and say for each how it was built:
+
+- **I built it**
+- **Mostly with AI coding tools**: the project gets a line saying it was built
+  with AI coding agents that you directed. No other line may claim you wrote it
+  by hand, and that line always goes with the project on a resume.
+- **With other people**: every line must say you contributed or worked with
+  others.
+
+GitHub can't tell the app this, so it asks you. Then press **Add the ticked
+projects**. The app reads each project's description and README and writes two
+or three lines from what they say. The same honesty checks as above apply, and
+nothing the README doesn't state gets in: no user counts, results or tools it
+doesn't mention. Sentences in a README that try to tell an AI what to write are
+ignored, and you're told about them. The projects are added to every resume
+layout, unapproved, so check them under **All your resume pieces**.
+
+This uses GitHub's public data, with no login, so private projects don't show
+up. GitHub allows about 60 lookups an hour from one network, which is enough for
+a few tries (each project takes four).
 
 "Recruiter-friendly" here means the app follows widely shared recruiter advice
 (the checklist above). No recruiter reviews your resume, and the app can't
@@ -378,7 +408,8 @@ The app only sends data to:
 - **The job sites themselves** (the employers and their application sites):
   the application you send.
 - **Your mailbox** (if connected): read-only access over IMAP.
-- **GitHub**: a check for new versions. Chromium is downloaded from
+- **GitHub**: a check for new versions, and, if you use **Projects from
+  GitHub**, your username, to read your public projects. Chromium is downloaded from
   Playwright's servers, and only if you have neither Chrome nor Edge.
 
 There are no analytics and no accounts, and nothing goes to the author of this
@@ -481,6 +512,7 @@ JA_API_KEY=... node scripts/live-dry-run.mjs   # one dry run against a live post
 JA_API_KEY=... node test/e2e/live-in-app.mjs <freehire-slug>   # the same, inside the real app
 JA_API_KEY=... node scripts/live-studio.mjs     # resume creator and improver with the real AI
 JA_API_KEY=... node scripts/live-recall.mjs     # "Help me remember" questions and lines from yes answers
+JA_API_KEY=... node scripts/live-github.mjs <user> <repo> [me|ai|team]   # GitHub projects with the real API and AI
 JA_API_KEY=... node scripts/live-hourly.mjs     # HiringCafe search + screen + one dry run (JA_URL=<link> for a given job)
 ```
 

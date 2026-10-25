@@ -124,7 +124,7 @@
   }
 
   // ---------- 2a. Resume upload ----------
-  function resumes(el, cfg, onImported) {
+  function resumes(el, cfg, onImported, { withGithub = true } = {}) {
     let files = [];
     el.innerHTML = `<div class="form">
       <div class="drop" data-drop>${icon("upload")}<div style="margin-top:8px"><b>Drop your resumes here</b> or click to choose</div>
@@ -132,9 +132,10 @@
         <input type="file" accept=".pdf,.docx" multiple hidden></div>
       <div data-files class="sub-list"></div>
       <details class="more" data-builder><summary><b>I don't have a resume</b><span>Answer a few questions and the app writes one with you</span></summary><div data-creator style="padding:4px 16px 16px"></div></details>
+      <details class="more" ${withGithub ? "" : "hidden"}><summary><b>Add projects from my GitHub</b><span>The app reads your public projects and writes lines about them</span></summary><div data-github style="padding:4px 16px 16px"></div></details>
       <details class="more"><summary><b>Paste your resume as text</b><span>If your file won't upload</span></summary><div class="fld" style="margin-top:10px"><textarea name="text" rows="8" placeholder="Paste the full text of your resume"></textarea></div></details>
       <div class="row-actions"><button type="button" class="btn primary" data-go>${icon("bolt")}Read my resume${cfg.profile ? " again" : ""}</button>
-        ${cfg.profile ? `<label class="check"><input type="checkbox" name="merge" checked>Add to what I already approved</label>` : ""}
+        <label class="check" ${cfg.profile ? "" : "hidden"}><input type="checkbox" name="merge" checked>Add to what I already approved</label>
         <button type="button" class="btn ghost" data-example>Use the example profile to try the app</button></div>
       <div data-msg></div></div>`;
     const drop = el.querySelector("[data-drop]"), input = drop.querySelector("input"), m = el.querySelector("[data-msg]");
@@ -148,6 +149,7 @@
     drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove("over"); addFiles(e.dataTransfer.files); };
     const b64 = (f) => f.arrayBuffer().then((buf) => { let s = ""; const u = new Uint8Array(buf); for (let i = 0; i < u.length; i += 32768) s += String.fromCharCode.apply(null, u.subarray(i, i + 32768)); return btoa(s); });
     creator(el.querySelector("[data-creator]"), cfg, () => onImported && setTimeout(() => onImported(cfg.profile), 2500));
+    if (withGithub) github(el.querySelector("[data-github]"), cfg);
     el.querySelector("[data-go]").onclick = async () => {
       const text = val(el, "text");
       if (!files.length && !text) return msg(m, "err", "Add a resume file or paste its text.");
@@ -204,6 +206,58 @@
     return { confirmed: () => items.map((it, i) => (answers[i] && answers[i].yes ? { q: it.q, task: it.task, detail: String(answers[i].detail || "").trim() } : null)).filter(Boolean) };
   }
 
+  // ---------- Projects from GitHub: pick public repositories, say how each was built ----------
+  function github(el, cfg, onDone) {
+    const a = cfg.answers || {};
+    const user0 = String(a.github || "").replace(/^https?:\/\/(www\.)?github\.com\//i, "").split(/[/?#]/)[0];
+    el.innerHTML = `<div class="form">
+      <p class="hint" style="margin:0">The app looks at your public GitHub projects and writes resume lines from what each project's own description says. It can't tell from GitHub how a project was made, so you say that for each one. Nothing is used until you approve it.</p>
+      <div class="row-actions">${fld("Your GitHub username", inp("gh_user", user0, 'placeholder="e.g. jordan-lee" autocomplete="off"'))}
+        <button type="button" class="btn" data-gh-look style="align-self:end">${icon("search")}Look up my projects</button></div>
+      <div data-gh-list></div><div data-gh-msg></div></div>`;
+    const list = el.querySelector("[data-gh-list]"), m = el.querySelector("[data-gh-msg]");
+    const ROLES = [["me", "I built it"], ["ai", "Mostly with AI coding tools"], ["team", "With other people"]];
+    let user = "";
+    el.querySelector("[data-gh-look]").onclick = async (e) => {
+      const btn = e.currentTarget;
+      user = val(el, "gh_user");
+      if (!user) return msg(m, "err", "Type your GitHub username first.");
+      btn.disabled = true; list.innerHTML = "";
+      msg(m, "info", "Looking up your projects on GitHub...");
+      const r = await api(`/api/github/repos?user=${encodeURIComponent(user)}`);
+      btn.disabled = false;
+      if (r.error) return msg(m, "err", r.error);
+      msg(m, "", "");
+      user = r.user;
+      if (!r.repos.length) return msg(m, "info", `${r.user} has no public projects yet.`);
+      list.innerHTML = `<div class="hint" style="margin:6px 0">Tick the projects to put on your resume (up to 8). The best ones are ticked already. Then say how each was built.</div>
+        <div class="sub-list">${r.repos.slice(0, 40).map((x, i) => `<div class="sub-item gh-repo" data-repo="${esc(x.name)}">
+          <label class="check"><input type="checkbox" data-pick ${r.suggested.includes(x.name) ? "checked" : ""}><b>${esc(x.name)}</b>
+            <span class="muted">${[x.language, x.stars ? `${x.stars} star${x.stars === 1 ? "" : "s"}` : "", x.fork ? "copy of someone else's project" : "", x.archived ? "archived" : ""].filter(Boolean).map(esc).join(" · ")}</span></label>
+          ${x.description ? `<div class="muted" style="margin:2px 0 4px 26px">${esc(x.description)}</div>` : ""}
+          <div style="margin-left:26px">${radios(`gh_role_${i}`, "me", ROLES)}</div></div>`).join("")}</div>
+        <div class="row-actions" style="margin-top:10px"><button type="button" class="btn primary" data-gh-add>${icon("plus")}Add the ticked projects</button></div><div data-gh-out></div>`;
+      list.querySelector("[data-gh-add]").onclick = async (ev) => {
+        const out = list.querySelector("[data-gh-out]");
+        const repos = [...list.querySelectorAll("[data-repo]")].filter((row) => row.querySelector("[data-pick]").checked)
+          .map((row) => ({ name: row.dataset.repo, role: (row.querySelector("input[type=radio]:checked") || {}).value || "me" }));
+        if (!repos.length) return msg(out, "err", "Tick at least one project.");
+        if (repos.length > 8) return msg(out, "err", "Pick up to 8 projects. A resume has room for two or three.");
+        const btn = ev.currentTarget;
+        btn.disabled = true;
+        msg(out, "info", "Reading each project and writing lines about it. This takes up to a minute...");
+        const res = await api("/api/github/import", { user, repos });
+        btn.disabled = false;
+        if (res.error) return msg(out, "err", res.error);
+        cfg.profile = res.profile; cfg.answers = res.answers;
+        const n = res.added.reduce((k, x) => k + x.lines, 0);
+        out.innerHTML = `<div class="msg ok">Added ${res.added.length} project${res.added.length === 1 ? "" : "s"} with ${n} line${n === 1 ? "" : "s"}, waiting for your approval.${res.rejected.length ? ` ${res.rejected.length} line${res.rejected.length === 1 ? " was" : "s were"} left out because ${res.rejected.length === 1 ? "it" : "they"} said more than the project does.` : ""}</div>
+          ${res.questions.length ? `<div class="msg info" style="margin-top:8px"><b>To make them stronger</b>, think about: ${res.questions.map((q) => esc(q.question)).join(" · ")} You can add the answer to a line when you review it.</div>` : ""}`;
+        onDone && onDone(res);
+      };
+    };
+  }
+
   // ---------- Resume creator: a short interview, then a resume from the answers ----------
   function creator(el, cfg, onDone) {
     const jobCard = (n) => `<div class="sub-item" data-cjob>
@@ -233,7 +287,7 @@
       <div class="form-row">${fld("Certifications and licenses", inp("c_certs", "", 'placeholder="e.g. Food Handler, forklift, CPR, CDL"'))}${fld("Languages", inp("c_langs", "", 'placeholder="e.g. English, Spanish"'))}</div>
       ${fld("Skills", inp("c_skills", "", 'placeholder="e.g. cash handling, customer service, Excel, inventory"'))}
       ${fld("Anything else? (optional)", inp("c_summary", "", 'placeholder="e.g. Reliable, available weekends, love working with people"'), "Used for the short summary at the top.")}
-      ${cfg.profile ? `<label class="check"><input type="checkbox" name="c_merge">Add to my current resume instead of starting a new one</label>` : ""}
+      <label class="check" ${cfg.profile ? "" : "hidden"}><input type="checkbox" name="c_merge" ${cfg.profile ? "" : "checked"}>Add to my current resume instead of starting a new one</label>
       <div class="row-actions"><button type="button" class="btn primary" data-cgo>${icon("bolt")}Write my resume</button></div>
       <div data-cmsg></div></div>`;
     const m = el.querySelector("[data-cmsg]");
@@ -808,5 +862,5 @@
   }
   const importedText = (r) => `Imported ${r.total} application${r.total === 1 ? "" : "s"}: ${r.added} added, ${r.updated} marked as applied, ${r.already} already here. None of them will be applied to again.`;
 
-  window.Forms = { ai, resumes, creator, studio, review, questions, prefs, mailbox, running, history, importedText, esc, icon, msg };
+  window.Forms = { ai, resumes, creator, github, studio, review, questions, prefs, mailbox, running, history, importedText, esc, icon, msg };
 })();
