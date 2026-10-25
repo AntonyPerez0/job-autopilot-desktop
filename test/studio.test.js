@@ -126,3 +126,46 @@ test("the second pass: unsupported details are flagged on created lines and drop
   const s = await S.suggestImprovements(approvedExample(Profile), exampleAnswers(), { paths: [`experience.acme.${approvedExample(Profile).experience[0].bullets[0].id}`] });
   assert.strictEqual(s.length, 0, "the rewrite with an unsupported detail is not offered");
 });
+
+test("memory jog: the job's official tasks become questions; only yes answers become lines", async () => {
+  const { findOccupations } = await import("../core/onet.js");
+  assert.strictEqual(findOccupations("Cashier")[0].title, "Cashiers");
+  assert.strictEqual(findOccupations("Babysitter")[0].title, "Nannies");
+  assert.ok(findOccupations("Front End Cashier").some((o) => o.title === "Cashiers"));
+  reply = (sys, user) => {
+    if (/help someone remember/.test(sys)) return { occupation: 0, questions: [{ q: "Did you help customers find products in the store?", t: [0, 5] },
+      { q: "Did you check IDs for alcohol sales?" }, { q: "Not a question" }] };
+    if (/fact-check resume lines/.test(sys)) return { lines: [] };
+    if (/confirmed they did at a job/.test(sys)) return { lines: [{ text: "Helped customers find products across the store", from: [0] }, { text: "Checked IDs for about 40 alcohol sales a day", from: [1] }] };
+    return { summary: "", jobs: [{ index: 0, bullets: [{ text: "Ran the register" }] }] };
+  };
+  const r = await S.recallFor({ title: "Cashier", employer: "Corner Market", daily: "ran the register" });
+  assert.strictEqual(r.occupation, "Cashiers");
+  assert.deepStrictEqual(r.items.map((x) => x.from), ["onet", "ai"], "a task from the official list, and one common extra; the non-question is dropped");
+  assert.match(r.items[0].task, /location of products/);
+  const confirmed = r.items.map((x) => ({ q: x.q, task: x.task, detail: "" }));
+  const c = await S.createFromInterview({ jobs: [{ title: "Cashier", employer: "Corner Market", daily: "ran the register", confirmed }] });
+  const lines = c.profile.experience[0].bullets;
+  assert.ok(lines.some((b) => /find products/.test(b.text) && /You said yes to/.test(b.source)));
+  assert.ok(!lines.some((b) => /40/.test(b.text)), "a number they never gave is left out");
+  const p = approvedExample(Profile);
+  const a = await S.addRecalled(p, "acme", [confirmed[0]]);
+  assert.strictEqual(a.added, 1);
+  assert.strictEqual(a.profile.experience[0].bullets.at(-1).approved, false, "added lines wait for approval");
+});
+
+test("memory jog: task references in any shape, or by wording", async () => {
+  reply = (sys) => (/help someone remember/.test(sys) ? { occupation: 0, questions: [{ q: "Did you greet customers entering the store?", t: "0,4" },
+    { q: "Did you help customers find the location of products?" }, { q: "Did you process returns and exchanges?", t: { o: 0, t: 99 } }] } : { lines: [] });
+  const r = await S.recallFor({ title: "Cashier" });
+  assert.deepStrictEqual(r.items.map((x) => x.from), ["onet", "onet", "onet"]);
+  assert.match(r.items[0].task, /^Greet customers/);
+  assert.match(r.items[2].task, /returns and exchanges/);
+  assert.deepStrictEqual(S.droppedHedges("Did you help customers resolve complaints?", "Resolved customer complaints"), ["help"]);
+});
+
+test("'about' limits a number, not a topic", () => {
+  assert.deepStrictEqual(S.droppedHedges("Did you answer questions about store policies?", "Answered questions on store policies"), []);
+  assert.deepStrictEqual(S.droppedHedges("Served about 150 customers", "Served 150 customers"), ["about"]);
+  assert.deepStrictEqual(S.droppedHedges("Greeted customers, maybe 20 a shift", "Greeted about 20 customers a shift"), []);
+});

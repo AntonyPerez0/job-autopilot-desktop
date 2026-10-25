@@ -363,3 +363,7 @@ details.card-fold[open] > summary h3::before { content: "▾ "; }
 .ck.tip { background: var(--blue-bg); color: var(--blue); }
 .sugg textarea { width: 100%; border: 1px solid var(--border-strong); border-radius: 8px; padding: 8px 10px; background: var(--surface); }
 .warn-line { display: flex; gap: 6px; align-items: center; color: var(--amber); font-size: 12.5px; padding: 2px 8px; }
+.recall { margin-top: 10px; display: grid; gap: 8px; }
+.recall-item { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); display: grid; gap: 6px; }
+.recall-q { font-size: 14px; }
+.btn.ghost.on { background: var(--surface-2); }

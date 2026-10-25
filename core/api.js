@@ -15,7 +15,7 @@ import { browserOpen, detectBrowsers, installChromium, chromiumPath, showBrowser
 import { windowModeOf } from "./apply.js";
 import { AGENCIES } from "./discover.js";
 import { addJob } from "./addjob.js";
-import { applySuggestion, checklist, createFromInterview, rewriteWithAnswer, suggestImprovements } from "./studio.js";
+import { addRecalled, applySuggestion, checklist, createFromInterview, recallFor, rewriteWithAnswer, suggestImprovements } from "./studio.js";
 import { monthUse, testKey as testSerpKey } from "./sources/google.js";
 import { backupFile, collect, exportHistory, importHistory, peekBackup, writeBackup } from "./history.js";
 
@@ -183,6 +183,21 @@ const ROUTES = {
       if (cur) saveAnswers(prefillAnswers({ ...r.profile, experience: [{ title: cur.title, org: cur.employer, dates: cur.current ? "Present" : "" }] }));
       return { profile: r.profile, answers: getAnswers(), rejected: r.rejected, questions: r.questions };
     } catch (e) { return bad(e.message); }
+  },
+  // Jog the memory: "Did you also ...?" from the official task list for that kind of job.
+  "POST /api/resume/recall": async (b) => {
+    const job = b.job || {};
+    if (!job.entryId && !String(job.title || "").trim()) return bad("Type the job title first.");
+    if (job.entryId) {
+      const e = [...(getProfile().experience || []), ...(getProfile().projects || [])].find((x) => x.id === job.entryId);
+      if (!e) return bad("That job is gone.");
+      Object.assign(job, { title: e.title, employer: e.org, existing: (e.bullets || []).map((x) => x.text) });
+    }
+    try { return await recallFor(job); } catch (e) { return bad(e.message); }
+  },
+  "POST /api/resume/recall/add": async (b) => {
+    if (!(b.confirmed || []).length) return bad("Say yes to at least one thing first.");
+    try { const r = await addRecalled(getProfile(), b.entryId, b.confirmed, getAnswers()); saveProfile(r.profile); return r; } catch (e) { return bad(e.message); }
   },
   "POST /api/resume/check": async () => {
     const raw = getProfile();

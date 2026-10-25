@@ -135,9 +135,23 @@ your answer.
 - school and training
 - certifications, languages and skills
 
+Under each job, **Help me remember what I did** asks a list of yes/no
+questions about what people in that kind of job usually do ("Did you count the
+cash drawer at the end of a shift?", "Did you help unload deliveries?"). The
+questions come from the U.S. Department of Labor's O*NET task lists for that
+occupation, put into plain words for that workplace, plus a few common extras
+marked "idea". Say **Yes** only to what you really did; you can add how many or
+how often if you know. Only your yes answers become lines, and each line shows
+what it came from ("You said yes to: ..."). Most people find several things they
+forgot.
+
 The app writes two to four lines per job and a short summary. Your skills,
 languages and certifications are listed exactly as you typed them. It can
 start a new resume or add to the one you have.
+
+Jobs already on your resume get the same thing on the **Check & improve**
+part, under **Remember more**: answer the questions, then **Add what I said
+yes to**. The new lines wait for your approval.
 
 **All your resume pieces** shows every line, where it came from ("From your
 answer: ..."), and whether it's approved. **Add another resume** uploads
@@ -466,6 +480,7 @@ npm start                              # runs the app from source
 JA_API_KEY=... node scripts/live-dry-run.mjs   # one dry run against a live posting, example profile
 JA_API_KEY=... node test/e2e/live-in-app.mjs <freehire-slug>   # the same, inside the real app
 JA_API_KEY=... node scripts/live-studio.mjs     # resume creator and improver with the real AI
+JA_API_KEY=... node scripts/live-recall.mjs     # "Help me remember" questions and lines from yes answers
 JA_API_KEY=... node scripts/live-hourly.mjs     # HiringCafe search + screen + one dry run (JA_URL=<link> for a given job)
 ```
 
@@ -491,7 +506,12 @@ macOS and Windows runners. The workflow installs each one, launches it and
 runs the setup end to end. Pushing a `v*` tag attaches the installers to a
 GitHub Release. Signing is described in [docs/SIGNING.md](docs/SIGNING.md).
 
-Place data © [GeoNames](https://www.geonames.org), CC BY 4.0. pdf-lib, unpdf,
+Place data © [GeoNames](https://www.geonames.org), CC BY 4.0. Job task lists
+from the [O*NET 31.0 Database](https://www.onetcenter.org/database.html) by the
+U.S. Department of Labor, Employment and Training Administration (USDOL/ETA),
+used under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); the app
+keeps only task statements and job titles, and the AI rewords tasks into
+questions. O*NET® is a trademark of USDOL/ETA. pdf-lib, unpdf,
 mammoth, imapflow, mailparser and playwright-core are used under their own
 licenses.
 

@@ -54,6 +54,8 @@ const server = http.createServer((req, res) => {
     else if (/Turn this resume into JSON/.test(sys)) content = JSON.parse(JSON.stringify(Profile.EXAMPLE));
     else if (/experienced recruiter helping/.test(sys)) content = { lines: [{ i: 0, keep: false, text: "Built the Python and PostgreSQL scheduling service that 40 clinics use to book patients", why: "leads with what you built" },
       { i: 1, keep: false, text: "Set up CI that cut failed deploys by 80%", why: "made up", question: "Roughly how many deploys failed before?" }] };
+    else if (/help someone remember/.test(sys)) content = { occupation: 0, questions: [{ q: "Did you restock shelves when they ran low?", t: [0, 0] }, { q: "Did you help unload deliveries?", t: [0, 1] }] };
+    else if (/confirmed they did at a job/.test(sys)) content = { lines: [{ text: "Restocked shelves when they ran low, about twice a shift", from: [0] }] };
     else if (/one-page resume from a person's own answers/.test(sys)) content = { summary: "", jobs: [{ index: 0, bullets: [{ text: "Stocked shelves and helped customers find items", source: "stocked shelves, helped customers" }] }], skills: [] };
     else if (/You screen job postings/.test(sys)) content = { decision: "skip", reason: "mock screen", level: "unclear" };
     reply({ choices: [{ message: { content: JSON.stringify(content) } }] });
@@ -231,9 +233,19 @@ try {
   await win.fill('#sec-create [name=c_title]', "Stock Associate");
   await win.fill('#sec-create [name=c_employer]', "Corner Market");
   await win.fill('#sec-create [name=c_daily]', "stocked shelves, helped customers");
+  // Jog the memory: answer Yes to one question, with a detail.
+  await win.click('#sec-create button:has-text("Help me remember what I did")');
+  await win.waitForSelector('#sec-create .recall-item:has-text("restock shelves")');
+  await win.click('#sec-create .recall-item:has-text("restock shelves") [data-yes]');
+  await win.fill('#sec-create .recall-item:has-text("restock shelves") [data-detail]', "about twice a shift");
+  await win.click('#sec-create .recall-item:has-text("unload deliveries") [data-no]');
+  await shot("12a-remember");
   await win.check('#sec-create [name=c_merge]');
   await win.click('#sec-create [data-cgo]');
   await win.waitForSelector('#sec-review .rv-group:has-text("Stock Associate")');
+  await win.click('details:has(#sec-review) > summary').catch(() => {});
+  const created = JSON.parse(fs.readFileSync(path.join(data, "profile.json"), "utf8")).experience.find((e) => e.title === "Stock Associate");
+  assert.ok(created.bullets.some((b) => /twice a shift/.test(b.text) && /You said yes to/.test(b.source)), "a remembered task became a line, with its source");
   await shot("12-resume-created");
   console.log("E2E PASS: onboarding completed; AI calls:", calls.length);
 } catch (e) {

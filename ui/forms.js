@@ -169,6 +169,41 @@
     return { save: async () => (cfg.profile ? null : "Read a resume first (or load the example to try the app).") };
   }
 
+  // ---------- "Help me remember": yes/no questions from what people in that job usually do ----------
+  // job() returns { title, employer, daily, proud, tools } or { entryId }. Returns { confirmed() }.
+  function recallBox(host, job) {
+    let items = [], answers = {};
+    host.innerHTML = `<button type="button" class="btn sm" data-recall>${icon("bolt")}Help me remember what I did</button><div data-rlist></div>`;
+    const list = host.querySelector("[data-rlist]");
+    const draw = (occupation) => {
+      list.innerHTML = `<div class="recall"><div class="hint" style="margin-bottom:8px">Things people in this kind of job${occupation ? ` (${esc(occupation)})` : ""} often do. Say <b>Yes</b> only to what you really did; skip the rest. Yes answers become resume lines you check before they're used.</div>
+        ${items.map((it, i) => `<div class="recall-item" data-i="${i}"><div class="recall-q">${esc(it.q)}${it.from === "ai" ? ` <span class="pill" title="Suggested by the AI for this kind of workplace">idea</span>` : ""}</div>
+          <div class="row-actions"><button type="button" class="btn sm ${answers[i] && answers[i].yes ? "primary" : ""}" data-yes>Yes</button><button type="button" class="btn sm ghost ${answers[i] && answers[i].yes === false ? "on" : ""}" data-no>No</button>
+          ${answers[i] && answers[i].yes ? `<input class="inp" data-detail placeholder="How many or how often? (optional, only if you know)" value="${esc(answers[i].detail || "")}" style="flex:1;min-width:220px">` : ""}</div></div>`).join("")}
+        <small class="hint">Questions based on the U.S. Department of Labor's O*NET task lists (CC BY 4.0).</small></div>`;
+      list.querySelectorAll(".recall-item").forEach((row) => {
+        const i = Number(row.dataset.i);
+        row.querySelector("[data-yes]").onclick = () => { answers[i] = { ...(answers[i] || {}), yes: true }; draw(occupation); const d = list.querySelector(`[data-i="${i}"] [data-detail]`); if (d) d.focus(); };
+        row.querySelector("[data-no]").onclick = () => { answers[i] = { yes: false }; draw(occupation); };
+        const d = row.querySelector("[data-detail]"); if (d) d.oninput = () => { answers[i].detail = d.value; };
+      });
+    };
+    host.querySelector("[data-recall]").onclick = async (e) => {
+      const btn = e.currentTarget, j = job();
+      if (!j.entryId && !j.title) return msg(list, "err", "Type the job title first.");
+      btn.disabled = true;
+      msg(list, "info", "Looking up what people in this job usually do...");
+      const r = await api("/api/resume/recall", { job: j });
+      btn.disabled = false;
+      if (r.error) return msg(list, "err", r.error);
+      items = r.items; answers = {};
+      if (!items.length) return msg(list, "info", "Couldn't find this kind of job in the task lists. Describe what you did in your own words instead.");
+      btn.textContent = "Ask me again";
+      draw(r.occupation);
+    };
+    return { confirmed: () => items.map((it, i) => (answers[i] && answers[i].yes ? { q: it.q, task: it.task, detail: String(answers[i].detail || "").trim() } : null)).filter(Boolean) };
+  }
+
   // ---------- Resume creator: a short interview, then a resume from the answers ----------
   function creator(el, cfg, onDone) {
     const jobCard = (n) => `<div class="sub-item" data-cjob>
@@ -179,7 +214,8 @@
       ${fld("What did you do on a normal day?", `<textarea name="c_daily" rows="3" placeholder="In your own words, e.g. ran the register, stocked shelves, opened and closed the store, answered phones"></textarea>`)}
       ${fld("What are you proud of, or what went well?", `<textarea name="c_proud" rows="2" placeholder="e.g. trained 3 new people, got employee of the month, never had my cash drawer come up short"></textarea>`, "Optional, but this is what makes a resume stand out.")}
       <div class="form-row">${fld("Any numbers you know?", inp("c_numbers", "", 'placeholder="e.g. about 150 customers a day, team of 6, $3,000 a shift"'), "Only numbers you're sure of. Rough is fine (about 100).")}
-        ${fld("Tools, machines or software", inp("c_tools", "", 'placeholder="e.g. cash register, forklift, Excel, Square"'))}</div></div>`;
+        ${fld("Tools, machines or software", inp("c_tools", "", 'placeholder="e.g. cash register, forklift, Excel, Square"'))}</div>
+      <div data-recall-host></div></div>`;
     const schoolCard = () => `<div class="form-row" data-cschool>${fld("School or training", inp("c_school", "", 'placeholder="e.g. Lincoln High School, Austin Community College"'))}
       ${fld("What you earned", inp("c_earned", "", 'placeholder="e.g. Diploma, GED, Associate degree, CNA certificate"'))}${fld("Year", inp("c_year", "", 'placeholder="e.g. 2022, or Expected 2027"'))}</div>`;
     el.innerHTML = `<div class="form">
@@ -201,19 +237,28 @@
       <div class="row-actions"><button type="button" class="btn primary" data-cgo>${icon("bolt")}Write my resume</button></div>
       <div data-cmsg></div></div>`;
     const m = el.querySelector("[data-cmsg]");
+    // Each job card gets its own "Help me remember" box.
+    const boxes = new WeakMap();
+    const attach = () => el.querySelectorAll("[data-cjob]").forEach((c) => {
+      if (boxes.has(c)) return;
+      boxes.set(c, recallBox(c.querySelector("[data-recall-host]"), () => ({ title: val(c, "c_title"), employer: val(c, "c_employer"),
+        daily: c.querySelector("[name=c_daily]").value.trim(), proud: c.querySelector("[name=c_proud]").value.trim(), tools: val(c, "c_tools") })));
+    });
+    attach();
     const renumber = () => el.querySelectorAll("[data-cjob]").forEach((c, i) => { c.querySelector("b").textContent = `Job ${i + 1}`; });
     const bind = () => el.querySelectorAll("[data-rm-cjob]").forEach((b) => b.onclick = () => { if (el.querySelectorAll("[data-cjob]").length > 1) { b.closest("[data-cjob]").remove(); renumber(); } });
     bind();
-    el.querySelector("[data-add-cjob]").onclick = () => { el.querySelector("[data-cjobs]").insertAdjacentHTML("beforeend", jobCard(el.querySelectorAll("[data-cjob]").length + 1)); bind(); };
+    el.querySelector("[data-add-cjob]").onclick = () => { el.querySelector("[data-cjobs]").insertAdjacentHTML("beforeend", jobCard(el.querySelectorAll("[data-cjob]").length + 1)); bind(); attach(); };
     el.querySelector("[data-add-cschool]").onclick = () => el.querySelector("[data-cschools]").insertAdjacentHTML("beforeend", schoolCard());
     el.querySelector("[data-cgo]").onclick = async () => {
       const jobs = [...el.querySelectorAll("[data-cjob]")].map((c) => ({ title: val(c, "c_title"), employer: val(c, "c_employer"), location: val(c, "c_location"), start: val(c, "c_start"),
-        end: val(c, "c_end"), current: val(c, "c_current"), daily: c.querySelector("[name=c_daily]").value.trim(), proud: c.querySelector("[name=c_proud]").value.trim(), numbers: val(c, "c_numbers"), tools: val(c, "c_tools") }))
+        end: val(c, "c_end"), current: val(c, "c_current"), daily: c.querySelector("[name=c_daily]").value.trim(), proud: c.querySelector("[name=c_proud]").value.trim(), numbers: val(c, "c_numbers"), tools: val(c, "c_tools"),
+        confirmed: boxes.has(c) ? boxes.get(c).confirmed() : [] }))
         .filter((j) => j.title || j.employer);
       const education = [...el.querySelectorAll("[data-cschool]")].map((c) => ({ school: val(c, "c_school"), earned: val(c, "c_earned"), year: val(c, "c_year") })).filter((e) => e.school);
       if (!jobs.length && !education.length) return msg(m, "err", "Add at least one job (or a school, if you haven't worked yet).");
-      const thin = jobs.find((j) => !j.daily);
-      if (thin) return msg(m, "err", `Tell us what you did at ${thin.title || thin.employer} on a normal day. A few words is enough.`);
+      const thin = jobs.find((j) => !j.daily && !j.confirmed.length);
+      if (thin) return msg(m, "err", `Tell us what you did at ${thin.title || thin.employer} on a normal day, or use "Help me remember what I did". A few words is enough.`);
       const interview = { target: val(el, "c_target"), jobs, education, certifications: val(el, "c_certs"), languages: val(el, "c_langs"), skills: val(el, "c_skills"), summary: val(el, "c_summary") };
       const btn = el.querySelector("[data-cgo]");
       btn.disabled = true;
@@ -243,6 +288,9 @@
       <div data-smsg></div>
       <div class="section-t">What recruiters will notice</div>
       <div data-checks><div class="muted">Checking...</div></div>
+      <div class="section-t">Remember more</div>
+      <p class="hint" style="margin:-4px 0 0">Most people forget things they did. Pick a job and answer a few yes/no questions about what people in that job usually do.</p>
+      <div class="sub-list" data-remember></div>
       <div data-sugg-wrap hidden><div class="section-t">Suggested improvements</div>
         <p class="hint" style="margin:-4px 0 8px">Every suggestion says the same facts you gave, worded the way recruiters like. Anything that added a number or claim you didn't give was left out; you'll see a question instead.</p>
         <div class="sub-list" data-sugg></div></div></div>`;
@@ -309,6 +357,28 @@
       const f = await window.ja.saveResume(r.file, r.fileName || "Resume.pdf");
       if (f) msg(sm, "ok", "Saved to " + f);
     };
+    const drawRemember = () => {
+      const host = el.querySelector("[data-remember]");
+      const jobs = (cfg.profile.experience || []).filter((e) => e.title);
+      host.innerHTML = jobs.length ? jobs.map((e) => `<div class="sub-item" data-entry="${esc(e.id)}"><b>${esc(e.title)}${e.org ? ", " + esc(e.org) : ""}</b><div data-box></div>
+        <div class="row-actions"><button type="button" class="btn sm primary" data-add-recalled hidden>${icon("plus")}Add what I said yes to</button></div><div data-rm></div></div>`).join("")
+        : `<div class="muted">Add a job first.</div>`;
+      host.querySelectorAll("[data-entry]").forEach((row) => {
+        const box = recallBox(row.querySelector("[data-box]"), () => ({ entryId: row.dataset.entry }));
+        const addBtn = row.querySelector("[data-add-recalled]");
+        row.querySelector("[data-box] [data-recall]").addEventListener("click", () => { addBtn.hidden = false; });
+        addBtn.onclick = async () => {
+          const rm = row.querySelector("[data-rm]");
+          msg(rm, "info", "Writing lines from your answers...");
+          const r = await api("/api/resume/recall/add", { entryId: row.dataset.entry, confirmed: box.confirmed() });
+          if (r.error) return msg(rm, "err", r.error);
+          cfg.profile = r.profile;
+          msg(rm, "ok", `Added ${r.added} line${r.added === 1 ? "" : "s"}, waiting for your approval in "All your resume pieces".${r.rejected.length ? ` ${r.rejected.length} left out: they added things you didn't say.` : ""}`);
+          onChange && onChange();
+        };
+      });
+    };
+    drawRemember();
     drawChecks();
     return { save: async () => null, refresh: drawChecks };
   }
