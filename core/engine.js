@@ -7,12 +7,12 @@ import vm from "node:vm";
 import { getAnswers, getPrefs, getProfile, getSecret, getSettings } from "./store.js";
 import { autopilotRules, candidateFacts, fullName, homeLocation, standardAnswers } from "./facts.js";
 import { truthGuard } from "./truth.js";
+import { PROVIDERS, aiFetch, isLocal, providerOf } from "./llm.js";
 
 const VENDOR = new URL("../vendor/apply-helper/", import.meta.url);
 const read = (f) => fs.readFileSync(new URL(f, VENDOR), "utf8");
-// A model call that hangs must not hold an application forever: every request the add-on makes gets a deadline.
-const fetchWithDeadline = (url, opts = {}) => fetch(url, { ...opts, signal: opts.signal || AbortSignal.timeout(Number(process.env.JA_AI_TIMEOUT_MS) || 180000) });
-const ctx = vm.createContext({ console, setTimeout, TextEncoder, TextDecoder, Uint8Array, fetch: fetchWithDeadline, URL });
+// Every request the add-on makes goes through aiFetch: a deadline, and local servers (Ollama, LM Studio).
+const ctx = vm.createContext({ console, setTimeout, TextEncoder, TextDecoder, Uint8Array, fetch: (url, opts) => aiFetch(url, opts), URL });
 for (const f of ["lib/pdf-lib.min.js", "profile.js", "resume_pdf.js", "tailor.js"]) vm.runInContext(read(f), ctx, { filename: f });
 export const { Tailor, Profile, ResumePDF } = ctx;
 
@@ -77,7 +77,8 @@ export function loadProfile(raw = getProfile(), a = getAnswers()) {
 
 export const aiSettings = () => {
   const s = getSettings().ai;
-  return { apiBase: s.apiBase || "https://openrouter.ai/api/v1", apiKey: getSecret("apiKey"), model: s.model || "z-ai/glm-5.3-flash" };
+  // A local server needs no key; the add-on's chat call still wants one to send.
+  return { apiBase: s.apiBase || "https://openrouter.ai/api/v1", apiKey: getSecret("apiKey") || (isLocal(s) ? "local" : ""), model: s.model || "z-ai/glm-5.3-flash" };
 };
 
 async function retry(fn, n = 3) {
@@ -172,11 +173,36 @@ Return JSON only: {"answers": [{"i": 0, "ok": true|false, "answer": "...", "prob
   return notes;
 }
 
-// Settings > AI: one tiny call proves the key, base URL and model work.
-export async function testAI({ apiBase, apiKey, model }) {
-  const r = await Tailor.chat({ apiBase, apiKey, model }, [{ role: "user", content: 'Reply with the JSON {"ok": true}.' }]);
-  return !!(r && r.ok);
+// Settings > AI: one call proves the address, key and model work. For a local model a second
+// call checks the context window: the real prompts are about 10,000 tokens, and a model that
+// silently drops the start of them would tailor from half a resume.
+async function rawChat(cfg, content) {
+  const url = String(cfg.apiBase || "").replace(/\/+$/, "") + "/chat/completions";
+  const res = await aiFetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...(cfg.apiKey ? { authorization: "Bearer " + cfg.apiKey } : {}) },
+    body: JSON.stringify({ model: cfg.model, temperature: 0, response_format: { type: "json_object" }, messages: [{ role: "user", content }] }),
+  }, cfg);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`Model API ${res.status}: ${(data.error && (data.error.message || data.error)) || JSON.stringify(data).slice(0, 200)}`);
+  const text = (((data.choices || [])[0] || {}).message || {}).content || "";
+  try { return JSON.parse(String(text).replace(/^\s*```(?:json)?\s*/i, "").replace(/```\s*$/, "")); }
+  catch { const m = String(text).match(/\{[\s\S]*\}/); if (m) return JSON.parse(m[0]); throw new Error("The model did not return JSON. Pick a model that can follow instructions (a larger one)."); }
 }
+
+export async function testAI(cfg) {
+  const local = isLocal(cfg);
+  const c = { ...cfg, apiKey: cfg.apiKey || (local ? "local" : "") };
+  const r = await rawChat(c, 'Reply with the JSON {"ok": true} and nothing else.');
+  if (!r || r.ok !== true) throw new Error("The model answered, but not with the JSON it was asked for. Try a larger model.");
+  if (!local) return { ok: true };
+  const filler = Array.from({ length: 450 }, (_, i) => `Line ${i}: the applicant reviewed requirement ${i} of the posting and noted it.`).join("\n");
+  const r2 = await rawChat(c, `The code word is MARIGOLD-7.\n\n${filler}\n\nWhat was the code word given at the very start? Reply with JSON {"code": "..."}.`);
+  const longOk = /MARIGOLD-7/i.test(String(r2 && r2.code));
+  return { ok: true, longOk, warning: longOk ? null : "The model lost the start of a long message, so its context window is too small for job postings. In Ollama the app asks for 16,384 tokens; in LM Studio, load the model with a context length of at least 16,384." };
+}
+
+export { PROVIDERS, providerOf, isLocal };
 
 export async function listModels({ apiBase, apiKey }) {
   const res = await fetch(String(apiBase || "").replace(/\/+$/, "") + "/models", { headers: apiKey ? { authorization: "Bearer " + apiKey } : {}, signal: AbortSignal.timeout(20000) });

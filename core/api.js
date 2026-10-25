@@ -7,14 +7,15 @@ import { state, kick, forceSearch } from "./worker.js";
 import {
   dataDir, getAnswers, getPrefs, getProfile, getSecret, getSettings, saveAnswers, savePrefs, saveProfile, saveSettings, setSecret,
 } from "./store.js";
-import { Profile, Tailor, aiSettings, approvedOnly, listModels, loadProfile, testAI } from "./engine.js";
+import { PROVIDERS, Profile, Tailor, aiSettings, approvedOnly, isLocal, listModels, loadProfile, providerOf, testAI } from "./engine.js";
 import { importResumes } from "./importer.js";
 import { PRESETS, testMailbox } from "./mail.js";
 import { countries, searchCities } from "./geo.js";
-import { detectBrowsers, installChromium, chromiumPath } from "./browser.js";
+import { browserOpen, detectBrowsers, installChromium, chromiumPath, showBrowser } from "./browser.js";
+import { windowModeOf } from "./apply.js";
 import { AGENCIES } from "./discover.js";
 
-const EDITABLE = ["paused", "acceptedTerms", "dailyCap", "dayStartsAtHour", "minutesBetweenApplies", "postedWithinDays", "searchEveryMinutes", "headless", "browser", "maxAttempts"];
+const EDITABLE = ["paused", "acceptedTerms", "windowMode", "dailyCap", "dayStartsAtHour", "minutesBetweenApplies", "postedWithinDays", "searchEveryMinutes", "headless", "browser", "maxAttempts"];
 const bad = (msg, code = 400) => ({ error: msg, code });
 export function newerVersion(a, b) {
   const x = String(a).split(".").map(Number), y = String(b).split(".").map(Number);
@@ -32,7 +33,8 @@ function status() {
     ORDER BY (work_mode = 'remote') ASC, posted_at DESC LIMIT 1`).get(s.maxAttempts) || null;
   const firstFilled = db.prepare("SELECT slug, title, company FROM jobs WHERE status = 'filled' ORDER BY updated_at ASC LIMIT 1").get() || null;
   const { wake, ...st } = state;
-  return { state: st, counts, appliedToday: appliedToday(), settings: s, model: s.ai.model, serverNow: Date.now(), next, firstFilled, version: VERSION };
+  return { state: st, counts, appliedToday: appliedToday(), settings: s, model: s.ai.model, serverNow: Date.now(), next, firstFilled, version: VERSION,
+    browser: { open: browserOpen(), mode: windowModeOf(s) } };
 }
 
 // First and last name, links, city and school found in an imported resume, to start the common questions with.
@@ -100,13 +102,17 @@ const ROUTES = {
   "GET /api/config": () => ({
     settings: getSettings(), prefs: getPrefs(), answers: getAnswers(), profile: getProfile(),
     hasKey: !!getSecret("apiKey"), hasMailPassword: !!getSecret("mailPassword"),
-    presets: PRESETS, agencies: AGENCIES, version: VERSION, dataDir: dataDir(),
+    presets: PRESETS, agencies: AGENCIES, providers: PROVIDERS, version: VERSION, dataDir: dataDir(),
   }),
   "POST /api/ai/test": async (b) => {
     const s = getSettings().ai;
-    const cfg = { apiBase: b.apiBase || s.apiBase, apiKey: b.apiKey || getSecret("apiKey"), model: b.model || s.model };
-    if (!cfg.apiKey) return bad("Paste your API key first.");
-    try { return { ok: await testAI(cfg) }; } catch (e) { return bad(e.message); }
+    const cfg = { provider: b.provider || s.provider, apiBase: b.apiBase || s.apiBase, apiKey: b.apiKey || getSecret("apiKey"), model: b.model || s.model, contextLength: b.contextLength || s.contextLength };
+    if (!cfg.apiKey && !isLocal(cfg)) return bad("Paste your API key first.");
+    try { return await testAI(cfg); }
+    catch (e) {
+      if (isLocal(cfg) && /fetch failed|ECONNREFUSED/i.test(e.message)) return bad(`Nothing is answering at ${cfg.apiBase}. Start ${PROVIDERS[providerOf(cfg)].name.replace(/ \(.*/, "")} and try again.`);
+      return bad(e.message);
+    }
   },
   "POST /api/ai/models": async (b) => {
     try { return await listModels({ apiBase: b.apiBase || getSettings().ai.apiBase, apiKey: b.apiKey || getSecret("apiKey") }); } catch (e) { return bad(e.message); }
@@ -116,6 +122,8 @@ const ROUTES = {
     const ai = { ...getSettings().ai };
     if (b.apiBase) ai.apiBase = String(b.apiBase).trim();
     if (b.model) ai.model = String(b.model).trim();
+    if (b.provider && PROVIDERS[b.provider]) ai.provider = b.provider;
+    if (b.contextLength) ai.contextLength = Math.max(4096, Number(b.contextLength) || 16384);
     saveSettings({ ai });
     return { ok: true, hasKey: !!getSecret("apiKey") };
   },
@@ -183,6 +191,7 @@ const ROUTES = {
     return { ok: true, settings: s };
   },
   "POST /api/browser/detect": async () => detectBrowsers(),
+  "POST /api/browser/show": async (b) => ({ ok: await showBrowser(!!b.show) }),
   "POST /api/browser/install": async () => {
     try { return { ok: true, path: chromiumPath() || await installChromium() }; } catch (e) { return bad(e.message); }
   },

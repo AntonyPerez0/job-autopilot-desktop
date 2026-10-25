@@ -196,7 +196,7 @@ function progressCard() {
       <div class="steps">${steps.map((x, i) => `<div class="stp ${i < cur ? "done" : i === cur ? "cur" : ""}"><div class="ln"></div>
         <div class="lb" title="${esc(x.label)}">${i < cur ? icon("check") : i === cur ? '<span class="spin"></span>' : ""}${esc(SHORT[x.key] || x.label)}</div></div>`).join("")}</div>
       <div class="prog-foot">Step ${cur + 1} of ${steps.length}: ${esc(cur >= 0 ? steps[cur].label : "Starting")} · ${mmss(inStep * 1000)} on this step
-        · watch it in the browser window</div></div>`;
+        ${st.browser && st.browser.open && st.browser.mode !== "headless" ? `· <a href="#" onclick="showBrowser(true);return false" style="color:var(--brand-text)">Show the browser</a> · <a href="#" onclick="showBrowser(false);return false" style="color:var(--brand-text)">Minimize it</a>` : ""}</div></div>`;
   }
   if (p.kind === "search") {
     const searchShare = 35;
@@ -419,6 +419,8 @@ setInterval(() => {
   if (document.activeElement === $("q")) refreshStatusOnly(); else refresh();
 }, 500);
 async function refreshStatusOnly() { st = await api("/api/status"); if (st.serverNow) skew = st.serverNow - Date.now(); renderNav(); renderControls(); tickProgress(); }
+
+async function showBrowser(show) { const r = await api("/api/browser/show", { show }); if (!r.ok) toast("The browser is not open right now"); }
 
 // ---------- dry run review, going live, updates ----------
 let update = null;

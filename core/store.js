@@ -30,7 +30,7 @@ export function writeJSON(name, value) {
 export const SETTINGS_DEFAULTS = {
   onboarded: false,
   acceptedTerms: false,
-  ai: { apiBase: "https://openrouter.ai/api/v1", model: "z-ai/glm-5.3-flash" },
+  ai: { provider: "openrouter", apiBase: "https://openrouter.ai/api/v1", model: "z-ai/glm-5.3-flash", contextLength: 16384 },
   dryRun: true,              // new installs never submit until the user goes live
   reviewedDryRun: false,     // set when the user has checked a filled application
   wentLiveAt: null,
@@ -40,7 +40,8 @@ export const SETTINGS_DEFAULTS = {
   minutesBetweenApplies: 6,
   maxAttempts: 2,
   searchEveryMinutes: 120,
-  headless: false,
+  headless: false,           // older setting; windowMode replaces it
+  // windowMode: minimized | visible | headless (unset: minimized, or headless for the old switch)
   browser: "auto",           // auto | chrome | msedge | chromium
   mailbox: null,             // { preset, host, port, user } ; the password lives in secrets
 };

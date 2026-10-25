@@ -85,7 +85,11 @@ app.whenReady().then(async () => {
 
 // Closing the window quits: the autopilot only works while the app is open.
 app.on("window-all-closed", async () => {
-  if (core) core.worker.stop();
+  if (core) {
+    core.worker.stop();
+    const { closeBrowser } = await import("../core/browser.js");
+    await Promise.race([closeBrowser(), new Promise((r) => setTimeout(r, 4000))]);
+  }
   app.quit();
 });
 

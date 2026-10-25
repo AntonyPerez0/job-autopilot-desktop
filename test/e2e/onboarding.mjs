@@ -26,7 +26,7 @@ const resumeFile = path.join(OUT, "Jordan_Lee_resume.pdf");
 fs.writeFileSync(resumeFile, Buffer.from(pdf.pdf));
 
 // Mock AI provider.
-const calls = [];
+const calls = [], ollama = [];
 const server = http.createServer((req, res) => {
   let body = "";
   req.on("data", (c) => (body += c));
@@ -34,10 +34,19 @@ const server = http.createServer((req, res) => {
     const reply = (obj) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify(obj)); };
     if (req.url.endsWith("/models")) return reply({ data: [{ id: "z-ai/glm-5.3-flash", name: "GLM 5.3 Flash" }, { id: "mock/other", name: "Other" }] });
     const msg = JSON.parse(body || "{}");
+    // Ollama's own API: the app sends the context length here.
+    if (req.url === "/api/chat") {
+      ollama.push(msg.options && msg.options.num_ctx);
+      const text = (msg.messages || []).map((m) => m.content).join("\n");
+      const content = /code word/.test(text) ? { code: msg.options.num_ctx >= 16384 ? "MARIGOLD-7" : "unknown" } : { ok: true };
+      return reply({ message: { role: "assistant", content: JSON.stringify(content) }, done: true });
+    }
     const sys = ((msg.messages || [])[0] || {}).content || "";
     calls.push(sys.slice(0, 60));
     let content = { ok: true };
-    if (/Turn this resume into JSON/.test(sys)) content = JSON.parse(JSON.stringify(Profile.EXAMPLE));
+    const all = (msg.messages || []).map((m) => m.content).join("\n");
+    if (/code word/.test(all)) content = { code: "MARIGOLD-7" };
+    else if (/Turn this resume into JSON/.test(sys)) content = JSON.parse(JSON.stringify(Profile.EXAMPLE));
     else if (/You screen job postings/.test(sys)) content = { decision: "skip", reason: "mock screen", level: "unclear" };
     reply({ choices: [{ message: { content: JSON.stringify(content) } }] });
   });
@@ -66,9 +75,22 @@ try {
   await next();
 
   await heading("Connect an AI model");
+  // A local model through Ollama: no key, models found on the server, the context window checked.
+  await win.check('input[name=prov][value=ollama]');
+  await win.fill("input[name=apiBase]", apiBase);
+  assert.ok(!(await win.isVisible("input[name=apiKey]")), "no key for a local model");
+  await win.click("[data-models]");
+  await win.waitForSelector('.msg.ok:has-text("found")');
+  assert.ok(["mock/other", "z-ai/glm-5.3-flash"].includes(await win.inputValue("input[name=model]")), "the first model found is picked");
+  await win.click("[data-test]");
+  await win.waitForSelector('.msg.ok:has-text("long postings")');
+  assert.deepStrictEqual(ollama, [16384, 16384], "both test calls went to Ollama's own API with a 16k context");
+  await shot("2-ai-local");
+  // Then the remote path, which the rest of this test uses.
   await win.check('input[name=prov][value=custom]');
   await win.fill("input[name=apiBase]", apiBase);
   await win.fill("input[name=apiKey]", "test-key-not-real");
+  await win.fill("input[name=model]", "z-ai/glm-5.3-flash");
   await win.click("[data-test]");
   await win.waitForSelector(".msg.ok");
   await shot("2-ai");

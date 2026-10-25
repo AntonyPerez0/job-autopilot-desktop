@@ -5,6 +5,8 @@ import { getDb, log, setJob, getJob, appliedToday, nextDayStart } from "./db.js"
 import { discover } from "./discover.js";
 import { sameRoleAs } from "./dedupe.js";
 import { abortCurrent, applyTo, STEPS } from "./apply.js";
+import { closeBrowser } from "./browser.js";
+import { isLocal } from "./llm.js";
 import { call } from "./freehire.js";
 import { findConfirmation } from "./mail.js";
 import { dataDir, getSecret, getSettings } from "./store.js";
@@ -109,7 +111,9 @@ async function applyOne(job) {
     if (key === "submit" && !dryRun) setJob(job.slug, { status: "submitting", applied_at: new Date().toISOString() });
   };
   try {
-    const r = await withTimeout(applyTo(job, { progress, status: (t) => { state.now = t; } }, { dryRun, mailbox: mailbox() }), 12 * 60000);
+    // A model on the user's own computer can take many minutes per step.
+    const limit = (isLocal(getSettings().ai) ? 60 : 12) * 60000;
+    const r = await withTimeout(applyTo(job, { progress, status: (t) => { state.now = t; } }, { dryRun, mailbox: mailbox() }), limit);
     setJob(job.slug, {
       status: r.status, reason: r.reason, details: r.details || null,
       resume_file: r.resume_file || null, screenshot: r.screenshot || null,
@@ -154,7 +158,8 @@ export async function run() {
   log(null, `autopilot started (${CONFIG.dryRun ? "dry run" : "live"}, cap ${CONFIG.dailyCap}/day)`);
   while (!stopping) {
     try {
-      if (CONFIG.paused) { state.now = "paused"; state.progress = null; await sleep(30000); continue; }
+      // The browser stays open between applications, and closes whenever there is a long wait.
+      if (CONFIG.paused) { state.now = "paused"; state.progress = null; await closeBrowser(); await sleep(30000); continue; }
       const due = !state.lastSearch || Date.now() - state.lastSearch > CONFIG.searchEveryMinutes * 60000;
       if (due) {
         state.now = "searching";
@@ -168,12 +173,14 @@ export async function run() {
       // Dry run on a new install: fill one application, then wait until the user has looked at it.
       if (CONFIG.dryRun && !CONFIG.reviewedDryRun && db.prepare("SELECT 1 FROM jobs WHERE status = 'filled' LIMIT 1").get()) {
         state.now = "waiting for you to review the first filled application";
+        await closeBrowser();
         await sleep(30000);
         continue;
       }
       if (appliedToday() >= CONFIG.dailyCap) {
         state.now = `daily cap reached (${CONFIG.dailyCap})`;
         state.resumesAt = nextDayStart();
+        await closeBrowser();
         await sleep(5 * 60000);
         continue;
       }
@@ -187,7 +194,7 @@ export async function run() {
         continue;
       }
       const job = nextJob();
-      if (!job) { state.now = "queue empty, waiting for the next search"; await sleep(Math.min(5 * 60000, Math.max(30000, state.nextSearch - Date.now()))); continue; }
+      if (!job) { await closeBrowser(); state.now = "queue empty, waiting for the next search"; await sleep(Math.min(5 * 60000, Math.max(30000, state.nextSearch - Date.now()))); continue; }
       const used = await applyOne(job);
       if (used) state.lastApply = Date.now();
     } catch (e) {
@@ -195,6 +202,7 @@ export async function run() {
       await sleep(60000);
     }
   }
+  await closeBrowser();
   running = false;
   state.now = "stopped";
 }

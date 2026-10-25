@@ -24,6 +24,8 @@ jobs:
       - run: npm ci
       - name: Unit tests
         run: npm run test:unit
+      - name: The application browser stays minimized while it fills a form
+        run: node test/e2e/minimized.mjs
 
       - name: Build the macOS .dmg (universal)
         if: runner.os == 'macOS'
@@ -67,7 +69,7 @@ jobs:
         if: always()
         with:
           name: e2e-screenshots-${{ runner.os }}
-          path: test/out/e2e/*.png
+          path: test/out/e2e/*
 
   release:
     needs: build

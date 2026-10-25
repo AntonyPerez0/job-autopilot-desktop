@@ -25,4 +25,4 @@ jobs:
         if: always()
         with:
           name: e2e-screenshots-linux
-          path: test/out/e2e/*.png
+          path: test/out/e2e/*

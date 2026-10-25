@@ -54,12 +54,15 @@ from Releases and install it over the old one. Your data stays where it is.
 The app walks you through six steps. You can change all of it later under
 **Settings** and **Profile**.
 
-1. **AI key.** The app uses an AI model you pay for with your own key.
-   [OpenRouter](https://openrouter.ai/settings/keys) is the default: create a
-   key, add a few dollars of credit, paste the key in, and press **Test key**.
-   Any OpenAI-compatible service works too; choose "Another OpenAI-compatible
-   API" and enter its address. The default model is `z-ai/glm-5.3-flash`;
-   **Show available models** lists the others.
+1. **AI model.** Either:
+   - **OpenRouter** (the default). Create a key at
+     [openrouter.ai](https://openrouter.ai/settings/keys), add a few dollars of
+     credit, paste the key in and press **Test key**. The default model is
+     `z-ai/glm-5.3-flash`; **Show available models** lists the others. Any
+     other OpenAI-compatible service works too: choose "Another
+     OpenAI-compatible API" and enter its address.
+   - **A model on your own computer**, with [Ollama](https://ollama.com/download)
+     or [LM Studio](https://lmstudio.ai). See [Using a local model](#using-a-local-model).
 2. **Your resume.** Drop in one or more resumes (PDF or Word `.docx`). The app
    reads them and splits them into summaries, bullet points, skill groups,
    education and a base layout.
@@ -111,8 +114,16 @@ Then press **Start in dry run**.
 The browser is your installed Google Chrome, or Microsoft Edge if you don't
 have Chrome. With neither, the app downloads its own Chromium (about 150 MB,
 once). The app uses its own browser profile, separate from your everyday one,
-so it never sees your bookmarks, passwords or other logins. To keep the window
-out of sight, turn on **Hide the browser window** in Settings.
+so it never sees your bookmarks, passwords or other logins.
+
+The browser window stays **minimized** while it works, in the Dock or the
+taskbar, and it stays open between applications so it doesn't pop up for each
+one. On the Overview, **Show the browser** brings it up to watch, and
+**Minimize it** puts it away again. In Settings > Pace and browser you can
+instead keep it in front, or run with no window at all. With no window, some
+sites are more likely to ask for an emailed security code. On a Mac the browser
+may appear for a moment when it first starts; the app then hands focus back to
+whatever you were using.
 
 ## What it won't do
 
@@ -200,7 +211,8 @@ The app only sends data to:
 
 - **Your AI provider** (OpenRouter by default): your approved resume pieces
   and answers, plus each posting and its form questions. This is how it
-  screens jobs, plans each application and fact-checks answers.
+  screens jobs, plans each application and fact-checks answers. With a local
+  model (Ollama or LM Studio) this stays on your computer.
 - **freehire.me**: the job titles, places and filters you search for. No
   personal details go to freehire.
 - **The job sites themselves** (Greenhouse, Lever, Ashby and the employers):
@@ -214,13 +226,44 @@ app.
 
 ## What it costs
 
-The app is free. You pay your AI provider for what it uses, on your own key.
+The app is free. With a local model, the AI costs nothing either. Otherwise
+you pay your AI provider for what it uses, on your own key.
 Each posting it screens is one short AI call. Each application is two or three
 longer ones (the plan, then the fact-check), roughly 10,000 to 20,000 tokens
 in all. With a small, cheap model like the default `z-ai/glm-5.3-flash`, that
 usually comes to a cent or less per application. Bigger models cost more. The
 model's price is shown on OpenRouter, and your actual usage is on your
 provider's dashboard. Setting a spending limit on the key is a good idea.
+
+## Using a local model
+
+Instead of a paid AI service, the app can use a model running on your own
+computer. Nothing about you leaves the computer for the AI steps, and there's
+nothing to pay per use. The trade-offs:
+
+- It needs a capable computer: 16 GB of memory or more, ideally a recent Mac
+  or a PC with a graphics card.
+- It needs a model that follows instructions well, about 14 billion parameters
+  or more (for example Qwen 3 14B or Gemma 3 12B). Small models skip more jobs
+  and leave more questions for you. The truth rules, the fact-check and the
+  never-submit-incomplete gate apply all the same.
+- Each application can take several minutes instead of under a minute.
+
+**Ollama:** install it from [ollama.com](https://ollama.com/download), start
+it, and download a model (for example `ollama pull qwen3:14b` in a terminal).
+In the app choose **Ollama, on this computer**, press **Find models**, pick
+one, and press **Test**. The app asks Ollama for a 16,384-token context window,
+enough for a posting and your resume; you can raise it in the same place.
+
+**LM Studio:** install it from [lmstudio.ai](https://lmstudio.ai) and download
+a model. In its Developer tab, load the model with a **context length of 16384
+or more** and start the server. In the app choose **LM Studio, on this
+computer**, press **Find models**, pick one, and press **Test**.
+
+**Test** also checks that the model can keep track of a long posting. If it
+can't, the app says so and won't continue until the context window is larger.
+Other local servers (llama.cpp, Jan, vLLM...) work through "Another
+OpenAI-compatible API" with their `http://localhost:.../v1` address and no key.
 
 ## Things to know
 

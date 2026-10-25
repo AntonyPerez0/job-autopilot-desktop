@@ -5,7 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { CONTENT_JS, loadProfile, plan, build } from "./engine.js";
 import { log } from "./db.js";
-import { launch } from "./browser.js";
+import { acquireBrowser, closeBrowser, newAppPage } from "./browser.js";
 import { dataDir, getAnswers, getPrefs, getSettings } from "./store.js";
 import { waitForCode } from "./mail.js";
 import { withinRadius } from "./geo.js";
@@ -475,13 +475,11 @@ async function ensureResume(page, file) {
   }
 }
 
-// The browser of the application in progress, so a timed-out run can be shut down.
-let current = null;
-export async function abortCurrent() {
-  const c = current;
-  current = null;
-  if (c) await c.close().catch(() => {});
-}
+// A timed-out run shuts the browser down, so nothing it was doing can carry on.
+export const abortCurrent = () => closeBrowser();
+
+// "minimized" unless the user chose otherwise; the old headless switch still counts.
+export const windowModeOf = (s) => s.windowMode || (s.headless ? "headless" : "minimized");
 
 const safeName = (s) => String(s).replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 120);
 
@@ -498,14 +496,12 @@ export async function applyTo(job, hooks = {}, opts = {}) {
   step("browser");
   const profile = opts.profile || loadProfile();
   const details = JSON.parse(job.details || "{}");
-  let browser;
+  let page;
   const result = { details };
   try {
-    const launched = opts.browser ? { ctx: opts.browser } : await launch({ headless: settings.headless, choice: settings.browser, onStatus: (t) => hooks.status && hooks.status(t) });
-    browser = launched.ctx;
-    if (!opts.browser) current = browser;
-    const page = await browser.newPage();
-    for (const p of browser.pages()) if (p !== page && p.url() === "about:blank") await p.close().catch(() => {});
+    const mode = windowModeOf(settings);
+    const bh = opts.browser ? { ctx: opts.browser } : await acquireBrowser({ windowMode: mode, choice: settings.browser, onStatus: (t) => hooks.status && hooks.status(t) });
+    page = await newAppPage(bh, mode);
     page.setDefaultTimeout(30000);
     if (process.env.AP_DEBUG) {
       page.on("response", (r) => { if (r.request().method() !== "GET") console.log("NET", r.status(), r.request().method(), r.url().slice(0, 160)); });
@@ -678,6 +674,11 @@ export async function applyTo(job, hooks = {}, opts = {}) {
     }
     return { ...result, status: "failed", reason: captcha ? "a CAPTCHA challenge blocked the submit" : "submitted but no confirmation appeared" + (errs.length ? ": " + [...new Set(errs)].join("; ").slice(0, 400) : "") };
   } finally {
-    if (browser && !opts.browser) { if (current === browser) current = null; await browser.close().catch(() => {}); }
+    // The browser stays open for the next application; only this job's tab closes.
+    // Closing the last tab would close the window (and on most systems the browser), so that one is blanked instead.
+    if (page) {
+      if (page.context().pages().length > 1) await page.close().catch(() => {});
+      else await page.goto("about:blank").catch(() => {});
+    }
   }
 }

@@ -1,7 +1,7 @@
 // The browser applications run in: the user's installed Chrome, else Edge,
 // else Playwright's own Chromium, downloaded once into the app-data folder.
 // It always uses its own profile folder, never the user's everyday browser profile.
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -65,4 +65,94 @@ export async function launch({ headless = false, choice = "auto", onStatus = () 
     }
   }
   throw last || new Error("No browser could be started");
+}
+
+// ---------- the one browser applications run in, kept open between applications ----------
+// windowMode: "minimized" (default; the user can bring it up from the dashboard),
+// "visible" (in front, to watch), or "headless" (no window at all).
+
+let shared = null; // { ctx, channel, mode }
+
+async function cdpWindow(page) {
+  const s = await page.context().newCDPSession(page);
+  const { windowId } = await s.send("Browser.getWindowForTarget");
+  return { s, windowId };
+}
+
+export async function setWindowState(page, state) {
+  try {
+    const { s, windowId } = await cdpWindow(page);
+    // A minimized window must be restored to "normal" before it can take other bounds.
+    await s.send("Browser.setWindowBounds", { windowId, bounds: { windowState: state } });
+    await s.detach().catch(() => {});
+    return true;
+  } catch { return false; }
+}
+
+export async function windowState(page) {
+  try {
+    const { s, windowId } = await cdpWindow(page);
+    const { bounds } = await s.send("Browser.getWindowBounds", { windowId });
+    await s.detach().catch(() => {});
+    return bounds.windowState;
+  } catch { return null; }
+}
+
+// macOS brings a newly started browser to the front. Note which app the user was in, and give it focus back.
+function frontApp() {
+  if (process.platform !== "darwin") return Promise.resolve(null);
+  return new Promise((resolve) => {
+    execFile("/bin/sh", ["-c", "lsappinfo info -only bundleid \"$(lsappinfo front)\""], { timeout: 3000 }, (err, out) => {
+      const m = String(out || "").match(/"CFBundleIdentifier"="([^"]+)"/);
+      resolve(err || !m ? null : m[1]);
+    });
+  });
+}
+const refocus = (bundleId) => { if (bundleId) execFile("/usr/bin/open", ["-b", bundleId], { timeout: 5000 }, () => {}); };
+
+export async function acquireBrowser({ windowMode = "minimized", choice = "auto", onStatus = () => {} } = {}) {
+  if (shared && shared.mode === (windowMode === "headless") && shared.choice === choice) {
+    try { shared.ctx.pages(); return shared; } catch { shared = null; }
+  }
+  if (shared) await closeBrowser();
+  const before = windowMode === "visible" ? null : await frontApp();
+  const { ctx, channel } = await launch({ headless: windowMode === "headless", choice, onStatus });
+  shared = { ctx, channel, mode: windowMode === "headless", choice };
+  ctx.on("close", () => { if (shared && shared.ctx === ctx) shared = null; });
+  if (windowMode === "minimized") {
+    const page = ctx.pages()[0] || await ctx.newPage();
+    await setWindowState(page, "minimized");
+  }
+  refocus(before && !/^com\.google\.Chrome|^com\.microsoft\.edgemac|^org\.chromium|^com\.google\.chrome\.for\.testing/i.test(before) ? before : null);
+  return shared;
+}
+
+// A fresh tab for one application, kept in the window state the user chose.
+export async function newAppPage(b, windowMode) {
+  const page = await b.ctx.newPage();
+  // Keep one blank tab besides this one, so the window survives when this tab closes.
+  const blanks = b.ctx.pages().filter((p) => p !== page && p.url() === "about:blank");
+  for (const p of blanks.slice(1)) await p.close().catch(() => {});
+  if (windowMode === "minimized") await setWindowState(page, "minimized");
+  else if (windowMode === "visible") await page.bringToFront().catch(() => {});
+  return page;
+}
+
+export async function closeBrowser() {
+  const s = shared;
+  shared = null;
+  if (s) await s.ctx.close().catch(() => {});
+}
+
+export const browserOpen = () => !!shared;
+
+// Dashboard buttons: bring the window up to watch, or put it away again.
+export async function showBrowser(show) {
+  if (!shared || shared.mode) return false;
+  const pages = shared.ctx.pages();
+  const page = pages[pages.length - 1];
+  if (!page) return false;
+  if (show) { await setWindowState(page, "normal"); await page.bringToFront().catch(() => {}); }
+  else await setWindowState(page, "minimized");
+  return true;
 }

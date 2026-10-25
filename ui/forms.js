@@ -34,57 +34,79 @@
   }
 
   // ---------- 1. AI provider ----------
+  // OpenRouter, any OpenAI-compatible service, or a model running on this computer (Ollama, LM Studio).
   function ai(el, cfg) {
     const s = cfg.settings.ai;
-    const isOR = /openrouter\.ai/.test(s.apiBase);
-    el.innerHTML = `<div class="form">
-      ${fld("Provider", radios("prov", isOR ? "openrouter" : "custom", [["openrouter", "OpenRouter (recommended)"], ["custom", "Another OpenAI-compatible API"]]))}
-      <div data-custom style="${isOR ? "display:none" : ""}">${fld("API base URL", inp("apiBase", s.apiBase, 'placeholder="https://api.example.com/v1"'), "The address that ends in /v1 (for example https://api.openai.com/v1).")}</div>
-      ${fld("API key", `<input name="apiKey" type="password" autocomplete="off" placeholder="${cfg.hasKey ? "Saved. Paste a new key to replace it." : "sk-or-..."}">`,
-        `Stored encrypted on this computer only. <a href="#" data-link="https://openrouter.ai/settings/keys">Get an OpenRouter key</a> (add a few dollars of credit first).`)}
-      <div class="form-row">
-        ${fld("Model", `<input name="model" list="models-${uid()}" value="${esc(s.model)}">`, "Default: z-ai/glm-5.3-flash (fast and cheap). Any model your provider offers works.")}
-      </div>
-      <datalist></datalist>
-      <div class="row-actions"><button type="button" class="btn" data-test>${icon("check")}Test key</button>
-        <button type="button" class="btn ghost" data-models>${icon("list")}Show available models</button></div>
-      <div data-msg></div></div>`;
-    const dl = el.querySelector("datalist"); dl.id = el.querySelector("[name=model]").getAttribute("list");
-    const m = el.querySelector("[data-msg]");
-    el.querySelectorAll("[name=prov]").forEach((r) => r.onchange = () => {
-      const custom = val(el, "prov") === "custom";
-      el.querySelector("[data-custom]").style.display = custom ? "" : "none";
-      if (!custom) el.querySelector("[name=apiBase]").value = "https://openrouter.ai/api/v1";
-      else if (/openrouter/.test(el.querySelector("[name=apiBase]").value)) el.querySelector("[name=apiBase]").value = "";
-    });
-    el.querySelectorAll("[data-link]").forEach((a) => a.onclick = (e) => { e.preventDefault(); openUrl(a.dataset.link); });
-    const cur = () => ({ apiBase: val(el, "prov") === "openrouter" ? "https://openrouter.ai/api/v1" : val(el, "apiBase"), apiKey: val(el, "apiKey"), model: val(el, "model") });
-    let tested = cfg.hasKey;
-    el.querySelector("[data-test]").onclick = async () => {
-      msg(m, "info", "Testing...");
-      const r = await api("/api/ai/test", cur());
-      tested = !r.error;
-      msg(m, r.error ? "err" : "ok", r.error ? "That did not work: " + r.error : "The key works with this model.");
+    const P = cfg.providers;
+    const guess = s.provider || (/openrouter\.ai/.test(s.apiBase) ? "openrouter" : /:11434\b/.test(s.apiBase) ? "ollama" : /:1234\b/.test(s.apiBase) ? "lmstudio" : "custom");
+    let prov = guess;
+    let tested = cfg.hasKey && prov !== "custom";
+    const listId = "models-" + uid();
+    const draw = () => {
+      const p = P[prov];
+      const base = prov === guess ? s.apiBase : p.apiBase;
+      const model = prov === guess ? s.model : p.model || "";
+      el.innerHTML = `<div class="form">
+        ${fld("Where the AI runs", radios("prov", prov, [["openrouter", "OpenRouter (recommended)"], ["custom", "Another OpenAI-compatible API"], ["ollama", "Ollama, on this computer"], ["lmstudio", "LM Studio, on this computer"]]))}
+        ${p.local ? `<div class="callout blue" style="margin:0"><div><b>A model on your own computer</b>
+          Nothing about you leaves this computer for the AI steps, and there is nothing to pay per use. It needs a capable computer
+          (16 GB of memory or more, ideally a recent Mac or a graphics card) and a model good at following instructions: about 14 billion
+          parameters or more, for example Qwen 3 14B or Gemma 3 12B. Smaller models skip more jobs and leave more questions for you;
+          the truth rules, the fact-check and the gate still apply. Each application can take several minutes.
+          <ol style="margin:8px 0 0;padding-left:18px">${prov === "ollama"
+            ? `<li>Install Ollama and start it.</li><li>Download a model, for example in a terminal: <span class="mono">ollama pull qwen3:14b</span></li><li>Press <strong>Find models</strong>, pick it, and press <strong>Test</strong>.</li>`
+            : `<li>Install LM Studio and download a model in it.</li><li>Open the Developer tab, load the model with a <b>context length of 16384 or more</b>, and start the server.</li><li>Press <strong>Find models</strong>, pick it, and press <strong>Test</strong>.</li>`}</ol>
+          <button type="button" class="btn sm" style="margin-top:8px" data-link="${esc(p.url)}">${icon("ext")}Get ${esc(p.name.replace(/ \(.*/, ""))}</button></div></div>` : ""}
+        <div ${prov === "openrouter" ? "hidden" : ""}>${fld("Server address", inp("apiBase", base, 'placeholder="https://api.example.com/v1"'), p.local ? "Leave this as it is unless you changed the port." : "The address that ends in /v1 (for example https://api.openai.com/v1).")}</div>
+        <div ${p.local ? "hidden" : ""}>${fld("API key", `<input name="apiKey" type="password" autocomplete="off" placeholder="${cfg.hasKey ? "Saved. Paste a new key to replace it." : "sk-or-..."}">`,
+          `Stored encrypted on this computer only.${prov === "openrouter" ? ` <a href="#" data-link="https://openrouter.ai/settings/keys">Get an OpenRouter key</a> (add a few dollars of credit first).` : ""}`)}</div>
+        <div class="form-row">
+          ${fld("Model", `<input name="model" list="${listId}" value="${esc(model)}" placeholder="${p.local ? "Press Find models" : ""}">`, prov === "openrouter" ? "Default: z-ai/glm-5.3-flash (fast and cheap)." : "")}
+          ${prov === "ollama" ? fld("Context length (tokens)", inp("contextLength", s.contextLength || 16384, 'type="number" min="8192" step="1024"'), "16384 fits a posting and your resume. More needs more memory.") : ""}
+        </div>
+        <datalist id="${listId}"></datalist>
+        <div class="row-actions"><button type="button" class="btn" data-test>${icon("check")}${p.local ? "Test" : "Test key"}</button>
+          <button type="button" class="btn ghost" data-models>${icon("list")}${p.local ? "Find models" : "Show available models"}</button></div>
+        <div data-msg></div></div>`;
+      bind();
     };
-    el.querySelector("[data-models]").onclick = async () => {
-      msg(m, "info", "Loading models...");
-      const r = await api("/api/ai/models", cur());
-      if (r.error) return msg(m, "err", r.error);
-      dl.innerHTML = r.map((x) => `<option value="${esc(x.id)}">${esc(x.name)}${x.prompt ? ` ($${(x.prompt * 1e6).toFixed(2)}/M in)` : ""}</option>`).join("");
-      msg(m, "ok", `${r.length} models. Click the Model box to pick one.`);
+    const cur = () => ({ provider: prov, apiBase: prov === "openrouter" ? P.openrouter.apiBase : val(el, "apiBase"), apiKey: P[prov].local ? "" : val(el, "apiKey"),
+      model: val(el, "model"), contextLength: Number(val(el, "contextLength")) || undefined });
+    const bind = () => {
+      const m = el.querySelector("[data-msg]");
+      el.querySelectorAll("[name=prov]").forEach((r) => r.onchange = () => { prov = val(el, "prov"); tested = false; draw(); });
+      el.querySelectorAll("[data-link]").forEach((a) => a.onclick = (e) => { e.preventDefault(); openUrl(a.dataset.link); });
+      el.querySelector("[data-test]").onclick = async () => {
+        msg(m, "info", P[prov].local ? "Testing. A local model can take a minute or two the first time it loads..." : "Testing...");
+        const r = await api("/api/ai/test", cur());
+        tested = !r.error;
+        if (r.error) return msg(m, "err", "That did not work: " + r.error);
+        msg(m, r.warning ? "err" : "ok", r.warning || (P[prov].local ? "The model works, and it keeps track of long postings." : "The key works with this model."));
+      };
+      el.querySelector("[data-models]").onclick = async () => {
+        msg(m, "info", "Looking for models...");
+        const r = await api("/api/ai/models", cur());
+        if (r.error) return msg(m, "err", P[prov].local ? `Nothing is answering at ${cur().apiBase}. Is ${P[prov].name.replace(/ \(.*/, "")} running?` : r.error);
+        el.querySelector("datalist").innerHTML = r.map((x) => `<option value="${esc(x.id)}">${esc(x.name)}${x.prompt ? ` ($${(x.prompt * 1e6).toFixed(2)}/M in)` : ""}</option>`).join("");
+        if (P[prov].local && r.length && !val(el, "model")) el.querySelector("[name=model]").value = r[0].id;
+        msg(m, r.length ? "ok" : "err", r.length ? `${r.length} model${r.length > 1 ? "s" : ""} found. Click the Model box to pick one.` : "No models yet. Download one first.");
+      };
     };
+    draw();
     return {
       async save() {
         const c = cur();
-        if (!c.apiBase) return "Enter the API base URL.";
-        if (!c.apiKey && !cfg.hasKey) return "Paste your API key.";
-        if (!c.model) return "Pick a model.";
-        if (c.apiKey && !tested) {
+        if (!c.apiBase) return "Enter the server address.";
+        if (!P[prov].local && !c.apiKey && !cfg.hasKey) return "Paste your API key.";
+        if (!c.model) return P[prov].local ? "Press Find models and pick a model." : "Pick a model.";
+        if (!tested || c.apiKey) {
           const r = await api("/api/ai/test", c);
-          if (r.error) return "The key did not work: " + r.error;
+          if (r.error) return "That did not work: " + r.error;
+          if (r.warning) return r.warning;
         }
         await api("/api/ai/save", c);
-        cfg.hasKey = true;
+        if (c.apiKey) cfg.hasKey = true;
+        cfg.settings.ai = { ...cfg.settings.ai, provider: prov, apiBase: c.apiBase, model: c.model, ...(c.contextLength ? { contextLength: c.contextLength } : {}) };
         return null;
       },
     };
@@ -430,7 +452,8 @@
         ${fld("Tries per job", inp("maxAttempts", s.maxAttempts, 'type="number" min="1" max="5"'))}</div>
       <div class="section-t">Browser</div>
       ${fld("Browser to apply with", radios("browser", s.browser, [["auto", "Automatic (Chrome, then Edge, then Chromium)"], ["chrome", "Google Chrome"], ["msedge", "Microsoft Edge"], ["chromium", "Chromium (downloaded by the app)"]]))}
-      <label class="check"><input type="checkbox" name="headless" ${s.headless ? "checked" : ""}>Hide the browser window while applying (headless). Off by default so you can watch.</label>
+      ${fld("The browser window while applying", radios("windowMode", s.windowMode || (s.headless ? "headless" : "minimized"), [["minimized", "Minimized (recommended)"], ["visible", "In front, so I can watch"], ["headless", "No window at all"]]),
+        "Minimized keeps it out of your way in the Dock or taskbar; \"Show the browser\" on the Overview brings it up. With no window at all, some sites are more likely to ask for a security code.")}
       <div class="row-actions"><button type="button" class="btn sm" data-detect>${icon("search")}Check browsers</button><button type="button" class="btn sm" data-install>${icon("upload")}Download Chromium now</button></div>
       <div data-msg></div></div>`;
     const m = el.querySelector("[data-msg]");
@@ -440,7 +463,7 @@
       async save() {
         const out = {};
         for (const k of ["dailyCap", "dayStartsAtHour", "minutesBetweenApplies", "searchEveryMinutes", "maxAttempts"]) out[k] = Number(val(el, k));
-        out.browser = val(el, "browser"); out.headless = val(el, "headless");
+        out.browser = val(el, "browser"); out.windowMode = val(el, "windowMode"); out.headless = out.windowMode === "headless";
         cfg.settings = await api("/api/settings", out);
         return null;
       },
