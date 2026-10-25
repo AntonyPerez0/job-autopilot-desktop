@@ -1,7 +1,8 @@
 # Job Autopilot
 
 A desktop app for macOS and Windows that finds jobs that match what you're
-looking for and applies to them. For each job it builds a one-page resume from
+looking for and applies to them: everyday hourly jobs (cashier, warehouse,
+food service, healthcare support) as well as office and tech jobs. For each job it builds a one-page resume from
 pieces of your own resume that you approved, fills in the application in a
 browser window you can watch, checks every answer, and submits it. It keeps a
 full record of every application.
@@ -69,55 +70,100 @@ Releases by hand and install it over the old one instead.
 
 ## First run: the setup
 
-The app walks you through six steps. You can change all of it later under
-**Settings** and **Profile**.
+The app walks you through a few short steps. Only your name, contact details,
+city and work authorization are required; everything else can wait. You can
+change all of it later under **Settings** and **Profile**.
 
-1. **AI model.** Either:
-   - **OpenRouter** (the default). Create a key at
-     [openrouter.ai](https://openrouter.ai/settings/keys), add a few dollars of
-     credit, paste the key in and press **Test key**. The default model is
-     `z-ai/glm-5.3-flash`; **Show available models** lists the others. Any
-     other OpenAI-compatible service works too: choose "Another
-     OpenAI-compatible API" and enter its address.
-   - **A model on your own computer**, with [Ollama](https://ollama.com/download)
-     or [LM Studio](https://lmstudio.ai). See [Using a local model](#using-a-local-model).
-2. **Your resume.** Drop in one or more resumes (PDF or Word `.docx`). The app
-   reads them and splits them into summaries, bullet points, skill groups,
-   education and a base layout.
-3. **Review.** Every piece starts unapproved. Edit anything that isn't exactly
-   true, delete what you'd never send, and tick the rest. Resumes are only
-   ever put together from approved pieces: the AI picks which pieces fit each
-   job, and never writes resume text itself. Use the eye button on a layout to
-   preview the PDF.
-4. **Common questions.** Your name, contact details and links, address
-   (street is optional), work authorization and sponsorship, education with
-   dates, years of experience by kind of work, notice period and start date,
-   relocation and travel, how arbitration agreements are handled, voluntary
-   self-identification (declined by default), and a list of things you can
-   never claim.
-5. **Job preferences.** Job titles to search for, what you want the work to
-   involve, cities plus a radius and/or remote jobs in your country, the levels
-   you'd accept, the most years of experience a job may require, companies to
-   skip, and how recent the postings should be.
-6. **Mailbox (optional).** See [Mailbox](#mailbox).
+1. **Welcome.** Pick the kind of work you want (hourly and everyday jobs,
+   office and tech jobs, or both). The app uses it to suggest job titles and
+   where to look.
+2. **Connect AI.** The app needs an AI model to read postings and fill forms.
+   The screen walks you through three steps: make a free
+   [OpenRouter](https://openrouter.ai) account, add $5 of credit (enough for
+   hundreds of applications), and paste the key. The app tests it the moment
+   you paste it. Under **Other ways to connect an AI** you can use another
+   service instead, or a free model on your own computer (see
+   [Using a local model](#using-a-local-model)).
+3. **Your resume.** Drop in one or more resumes (PDF or Word `.docx`). No
+   resume? Open **I don't have a resume**, list your jobs in your own words,
+   and the app makes one with you.
+4. **Check it.** The app splits your resume into pieces: summaries, bullet
+   points, skills, education and a layout. Fix anything that isn't exactly
+   true, delete what you'd never send, and approve the rest. **Everything is
+   true: approve all** does it in one click once you've read them. Resumes are
+   only ever put together from approved pieces.
+5. **About you.** Name, email, phone, city, and whether you can work in the
+   country. Optional sections cover the questions forms ask most:
+   - when you can work (days, shifts, hours, transportation, lifting)
+   - work and school
+   - links
+   - legal questions
+   - voluntary self-identification (declined unless you choose)
+   - things you can never claim
+
+   The more you answer, the fewer forms stop to ask you.
+6. **Jobs to look for.** Type job titles or click suggestions, pick your city
+   from the list, drag the slider for how far you'd travel, and tick remote
+   jobs if you want them. Then choose where to look (see
+   [Where the jobs come from](#where-the-jobs-come-from)). **More options** has
+   company exclusions, posting age and experience limits.
+7. **Mailbox (optional).** See [Mailbox](#mailbox).
 
 Then press **Start in dry run**.
 
+## Where the jobs come from
+
+| Source | What it has | Notes |
+|---|---|---|
+| **HiringCafe** (on by default) | Jobs of every kind, collected straight from employers' own career sites | The app reads it in its own browser window like a person would, with one results page per search and a few searches every couple of hours. |
+| **freehire** | Office, tech and professional jobs | Off by default for hourly-only searches. |
+| **Simplify lists** | New-graduate jobs and internships, mostly tech | Read from Simplify's free lists on GitHub. Simplify's own website forbids automated use, so the app never visits it. |
+| **Google Jobs** | What Google's job search shows, from many sites | Google has no public jobs API and blocks automated searches, so this goes through [SerpApi](https://serpapi.com) with your own key. Its free plan has 250 searches a month; the app stays under 200 and spreads them over the month. |
+| **Add a job** | Anything you find yourself | Copy a job's link from Google, Simplify, HiringCafe, Indeed or a company's site, and paste it into **Add a job** on the Overview. The app applies to it next. |
+
+LinkUp isn't on the list: it closed its public job search in 2024 and now only
+sells data to companies.
+
+Every job the app finds goes through the same checks: your titles, your city
+and radius, your levels, companies you excluded, and jobs you already applied
+to. Then the AI reads it against your facts. Only good fits go on.
+
+### Which jobs the app applies to, and which you apply to
+
+Many employers use application sites that make you **create an account**
+first (Workday, iCIMS, Taleo, Oracle, ADP, UKG). Some use a **chat bot**
+instead of a form (Paradox's "Olivia"), and some links only lead to a **job
+board's** copy of the posting (Indeed, LinkedIn, ZipRecruiter). The app doesn't
+create accounts, chat with bots or log in anywhere. Good matches on those sites
+go to **Apply yourself**. Open one, apply on the site, then press **I applied**
+so it's never suggested again.
+
+The app applies by itself on sites that need no account. That includes
+Greenhouse, Lever, Ashby, SmartRecruiters, Workable, CareerPlug, Paycom,
+Paylocity, JazzHR, BambooHR, Jobvite and many company sites. It handles:
+
+- "Apply" buttons that open the form in a new tab
+- cookie banners
+- forms spread over several pages
+
+If a site turns out to want a sign-in after all, the job moves to Apply
+yourself instead of stopping. For everyday jobs, expect roughly a third to a
+half of good matches to be ones the app can do by itself.
+
 ## What happens next
 
-- It searches [freehire.me](https://freehire.me) every two hours for your
-  titles and places. It only keeps jobs that use Greenhouse, Lever or Ashby,
-  because those don't make you create an account to apply. It skips recruiting
-  agencies, companies you excluded, and anything you already applied to. Then
-  the AI reads each posting against your facts and only queues the ones you
-  actually qualify for.
+- Every two hours it searches the sources you picked for your titles and
+  places, and checks each new job for fit. Jobs it can apply to go in the
+  **Queue**. Good matches on account-only sites go to **Apply yourself**.
 - For each queued job, a browser window opens and the app:
   - reads the form
   - builds your resume for that job
   - fills in every answer
   - checks every answer
   - takes screenshots
-- **In dry run** it stops before Submit. The first filled application shows
+- **In dry run** it stops before Submit, and on forms with several pages it
+  stops before the first **Next** (some sites save an application as soon as
+  you press Next). The first filled application shows
   up on the Overview. Open it to see every answer (and where each one came
   from), the resume PDF, the screenshots and the posting. If it's right, press
   **I checked these answers**. If something's wrong, fix your answers in
@@ -174,7 +220,8 @@ likely to ask for an emailed security code.
   - arbitration agreements
   - jury and class-action waivers
   - non-competes and releases of claims
-  - questions about criminal history
+  - questions about criminal history (unless you answered them yourself under
+    About you > Legal questions)
   - any "I acknowledge" or "I authorize" question whose fine print gives up
     rights
 
@@ -262,9 +309,11 @@ The app only sends data to:
   and answers, plus each posting and its form questions. This is how it
   screens jobs, plans each application and fact-checks answers. With a local
   model (Ollama or LM Studio) this stays on your computer.
-- **freehire.me**: the job titles, places and filters you search for. No
-  personal details go to freehire.
-- **The job sites themselves** (Greenhouse, Lever, Ashby and the employers):
+- **The job sources you turned on**: the job titles, places and filters you
+  search for, and nothing about you. That means freehire.me, HiringCafe
+  (searched in the app's browser), GitHub (Simplify's lists) and, with your
+  key, SerpApi for Google Jobs.
+- **The job sites themselves** (the employers and their application sites):
   the application you send.
 - **Your mailbox** (if connected): read-only access over IMAP.
 - **GitHub**: a check for new versions. Chromium is downloaded from
@@ -320,9 +369,11 @@ OpenAI-compatible API" with their `http://localhost:.../v1` address and no key.
   applications, and some employers may treat them differently. You're
   responsible for every application sent in your name. That's why the app
   starts in dry run, keeps a steady pace and records everything.
-- **Sites change.** Greenhouse, Lever and Ashby change their forms from time to
-  time. When a form can't be filled correctly, the app stops and puts the job
+- **Sites change.** Application sites change their forms from time to time. When a form can't be filled correctly, the app stops and puts the job
   in Needs attention instead of sending something half-done.
+- **Some sites guess things.** A few application sites pre-fill your location
+  from your internet connection. The app replaces a guessed city with yours,
+  and notes it in that job's record.
 - **The AI can still be wrong.** The truth rules only cover the common
   questions listed above. Other answers depend on the fact-check and on your
   review. Look through the Answers tab of a few applications now and then.
@@ -333,8 +384,12 @@ OpenAI-compatible API" with their `http://localhost:.../v1` address and no key.
   OpenRouter account has credit. For other providers, check the API address
   ends in `/v1`.
 - **Nothing gets queued.** Look at **Skipped** to see why jobs were left out.
-  Add more job titles, widen the radius, allow more levels, or raise the
-  maximum years required.
+  Add more job titles (or click the suggestions), drag the distance slider
+  further, tick more levels, turn on more places to look, or raise the maximum
+  years required under More options.
+- **Most matches are in Apply yourself.** That's normal for everyday jobs:
+  many big employers use sites that need an account. Those take a few minutes
+  each by hand.
 - **Lots of jobs in Needs attention with "Missing info."** Open one. The
   reason names the question. Usually it's a fact the app doesn't have yet, like
   years of a particular skill or a street address. Add it under Settings >
@@ -362,6 +417,7 @@ npm run e2e                            # walks the first-run setup in the real a
 npm start                              # runs the app from source
 JA_API_KEY=... node scripts/live-dry-run.mjs   # one dry run against a live posting, example profile
 JA_API_KEY=... node test/e2e/live-in-app.mjs <freehire-slug>   # the same, inside the real app
+JA_API_KEY=... node scripts/live-hourly.mjs     # HiringCafe search + screen + one dry run (JA_URL=<link> for a given job)
 ```
 
 How the code is laid out:
