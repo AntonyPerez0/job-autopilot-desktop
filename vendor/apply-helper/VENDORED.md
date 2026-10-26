@@ -27,6 +27,13 @@ Local changes, kept as small as possible:
    and leave the page part empty.
 5. `tailor.js` (`fit`): filling the page stops at 5 lines for the first job and 3 for each
    other entry, as recruiters expect (docs/resume-research.md); a layout or plan that asks
-   for more keeps them.
+   for more keeps them. If more than about 20 lines are still empty after that, each entry
+   other than the first job may take one more line.
 
-To update: copy the new files over these, reapply the five edits, run `npm test`.
+6. `resume_pdf.js` (`render`, `doc.scale`) and `tailor.js` (`fit`): a resume that leaves more than
+   about 10 lines empty is set up to 18% larger and more open instead, as long as it still fits.
+
+7. `resume_pdf.js` (`render`): an entry without an employer (volunteer work, say) shows its title
+   alone, without a trailing comma.
+
+To update: copy the new files over these, reapply the seven edits, run `npm test`.

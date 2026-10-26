@@ -24,6 +24,18 @@ test("every base resume fits on one page", async () => {
   }
 });
 
+test("a short resume is set larger to fill the page, and still fits", async () => {
+  const p = JSON.parse(JSON.stringify(profile));
+  const base = p.bases[0];
+  const { spec } = Tailor.checkPlan(p, { base: base.id });
+  spec.sections = spec.sections.filter((s) => s.kind === "experience").map((s) => ({ ...s, items: s.items.slice(0, 1).map((it) => ({ ...it, bullets: it.bullets.slice(0, 2) })) }));
+  for (const e of p.experience) e.bullets = e.bullets.slice(0, 2);
+  p.projects = [];
+  const r = await Tailor.fit(p, spec, []);
+  assert.ok(!r.overflow);
+  assert.ok(r.scale > 1, `scaled up (${r.scale})`);
+});
+
 test("plan validator drops invented ids, keeps pinned and minimum bullets", () => {
   const exp = profile.experience[0];
   const ai = profile.projects.find((p) => p.aiBuilt && (p.pinned || []).length);

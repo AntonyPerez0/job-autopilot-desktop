@@ -194,6 +194,32 @@ On **Check & improve**:
   New wording waits for your approval, and when the app tailors a resume to a
   posting it starts from the version that fits.
 
+**Fill out my page.** A short resume looks thin to a recruiter, so the app asks
+for the real things people usually leave out, never filler. It's on **Check &
+improve**, and it's offered right after "Make a resume with me":
+- **The numbers behind your lines**: a question for each line that would read
+  stronger with a number ("About how many signs did you install a week?").
+- **Other work, even small**: part-time, seasonal, gig or family-business work.
+- **Licenses and training**: who issued each one and the year, plus anything
+  missing (OSHA 10, first aid, flagger...).
+- **Records and recognition**: years without a claim, a thank-you letter,
+  employee of the month.
+- **Volunteering and outside work**, and **school and courses**.
+
+Each answer becomes a resume piece in professional wording that waits for your
+approval. A line with a new number, or certifications with their years, takes
+the old one's place once you approve it. If the page still has room after that,
+older jobs may show a fourth line and the page is set a little larger, so a
+strong half page reads as a full one.
+
+**Professional wording.** Lines are written the way a resume in your trade reads,
+not the way people talk ("take calls and drive to breakdowns" becomes "respond
+to dispatched breakdown and accident calls"). A line that still reads casually
+gets one more try; the checklist flags any that remain ("Make these sound like a
+resume"). A rewording may never add a claim you didn't make: being in charge
+("managed", "led"), a system or software, a result ("reduced", "zero"), or
+praise ("calm", "reliable").
+
 **How the app keeps it honest:**
 - The AI may only reword what you said. Every line it writes is checked:
   - Rules with no AI involved reject any number, name or tool you didn't give,

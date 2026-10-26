@@ -302,6 +302,9 @@ ${fields || "(none found on this page)"}`;
       r = await ResumePDF.render(toDoc(profile, cur));
     }
     let tries = 0;
+    // Two passes: the usual line budget, then, if half the page is still empty, one more line per entry.
+    for (const more of [0, 1]) {
+    if (more && r.slack <= 240) break;
     for (const [eid, bid] of candidates(profile, cur, extra)) {
       if (r.overflow || r.slack <= SLACK_TARGET || tries > 40) break;
       const all = entries(cur), at = all.findIndex((x) => x.it.id === eid);
@@ -309,17 +312,26 @@ ${fields || "(none found on this page)"}`;
       if (!it || it.bullets.includes(bid) || it.bullets.some((b) => stem(b) === stem(bid))) continue;
       // Recruiters read 3 to 5 lines for the latest job and 2 or 3 for the others: white space beats a longer list.
       const first = all.findIndex((x) => x.kind === kind);
-      if (it.bullets.length >= (kind === "experience" && at === first ? 5 : 3)) continue;
+      if (it.bullets.length >= (kind === "experience" && at === first ? 5 : 3 + more)) continue;
       tries++;
       const next = cloneSpec(cur);
       entries(next).find((x) => x.it.id === eid).it.bullets.push(bid);
       const r2 = await ResumePDF.render(toDoc(profile, next));
       if (!r2.overflow) { cur = next; r = r2; }
     }
+    }
+    // Still a lot of white space: set the page a little larger and more open rather than leave half of it empty.
+    let scale = 1;
+    if (!r.overflow && r.slack > 120) {
+      for (const k of [1.18, 1.12, 1.06]) {
+        const r2 = await ResumePDF.render({ ...toDoc(profile, cur), scale: k });
+        if (!r2.overflow && r2.slack >= 24) { r = r2; scale = k; break; }
+      }
+    }
     const warnings = [];
     if (r.overflow) warnings.push("The resume still runs past one page. Remove a bullet in your profile's base layout.");
     else if (r.slack > SLACK_TARGET) warnings.push(`The page has ${r.slack}pt blank at the bottom (about ${Math.round(r.slack / 12)} lines). Your profile has no more fitting bullets.`);
-    return { spec: cur, pdf: r.bytes, slack: r.slack, overflow: r.overflow, startSlack, warnings };
+    return { spec: cur, pdf: r.bytes, slack: r.slack, overflow: r.overflow, startSlack, warnings, scale };
   }
 
   // ---------- form kit (the same shape content.js fills from) ----------

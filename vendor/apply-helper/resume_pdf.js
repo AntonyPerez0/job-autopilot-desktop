@@ -7,7 +7,8 @@
 (function (root) {
   const W = 612, H = 792;
   const M = { left: 36, right: 36, top: 30, bottom: 30 };
-  const S = { name: 18, contact: 9.5, head: 10.5, body: 9.8, lead: 11.6, gap: 5 };
+  const BASE = { name: 18, contact: 9.5, head: 10.5, body: 9.8, lead: 11.6, gap: 5 };
+  let S = BASE;
   const TEXT_W = W - M.left - M.right;
 
   function lib() {
@@ -52,6 +53,9 @@
   }
 
   async function render(doc) {
+    // doc.scale > 1: a short resume set a little larger and more open, so it fills the page.
+    const k = Math.min(1.25, Math.max(1, Number(doc.scale) || 1));
+    S = Object.fromEntries(Object.entries(BASE).map(([key, v]) => [key, key === "gap" ? v * k * k : v * k]));
     const L = lib();
     const pdf = await L.PDFDocument.create();
     pdf.setTitle(`${doc.name} Resume`);
@@ -139,7 +143,7 @@
       heading(sec.title);
       for (const e of sec.entries) {
         if (sec.kind === "experience") {
-          leftRight([{ text: e.title + ", ", font: F.b }, { text: e.org + (e.location ? " \u2013 " + e.location : ""), font: F.r }], e.dates);
+          leftRight(e.org ? [{ text: e.title + ", ", font: F.b }, { text: e.org + (e.location ? " \u2013 " + e.location : ""), font: F.r }] : [{ text: e.title, font: F.b }, { text: e.location ? " \u2013 " + e.location : "", font: F.r }], e.dates);
         } else if (sec.kind === "projects") {
           leftRight([{ text: e.title, font: F.b }], e.link || e.dates || "");
         } else {

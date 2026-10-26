@@ -24,6 +24,18 @@ const ok = (x) => x && x.approved === true;
 // Only what the user approved reaches a resume. Bases keep only approved pieces.
 export function approvedOnly(p) {
   const out = JSON.parse(JSON.stringify(p || {}));
+  // An approved piece that "replaces" another (a line with a number added, certifications with their year)
+  // takes the old one's place: the old one is left out, and layouts show the new one where the old one was.
+  const gone = new Set(arr(out.skills).filter((s) => ok(s) && s.replaces).map((s) => s.replaces));
+  out.skills = arr(out.skills).filter((s) => !gone.has(s.id));
+  for (const b of arr(out.bases)) if (arr(b.skills).some((id) => gone.has(id))) b.skills = arr(b.skills).filter((id) => !gone.has(id));
+  for (const k of ["experience", "projects"]) for (const e of arr(out[k])) {
+    const swap = new Map(arr(e.bullets).filter((b) => ok(b) && b.replaces).map((b) => [b.replaces, b.id]));
+    if (!swap.size) continue;
+    e.bullets = arr(e.bullets).filter((b) => !swap.has(b.id));
+    for (const b of arr(out.bases)) for (const s of arr(b.sections)) for (const it of arr(s.items)) if (it.id === e.id)
+      it.bullets = [...new Set(arr(it.bullets).map((id) => swap.get(id) || id))];
+  }
   out.summaries = arr(out.summaries).filter(ok);
   out.skills = arr(out.skills).filter(ok);
   out.headers = arr(out.headers).filter(ok);

@@ -148,7 +148,7 @@
     drop.ondragleave = () => drop.classList.remove("over");
     drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove("over"); addFiles(e.dataTransfer.files); };
     const b64 = (f) => f.arrayBuffer().then((buf) => { let s = ""; const u = new Uint8Array(buf); for (let i = 0; i < u.length; i += 32768) s += String.fromCharCode.apply(null, u.subarray(i, i + 32768)); return btoa(s); });
-    creator(el.querySelector("[data-creator]"), cfg, () => onImported && setTimeout(() => onImported(cfg.profile), 2500));
+    creator(el.querySelector("[data-creator]"), cfg, () => onImported && setTimeout(() => onImported(cfg.profile), 2500), { offerFill: false });
     if (withGithub) github(el.querySelector("[data-github]"), cfg);
     el.querySelector("[data-go]").onclick = async () => {
       const text = val(el, "text");
@@ -259,7 +259,7 @@
   }
 
   // ---------- Resume creator: a short interview, then a resume from the answers ----------
-  function creator(el, cfg, onDone) {
+  function creator(el, cfg, onDone, { offerFill = true } = {}) {
     const jobCard = (n) => `<div class="sub-item" data-cjob>
       <div class="row-actions" style="justify-content:space-between"><b>Job ${n}</b><button type="button" class="btn ghost sm" data-rm-cjob>${icon("trash")}Remove</button></div>
       <div class="form-row">${fld("Job title", inp("c_title", "", 'placeholder="e.g. Cashier, Line cook, Office assistant"'))}${fld("Employer", inp("c_employer", "", 'placeholder="e.g. Target"'))}${fld("City", inp("c_location", "", 'placeholder="e.g. Austin, TX"'))}</div>
@@ -323,10 +323,73 @@
       cfg.profile = r.profile; cfg.answers = r.answers;
       const lines = r.profile.experience.reduce((n, e) => n + e.bullets.length, 0);
       m.innerHTML = `<div class="msg ok">Done: ${lines} lines from your answers. Check each one next.${r.rejected.length ? ` ${r.rejected.length} suggestion${r.rejected.length === 1 ? " was" : "s were"} left out because ${r.rejected.length === 1 ? "it" : "they"} added things you didn't say.` : ""}</div>
-        ${r.questions.length ? `<div class="msg info" style="margin-top:8px"><b>To make it stronger later</b>, think about: ${r.questions.map((q) => esc(q.question)).join(" ")} Then use <b>Check &amp; improve</b> on the Resume page.</div>` : ""}`;
+        ${r.questions.length ? `<div class="msg info" style="margin-top:8px"><b>To make it stronger later</b>, think about: ${r.questions.map((q) => esc(q.question)).join(" ")} Then use <b>Check &amp; improve</b> on the Resume page.</div>` : ""}
+        ${offerFill ? `<div class="sub-item" style="margin-top:8px"><b>Want a fuller page?</b> <span class="muted">A few questions about other work, training, records and school that people usually leave out.</span>
+          <div class="row-actions"><button type="button" class="btn sm" data-cfill>${icon("plus")}Fill out my page</button></div><div data-cfill-host></div></div>` : ""}`;
+      if (offerFill) m.querySelector("[data-cfill]").onclick = (ev) => { ev.currentTarget.hidden = true; fillPage(m.querySelector("[data-cfill-host]"), cfg, () => onDone && onDone({ ...r, profile: cfg.profile })); };
       onDone && onDone(r);
     };
     return { save: async () => (cfg.profile ? null : "Write your resume first.") };
+  }
+
+  // ---------- Fill out my page: the real things people leave out, asked for and turned into pieces ----------
+  async function fillPage(el, cfg, onChange) {
+    msg(el, "info", "Getting your questions ready...");
+    const q = await api("/api/resume/fill/questions", {});
+    if (q.error) return msg(el, "err", q.error);
+    const workCard = (kind) => `<div class="sub-item" data-fwork="${kind}">
+      <div class="form-row">${fld(kind === "vol" ? "What you did (role)" : "Job title", inp("f_title", "", `placeholder="${kind === "vol" ? "e.g. Youth soccer coach, Food bank volunteer" : "e.g. Delivery driver, Seasonal warehouse"}"`))}
+        ${fld(kind === "vol" ? "Where" : "Employer", inp("f_employer", "", kind === "vol" ? 'placeholder="e.g. Sacramento Food Bank, a church, Little League (or leave empty)"' : 'placeholder="e.g. DoorDash, family business"'))}</div>
+      <div class="form-row">${fld("Started", inp("f_start", "", 'placeholder="e.g. 2019"'))}${fld("Ended", inp("f_end", "", 'placeholder="e.g. 2020"'))}
+        <div class="fld" style="align-self:end"><label class="check"><input type="checkbox" name="f_current">Still doing it</label></div></div>
+      ${fld("What did you do?", `<textarea name="f_daily" rows="2" placeholder="In your own words, with any numbers you know"></textarea>`)}
+      ${kind === "vol" ? "" : fld("Tools, machines or software", inp("f_tools", "", 'placeholder="e.g. hand truck, delivery app"'))}</div>`;
+    const certRow = (name = "") => `<div class="form-row" data-fcert>${fld("License or training", inp("f_cname", name, 'placeholder="e.g. OSHA 10, First aid / CPR, Flagger"'))}
+      ${fld("Who issued it", inp("f_issuer", "", 'placeholder="e.g. WreckMaster, Red Cross, state DMV"'))}${fld("Year", inp("f_year", "", 'placeholder="e.g. 2022"'))}</div>`;
+    const schoolRow = () => `<div class="form-row" data-fschool>${fld("School, class or course", inp("f_school", "", 'placeholder="e.g. truck driving school, shop class, online course"'))}
+      ${fld("What you earned or studied", inp("f_earned", "", 'placeholder="e.g. Certificate, CompTIA A+ study"'))}${fld("Year", inp("f_syear", "", 'placeholder="e.g. 2020, or In progress"'))}</div>`;
+    el.innerHTML = `<div class="form fill">
+      <p class="hint" style="margin:0">Answer only what is true; skip the rest. Each answer becomes a resume piece that waits for your approval, and nothing is added that you didn't say.</p>
+      ${q.numbers.length ? `<div class="section-t">The numbers behind your lines</div><p class="hint" style="margin:-4px 0 0">A recruiter looks for how many and how often. Only answer if you know (rough is fine: "about 20").</p>
+        ${q.numbers.map((x, i) => `<div class="sub-item" data-fnum="${i}"><div class="muted" style="font-size:12px">${esc(x.job)}</div><div>${esc(x.original)}</div>${fld(esc(x.question), inp("f_num", ""))}</div>`).join("")}` : ""}
+      <div class="section-t">Other work, even small</div><p class="hint" style="margin:-4px 0 0">${esc(q.prompts.jobs)}</p>
+      <div class="sub-list" data-fjobs>${workCard("job")}</div><div><button type="button" class="btn sm" data-fadd="job">${icon("plus")}Add another job</button></div>
+      <div class="section-t">Licenses and training</div><p class="hint" style="margin:-4px 0 0">${esc(q.prompts.certs)}</p>
+      <div class="sub-list" data-fcerts>${q.certs.map(certRow).join("")}${certRow()}</div><div><button type="button" class="btn sm" data-fadd="cert">${icon("plus")}Add another</button></div>
+      ${q.jobs.length ? `<div class="section-t">Records and recognition</div><p class="hint" style="margin:-4px 0 0">${esc(q.prompts.records)}</p>
+        ${q.jobs.map((j) => fld(esc(`${j.title}${j.org ? ", " + j.org : ""}`), inp(`f_rec_${j.id}`, "", 'placeholder="e.g. 3 years with no damage claims, employee of the month 2023"'))).join("")}` : ""}
+      <div class="section-t">Volunteering and outside work</div><p class="hint" style="margin:-4px 0 0">${esc(q.prompts.volunteer)}</p>
+      <div class="sub-list" data-fvols>${workCard("vol")}</div>
+      <div class="section-t">School and courses</div><p class="hint" style="margin:-4px 0 0">${esc(q.prompts.school)}${(q.schools || []).length ? ` Already on your resume: ${q.schools.map(esc).join("; ")}.` : ""}</p>
+      <div class="sub-list" data-fschools>${schoolRow()}</div>
+      <div class="row-actions"><button type="button" class="btn primary" data-fgo>${icon("check")}Add these to my resume</button></div>
+      <div data-fmsg></div></div>`;
+    el.querySelectorAll("[data-fadd]").forEach((b) => b.onclick = () => {
+      const host = el.querySelector(b.dataset.fadd === "job" ? "[data-fjobs]" : "[data-fcerts]");
+      host.insertAdjacentHTML("beforeend", b.dataset.fadd === "job" ? workCard("job") : certRow());
+    });
+    const work = (kind) => [...el.querySelectorAll(`[data-fwork="${kind}"]`)].map((c) => ({ title: val(c, "f_title"), employer: val(c, "f_employer"), start: val(c, "f_start"),
+      end: val(c, "f_end"), current: val(c, "f_current"), daily: c.querySelector("[name=f_daily]").value.trim(), tools: val(c, "f_tools") || "" })).filter((j) => j.title || j.employer);
+    el.querySelector("[data-fgo]").onclick = async (e) => {
+      const btn = e.currentTarget, m = el.querySelector("[data-fmsg]");
+      const input = { jobs: work("job"), volunteer: work("vol"),
+        certs: [...el.querySelectorAll("[data-fcert]")].map((c) => ({ name: val(c, "f_cname"), issuer: val(c, "f_issuer"), year: val(c, "f_year") })).filter((c) => c.name && (c.issuer || c.year || !q.certs.includes(c.name))),
+        records: q.jobs.map((j) => ({ id: j.id, text: val(el, `f_rec_${j.id}`) })).filter((x) => x.text),
+        school: [...el.querySelectorAll("[data-fschool]")].map((c) => ({ school: val(c, "f_school"), earned: val(c, "f_earned"), year: val(c, "f_syear") })).filter((x) => x.school),
+        numbers: q.numbers.map((x, i) => ({ ...x, answer: val(el.querySelector(`[data-fnum="${i}"]`), "f_num") })).filter((x) => x.answer) };
+      const thin = [...input.jobs, ...input.volunteer].find((j) => !j.daily);
+      if (thin) return msg(m, "err", `Say a few words about what you did at ${thin.title || thin.employer}.`);
+      if (!Object.values(input).some((x) => x.length)) return msg(m, "err", "Answer at least one question first.");
+      btn.disabled = true; msg(m, "info", "Turning your answers into resume pieces. This takes up to a minute...");
+      const r = await api("/api/resume/fill/apply", { input });
+      btn.disabled = false;
+      if (r.error) return msg(m, "err", r.error);
+      cfg.profile = r.profile;
+      m.innerHTML = `<div class="msg ok">Added ${r.added.length} piece${r.added.length === 1 ? "" : "s"}. Approve ${r.added.length === 1 ? "it" : "them"} under "All your resume pieces" to put ${r.added.length === 1 ? "it" : "them"} on your resume.${r.rejected.length ? ` ${r.rejected.length} wording${r.rejected.length === 1 ? " was" : "s were"} left out because ${r.rejected.length === 1 ? "it" : "they"} added things you didn't say.` : ""}</div>
+        ${r.added.length ? `<ul class="bul" style="margin-top:6px">${r.added.map((x) => `<li>${esc(x.title)}</li>`).join("")}</ul>` : ""}
+        ${r.rejected.length ? `<details class="more" style="margin-top:6px"><summary>Left out (${r.rejected.length})</summary><ul class="bul">${r.rejected.slice(0, 8).map((x) => `<li>${esc(x.text)} <span class="muted">${esc((x.why || []).join("; "))}</span></li>`).join("")}</ul></details>` : ""}`;
+      onChange && onChange(r);
+    };
   }
 
   // ---------- Check & improve: the recruiter checklist and suggested rewrites ----------
@@ -351,6 +414,10 @@
       <div data-vt-out></div>
       <div class="section-t">What recruiters will notice</div>
       <div data-checks><div class="muted">Checking...</div></div>
+      <div class="section-t">Fill out my page</div>
+      <p class="hint" style="margin:-4px 0 0">A short resume looks thin to a recruiter. A few questions about what people usually leave out: other work, training with its year, records and recognition, volunteering, school, and the numbers behind your lines.</p>
+      <div class="row-actions"><button type="button" class="btn" data-fill-open>${icon("plus")}Fill out my page</button></div>
+      <div data-fill></div>
       <div class="section-t">Remember more</div>
       <p class="hint" style="margin:-4px 0 0">Most people forget things they did. Pick a job and answer a few yes/no questions about what people in that job usually do.</p>
       <div class="sub-list" data-remember></div>
@@ -389,6 +456,7 @@
           <small class="hint">Advice only: none of this goes on your resume until you have it and add it yourself.</small></div>` : ""}`;
       onChange && onChange();
     };
+    el.querySelector("[data-fill-open]").onclick = (e) => { e.currentTarget.hidden = true; fillPage(el.querySelector("[data-fill]"), cfg, () => { drawChecks(); onChange && onChange(); }); };
     const drawChecks = async () => {
       const r = await api("/api/resume/check", {});
       const host = el.querySelector("[data-checks]");

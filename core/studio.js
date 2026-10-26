@@ -32,7 +32,7 @@ export function checklist(profile, answers = {}, fit = null) {
 
   if (fit) {
     if (fit.overflow) add("length", "fix", "It runs past one page", "Recruiters spend seconds on a resume; one page is the rule for most jobs. Remove or shorten a few lines.");
-    else if (fit.slack > 200) add("length", "tip", "There's room for more", `About ${Math.round(fit.slack / 12)} empty lines at the bottom. Add another job, project or a few lines about what you did.`);
+    else if (fit.slack > 200) add("length", "tip", "There's room for more", `About ${Math.round(fit.slack / 12)} empty lines at the bottom. Use "Fill out my page" below: a few questions about other work, training and records that people usually leave out.`);
     else add("length", "good", "Fits on one page", "One page, with little wasted space.");
   }
 
@@ -54,6 +54,8 @@ export function checklist(profile, answers = {}, fit = null) {
   if (long.length) add("long", "fix", "Shorten long lines", "One or two lines each. Long lines get skipped.", long.map((b) => ({ ...b, why: `${b.text.length} characters` })));
   const short = bullets.filter((b) => words(b.text).length < 4);
   if (short.length) add("short", "tip", "Say a little more", "A line of two or three words doesn't show what you did or how well.", short.map((b) => ({ ...b, why: "very short" })));
+  const casual = bullets.filter((b) => CASUAL.test(b.text));
+  if (casual.length) add("casual", "fix", "Make these sound like a resume", "These read the way people talk (\"take calls\", \"like cars in ditches\", \"guys\"). Recruiters expect the trade's professional wording for the same facts.", casual.map((b) => ({ ...b, why: casualBits(b.text)[0] })));
   const cliche = [...bullets, ...arr(p.summaries).map((s) => ({ path: `summaries.${s.id}`, text: s.text }))].filter((b) => CLICHE.test(b.text));
   if (cliche.length) add("cliche", "fix", "Swap buzzwords for facts", "\"Hard-working team player\" is on every resume. Show it with something you did instead.", cliche.map((b) => ({ ...b, why: (b.text.match(CLICHE) || [""])[0] })));
   const banned = bullets.filter((b) => Profile.textIssues(b.text, p).some((x) => /^uses/.test(x)));
@@ -64,11 +66,16 @@ export function checklist(profile, answers = {}, fit = null) {
       bullets.filter((b) => !HAS_NUMBER.test(b.text)).slice(0, 8).map((b) => ({ ...b, why: "no number" })));
     else add("numbers", "good", "Lines show size and results", `${withNum} of ${bullets.length} lines have a number.`);
   }
-  for (const e of arr(p.experience)) {
-    const n = arr(e.bullets).length;
-    if (n === 1) add(`few-${e.id}`, "tip", `Add a line to ${e.title}`, "Two to four lines per job looks complete.");
-    if (n > 6) add(`many-${e.id}`, "tip", `Trim ${e.title}`, `It has ${n} lines; recruiters read three or four. The app picks the best ones per job, but fewer, stronger lines help.`);
-  }
+  // Lines per job as the resume shows them: 3 to 5 for the latest job, 2 or 3 for the others. Extra approved
+  // lines are fine: they stay available for tailoring to a posting.
+  const shown = new Map();
+  const lay = arr(p.bases)[0];
+  for (const sec of arr(lay && lay.sections)) for (const it of arr(sec.items)) shown.set(it.id, arr(it.bullets).length);
+  arr(p.experience).forEach((e, i) => {
+    const n = shown.has(e.id) ? shown.get(e.id) : Math.min(arr(e.bullets).length, i === 0 ? 5 : 3);
+    if (n === 1) add(`few-${e.id}`, "tip", `Add a line to ${e.title}`, "Two or three lines per job looks complete.");
+    if (n > (i === 0 ? 5 : 3)) add(`many-${e.id}`, "tip", `Trim ${e.title} on the page`, `The layout shows ${n} lines; recruiters read ${i === 0 ? "3 to 5 for the latest job" : "2 or 3 for older jobs"}.`);
+  });
   const dates = arr(p.experience).map((e) => e.dates).filter(Boolean);
   const styles = new Set(dates.map((d) => (/\b[A-Z][a-z]{2,8}\.? \d{4}/.test(d) ? "month" : /\d{1,2}\/\d{4}/.test(d) ? "slash" : "year")));
   if (styles.size > 1) add("dates", "fix", "Write dates the same way", "Pick one style, such as \"Jun 2023 - Present\", for every job.", arr(p.experience).map((e) => ({ path: `experience.${e.id}`, text: e.dates, why: e.title })));
@@ -152,11 +159,22 @@ const REWORD_OK = new Set(("handle handled handles manage managed operate operat
   "with using during across while through within under into onto from each every daily routine regular regularly short notice quickly safely accurately on-site onsite site sites " +
   "vehicle vehicles car cars customer customers client clients hire hires employee employees staff team crew scene scenes shift shifts call calls job jobs work tasks task equipment tool tools " +
   "specification specifications spec specs order orders request requests issue issues problem problems service services standard standards quality new including such " +
-  "pre trip post inspection inspections run runs ran conduct conducted carry carried").split(/\s+/));
+  "pre trip post inspection inspections run runs ran conduct conducted carry carried " +
+  "law enforcement officer officers incident incidents roadside assistance recovery recoveries off-road road field signage dispatched dispatch fleet commercial " +
+  "operation operations procedure procedures protocol protocols documentation paperwork accurate accurately timely promptly efficiently professionally " +
+  "fabricate fabricated fabrication production produced specified per according requirement requirements").split(/\s+/));
 export function newWords(text, sources) {
   const have = new Set(lineWords(sources.join(" ")));
   return [...lineWords(text)].filter((w) => !have.has(w) && !REWORD_OK.has(w) && ![...REWORD_OK].some((x) => x.replace(/(ing|ed|es|s|e)$/, "") === w));
 }
+// New words that make a claim (a system, a result, being in charge) are never allowed in a rewording.
+const CLAIM_WORDS = /^(specializ|specialist|system|software|ticket|crm|sla|database|network|server|compliance|complian|regulat|osha|dot|mutcd|certif|licen|led|lead|supervis|manag|direct|oversaw|improv|reduc|increas|sav|cut|boost|award|expert|senior|budget|revenue|profit|cost|percent|zero|100)/;
+// Checked against every new word, even ones REWORD_OK allows elsewhere ("managed" is a fine verb only when they said so).
+export const claimWords = (text, sources) => { const have = new Set(lineWords(sources.join(" "))); return [...lineWords(text)].filter((w) => !have.has(w) && CLAIM_WORDS.test(w)); };
+
+// The way people talk, not the way a resume reads: flagged by the recruiter check and rewritten by the polish step.
+export const CASUAL = /\b(guys|stuff|things|a lot of|lots of|kinda|pretty much|got to|gotta|went out|around fast|real quick|on it\b|hard ones?|like (cars|trucks|a|the)\b|that (dispatch|the boss|they) (sends?|gave|gives)|take( the| dispatch)? calls|deal with|helped out|did (the|a|some)\b|a bunch|tons of|basically|super\b|okay|ok\b)/i;
+export const casualBits = (t) => (String(t).match(new RegExp(CASUAL.source, "gi")) || []).map((x) => x.trim());
 
 // Accept a suggested line only if it adds nothing and breaks no rule; otherwise say why.
 // original: the line being reworded, whose limiting words must survive.
@@ -169,6 +187,9 @@ export function vet(text, sources, profile, allowed = [], original = null) {
   if (original) for (const h of droppedHedges(original, t)) why.push(`drops "${h}", which makes the claim bigger`);
   for (const h of droppedApprox(sources, t)) if (!why.some((w) => w.includes(`"${h.split(" ")[0]}"`))) why.push(`says the number without "${h.split(" ").slice(0, -1).join(" ")}", which makes a guess sound exact`);
   if (PRONOUN.test(t)) why.push("uses I/my");
+  // Being in charge, a system, a result: a word like that has to come from them.
+  const claims = claimWords(t, [...sources, ...allowed]);
+  if (claims.length && !why.some((w) => /claim/.test(w))) why.push(`adds a claim you didn't make: ${claims.slice(0, 3).join(", ")}`);
   return { ok: !why.length, why };
 }
 
@@ -188,10 +209,11 @@ export function knownTerms(profile, answers = {}) {
 export const GUIDE = `How recruiters want resume lines written:
 - Start with a strong action verb (Served, Trained, Built, Organized, Resolved, Cut, Opened, Stocked, Led). Past tense for anything already done or finished, even at a current job; present tense only for ongoing daily duties at a current job. Never change the tense of a line that already uses the past tense for something finished.
 - Never describe the person with praise they didn't use themselves (proven, expert, experienced, seasoned, high-performing, exceptional). Keep every word that limits a claim (about, helped, part-time, assisted, leaning, shared).
-- Plain, concrete words. Avoid vague corporate phrases ("service delivery", "client relationships", "stakeholders", "various tasks") when a plain one says it ("families asked me back").
+- Professional, specific wording: the terms people in that trade use on a resume, never the casual way someone talks about their day. "Take calls and drive to breakdowns" -> "Respond to dispatched breakdown and accident calls"; "cars in ditches" -> "off-road vehicle recoveries"; "talk with police" -> "coordinate with law enforcement on scene"; "ran the vinyl cutter" -> "operated the vinyl cutter"; "went out with the crew" -> "installed ... as part of a field crew"; "fast" -> "on short notice"; "guys" -> "hires"; "like X" -> "including X". The same facts, better words; never a bigger claim.
+- Avoid empty corporate phrases ("service delivery", "stakeholders", "various tasks", "synergy").
 - Say what was done and, when the person gave one, the size or result (how many, how much, how often, what improved). Every number they gave goes into a line, exactly as given (with its "about").
 - One line each: about 8 to 20 words, at most 150 characters. No "I", "my" or "we". No buzzwords (hard-working, team player, detail-oriented, passionate, results-driven).
-- Plain words a hiring manager in that field uses. Keep the person's own specific terms (machines, tools, product names).
+- Words a hiring manager in that field uses. Keep the person's own specific terms (machines, tools, product names).
 - No em dashes.
 - The summary starts with what they do or did ("Tow truck driver with a Class B CDL..."), never with "Possesses", "Skilled in" or "Experienced".
 THE HONESTY RULE (most important): use only facts the person gave. Never add a number, percentage, amount, tool, employer, certification, title or result they did not state. If a line would be stronger with a number or result you don't have, do NOT guess: write the honest line without it and ask a short question to get it.`;
@@ -337,13 +359,17 @@ Return JSON only:
   p.experience.push(...newExp);
   let sumText = Profile.stripDashes(String(r.summary || "")).trim();
   let sv = vet(sumText, [facts], p, known);
+  // A summary never talks about pay or wanting to leave.
+  const PAY = /\b(pay|pays|paid|salary|money|wages?)\b/i;
+  if (sumText && PAY.test(sumText)) sv = { ok: false, why: [...sv.why, "talks about pay; say what you bring instead"] };
   // One more try for the summary, saying exactly what was wrong with the first.
   if (sumText && !sv.ok) {
     try {
       const again = await ask([{ role: "system", content: `Write a 2 to 3 sentence resume summary from a person's own answers, aimed at the job they want next.\n${GUIDE}\nYour last try was rejected because it ${sv.why.join("; ")}. Avoid these words too: ${arr((p.rules || {}).bannedWords).join(", ")}.\nReturn JSON only: {"summary": "..."}` },
         { role: "user", content: facts }]);
       const t2 = Profile.stripDashes(String(again.summary || "")).trim();
-      const v2 = vet(t2, [facts], p, known);
+      let v2 = vet(t2, [facts], p, known);
+      if (PAY.test(t2)) v2 = { ok: false, why: [...v2.why, "talks about pay"] };
       if (v2.ok) { sumText = t2; sv = v2; }
     } catch { /* keep the first result's verdict */ }
   }
@@ -419,15 +445,26 @@ Return JSON only: {"lines": [{"i": 0, "keep": false, "text": "...", "why": "..."
 }
 
 // The user answered a question: rewrite that one line with their answer as a new fact.
-export async function rewriteWithAnswer(profile, answers, { path, original, question, answer }) {
+export async function rewriteWithAnswer(profile, answers, { path, original, question, answer, current = null }) {
   const sys = `You rewrite one resume line using a fact the person just gave.
 ${GUIDE}
 Return JSON only: {"text": "...", "why": "..."}`;
-  const r = await ask([{ role: "system", content: sys }, { role: "user", content: `LINE: ${original}\nQUESTION: ${question}\nTHEIR ANSWER: ${answer}` }]);
-  const text = Profile.stripDashes(String(r.text || "")).trim();
+  const r = await ask([{ role: "system", content: sys }, { role: "user", content: `LINE: ${original}\nQUESTION: ${question}\nTHEIR ANSWER: ${answer}${current === null ? "" : current ? "\nTHIS IS THEIR CURRENT JOB: keep the present tense" : "\nTHIS IS A PAST JOB: past tense"}` }]);
+  let text = Profile.stripDashes(String(r.text || "")).trim();
   const v = vet(text, [original, answer], approvedOnly(profile), knownTerms(approvedOnly(profile), answers), original);
   if (!v.ok) return { path, original, text: "", why: "", error: `The rewrite ${v.why.join("; ")}, so it wasn't used. You can edit the line yourself.` };
-  const fc = await factCheck([{ text, source: `${original} ${answer}` }]);
+  let fc = await factCheck([{ text, source: `${original} ${answer}` }]);
+  // The second check doubted something: one more try that leaves it out, through both checks again.
+  if (fc && fc[0]) {
+    try {
+      const r2 = await ask([{ role: "system", content: sys }, { role: "user", content: `LINE: ${original}\nQUESTION: ${question}\nTHEIR ANSWER: ${answer}\nYour last try "${text}" was rejected because "${fc[0]}" isn't in the line or the answer. Use only the line's own words plus their answer.` }]);
+      const t2 = Profile.stripDashes(String(r2.text || "")).trim();
+      if (t2 && vet(t2, [original, answer], approvedOnly(profile), knownTerms(approvedOnly(profile), answers), original).ok) {
+        const fc2 = await factCheck([{ text: t2, source: `${original} ${answer}` }]);
+        if (fc2 && !fc2[0]) { text = t2; fc = fc2; r.why = r2.why; }
+      }
+    } catch { /* the first verdict stands */ }
+  }
   if (fc === null || fc[0]) return { path, original, text: "", why: "", error: fc === null ? "The rewrite couldn't be double-checked, so it wasn't used. Try again." : `The rewrite added "${fc[0]}", which you didn't say, so it wasn't used.` };
   return { path, original, text, why: String(r.why || "").slice(0, 200), question: "" };
 }

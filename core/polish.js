@@ -8,16 +8,20 @@
 // Every rewritten line passes the same honesty checks as the rest of the app (vet, then factCheck).
 // The rules come from docs/resume-research.md.
 import { Profile, Tailor, approvedOnly } from "./engine.js";
-import { GUIDE, ask, factCheck, knownTerms, newWords, numbersIn, sameLine, specificTerms, vet as vet0 } from "./studio.js";
+import { GUIDE, ask, casualBits, claimWords, factCheck, knownTerms, newWords, numbersIn, sameLine, specificTerms, vet as vet0 } from "./studio.js";
 
-// The app's honesty check, plus: a rewording may bring in at most two new plain words
-// (a rewording from "fixed" to "troubleshot" is fine; "using a ticketing system" is a new claim).
-function vet(text, sources, profile, allowed, original) {
+// The app's honesty check, plus: a rewording may use professional words for the same facts, but never a
+// word that makes a new claim ("using a ticketing system", "managed", "reduced"), and not many new words at all.
+export function vet(text, sources, profile, allowed, original) {
   const v = vet0(text, sources, profile, allowed, original);
   if (original === undefined) return v;
   const why = [...v.why];
   const extra = newWords(text, sources).filter((w) => !allowed.some((a) => String(a).toLowerCase().startsWith(w)));
-  if (extra.length > 2) why.push(`adds words your line doesn't say: ${extra.slice(0, 4).join(", ")}`);
+  const claims = claimWords(text, sources);
+  if (claims.length && !why.some((w) => /claim/.test(w))) why.push(`adds a claim your line doesn't make: ${claims.slice(0, 3).join(", ")}`);
+  else if (extra.length > 4) why.push(`adds words your line doesn't say: ${extra.slice(0, 4).join(", ")}`);
+  const casual = casualBits(text);
+  if (casual.length) why.push(`reads casually ("${casual[0]}"); a resume says it more formally`);
   // A number they gave is the strongest part of a line: a rewording may not lose it.
   const kept = numbersIn(text);
   const lost = [...numbersIn(original)].filter((n) => !kept.has(n));
@@ -43,7 +47,7 @@ export const POLISH_RULES = `What recruiters want:
 - Turn "responsible for", "duties included", "tasked with", "worked on", "helped with" into the task's own verb ("Responsible for towing cars" -> "Tow cars"), but keep "helped" when they only helped.
 - Plain, concrete verbs: never "spearheaded", "leveraged", "orchestrated", "transformed" or other big words their facts don't support.
 - Every number they gave stays exactly as they gave it, with its "about"; use each one somewhere.
-- Professional wording of their own facts: "two new guys" -> "two new hires"; proper capitals for names ("City of Sacramento"); standard abbreviations only (CDL, DOT).
+- Professional, technical register: the terms people in their trade use on a resume, never everyday talk. "Take dispatch calls and drive to breakdowns" -> "Respond to dispatched breakdown and accident calls"; "hard recoveries like cars in ditches" -> "complex off-road vehicle recoveries"; "talking with police" -> "coordinating with law enforcement on scene"; "turned signs around fast" -> "produced signs on short notice"; "went out with the crew" -> "installed signs as part of a field crew"; "two new guys" -> "two new hires". Proper capitals for names ("City of Sacramento"); standard abbreviations only (CDL, DOT). Same facts, never a bigger claim, and no corporate filler.
 - Tense: present for the current job's ongoing work, past for everything else. No trailing full stops.
 - Never mention pay, money wanted, or why they want to leave ("a role that pays better"). If the job they want is vague, aim at the work their facts show instead.
 - Merge two lines that say nearly the same thing. Drop the weakest lines rather than keeping many.`;
@@ -86,12 +90,13 @@ function sourcesOf(e) { return arr(e.bullets).map((b) => [b.text, b.source].filt
 // ---------- after the creator: the strongest lines, a headline and summary, grouped skills ----------
 
 // profile: the creator's output (new lines unapproved). ids: the experience entries the creator just made.
-export async function polishCreated(profile, { target = "", ids = null, skillIds = null, answers = {} } = {}) {
+// linesOnly: just the lines (for entries added to an existing resume); the headline, summary and skills stay as they are.
+export async function polishCreated(profile, { target = "", ids = null, skillIds = null, answers = {}, linesOnly = false } = {}) {
   const p = JSON.parse(JSON.stringify(profile));
   const entries = arr(p.experience).filter((e) => !ids || ids.includes(e.id));
   if (!entries.length) return { profile: p, notes: [], rejected: [] };
   const ordered = [...entries];
-  const limit = (e, i) => (i === 0 ? (isCurrent(e) ? LINES.current : LINES.recent) : LINES.older);
+  const limit = (e, i) => (linesOnly ? (isCurrent(e) ? LINES.recent : LINES.older) : i === 0 ? (isCurrent(e) ? LINES.current : LINES.recent) : LINES.older);
   // Only the skill lists the creator just made are regrouped; ones the person already approved stay as they are.
   const mine = arr(p.skills).filter((s) => (skillIds ? skillIds.includes(s.id) : !s.approved));
   const skillItems = [...new Set(mine.flatMap((s) => String(s.items).split(/\s*,\s*/)).filter(Boolean))];
@@ -112,19 +117,45 @@ Return JSON only: {"jobs": [{"i": 0, "lines": [{"text": "...", "from": [0, 3]}]}
   const r = await ask([{ role: "system", content: sys }, { role: "user", content: JSON.stringify(payload) }]);
   const known = knownTerms(p, answers);
   const notes = [], rejected = [], toCheck = [];
+  // First the choices and their wording; a line that fails a check gets one more try, with the reason.
+  const picks = [];
   for (const [i, e] of ordered.entries()) {
     const out = arr(r.jobs).find((x) => Number(x.i) === i);
     if (!out || !arr(out.lines).length) continue;
-    const old = arr(e.bullets);
-    const used = new Set(), next = [];
-    const taken = new Set();
+    const old = arr(e.bullets), used = new Set();
     for (const l of arr(out.lines).slice(0, limit(e, i))) {
       const from = arr(l.from).map(Number).filter((k) => old[k] && !used.has(k));
       if (!from.length) continue;
-      const text = clean(l.text);
+      from.forEach((k) => used.add(k));
       const src = from.map((k) => [old[k].text, old[k].source].filter(Boolean).join(". "));
       const original = from.map((k) => old[k].text).join(" ");
-      const v = vet(text, [...src, e.title, e.org || ""], p, [...known, ...specificTerms(e.title), ...specificTerms(e.org)], original);
+      const allowed = [...known, ...specificTerms(e.title), ...specificTerms(e.org)];
+      const check = (t) => vet(clean(t), [...src, e.title, e.org || ""], p, allowed, original);
+      const text = clean(l.text);
+      picks.push({ i, e, from, src, original, check, text, v: check(text) });
+    }
+  }
+  const retry = picks.filter((x) => !x.v.ok || !x.text);
+  if (retry.length) {
+    try {
+      const r2 = await ask([{ role: "system", content: `Rewrite each resume line in professional, specific wording a recruiter in that trade expects, using only its facts.\n${GUIDE}\n${POLISH_RULES}\nEach item says why the last try was rejected; fix exactly that. Keep every number with its "about".\nReturn JSON only: {"lines": [{"n": 0, "text": "..."}]}` },
+        { role: "user", content: retry.map((x, n) => `${n}. JOB: ${x.e.title}${isCurrent(x.e) ? " (current job: present tense)" : " (past job: past tense)"}\n   THEIR LINE: ${x.original}\n   LAST TRY: ${x.text || "(none)"} -> rejected: ${x.v.why.join("; ") || "empty"}`).join("\n") }]);
+      for (const l of arr(r2.lines)) {
+        const x = retry[Number(l.n)];
+        if (!x) continue;
+        const v = x.check(l.text);
+        if (v.ok) { x.text = clean(l.text); x.v = v; }
+      }
+    } catch { /* keep the first try's verdicts */ }
+  }
+  for (const [i, e] of ordered.entries()) {
+    const mine = picks.filter((x) => x.i === i);
+    if (!mine.length) continue;
+    const old = arr(e.bullets);
+    const used = new Set(), next = [];
+    const taken = new Set();
+    for (const x of mine) {
+      const { from, src, text, v } = x;
       const base = old[from[0]];
       if (v.ok && text) {
         const b = { ...base, id: slug(text.split(/\s+/).slice(0, 2).join(" "), taken), text, source: arr(from.map((k) => old[k].source)).filter(Boolean).join(" / ") || base.source, approved: false };
@@ -133,7 +164,7 @@ Return JSON only: {"jobs": [{"i": 0, "lines": [{"text": "...", "from": [0, 3]}]}
         toCheck.push({ b, text, source: src.join(". ") });
       } else {
         rejected.push({ job: e.title, text, why: v.why });
-        if (!next.some((x) => sameLine(x.text, base.text))) next.push({ ...base, approved: false, id: slug(base.text.split(/\s+/).slice(0, 2).join(" "), taken) });
+        if (!next.some((y) => sameLine(y.text, base.text))) next.push({ ...base, approved: false, id: slug(base.text.split(/\s+/).slice(0, 2).join(" "), taken), ...(casualBits(base.text).length ? { warning: "This line still reads casually. Reword it, or use Improve on the Resume page." } : {}) });
       }
       from.forEach((k) => used.add(k));
     }
@@ -148,7 +179,7 @@ Return JSON only: {"jobs": [{"i": 0, "lines": [{"text": "...", "from": [0, 3]}]}
   // Headline and summary: their facts only, through the same checks; the old ones stay if these fail.
   const facts = ordered.map((e) => [e.title, e.org, e.dates, ...sourcesOf(e)].join(". ")).join("\n") + "\n" + skillItems.join(", ") + "\n" + target;
   r.fallbackHeadline = plainHeadline(ordered[0], arr(p.skills).filter((x) => /certif|licen/i.test(x.label)));
-  const top = await topOfPage(r, facts, p, known, target ? `aimed at ${target} jobs` : "aimed at the work their facts show");
+  const top = linesOnly ? { headline: "", summary: "", rejected: [] } : await topOfPage(r, facts, p, known, target ? `aimed at ${target} jobs` : "aimed at the work their facts show");
   rejected.push(...top.rejected);
   const headline = top.headline, summary = top.summary;
   if (headline) {
@@ -191,7 +222,7 @@ Return JSON only: {"jobs": [{"i": 0, "lines": [{"text": "...", "from": [0, 3]}]}
     if (placedOnce(x) || soft.includes(x)) continue;
     if (SOFT.test(x)) soft.push(x); else buckets.get("Skills").push(x);
   }
-  if (mine.length && skillItems.length) {
+  if (!linesOnly && mine.length && skillItems.length) {
     const oldIds = new Set(mine.map((s0) => s0.id));
     const taken = new Set(arr(p.skills).filter((s0) => !oldIds.has(s0.id)).map((s0) => s0.id));
     const fresh = [...buckets].filter(([, items]) => items.length).map(([label, items]) => ({ id: slug(label, taken), label, items: items.join(", "), approved: false }));
@@ -314,12 +345,14 @@ Return JSON only: {"jobs": [{"id": "...", "lines": [{"id": "...", "text": "rewor
 
 // The 10-point recruiter-check rubric from docs/resume-research.md.
 export const REVIEW_RULES = `Check it against these, the way a recruiter does in the first 7 seconds and then line by line:
+Never ask for a bulleted summary or one that starts with a verb: the summary is two or three sentences that say what the person is.
 1. 7-second test: the headline, the most recent title and the key license or certification are readable in the top third.
 2. Target match: the job they want (or a close title) is in the headline or summary.
 3. Line form: every line starts with a verb, uses the right tense (present for the current job), has no "I"/"my", and runs 2 printed lines or fewer.
 4. Accomplishments: at least half the lines show scope (how many, how often, what equipment, who was served) or a result, not just a duty. Volume they gave ("about 8 to 12 calls a shift") and a record ("never damaged a customer's car") ARE accomplishments: praise them, never ask to remove them. When a line lacks one, say what to ASK the person.
 5. No fluff: no "responsible for", "duties included", "hard-working", "team player", "detail-oriented", no inflated verbs ("spearheaded", "leveraged").
-6. Fact fidelity: nothing looks inflated or vague.
+6. Professional register: every line reads like a professional resume in that trade, not everyday talk ("take calls", "like cars in ditches", "went out with the crew", "around fast", "guys" fail). Flag EVERY casual line and give the professional wording of the same facts in the fix.
+6b. Fact fidelity: nothing looks inflated or vague.
 7. Line budget: current job 3 to 5 lines, older jobs 2 or 3, no near-duplicate lines, one page.
 8. Skills: grouped and labeled (licenses and certifications, equipment and tools, software and systems, languages); hard skills only.
 9. Format: dates on every job, standard headings, consistent punctuation (no trailing full stops), proper capitals.
@@ -341,7 +374,10 @@ export async function recruiterReview(profile, { base = null, target = "" } = {}
 ${REVIEW_RULES}
 Be specific and kind. Never suggest adding facts the resume doesn't show, and never put an example number, percentage, outcome or fact in a fix ("zero violations", "100% uptime", "e.g. heavy equipment"): when a detail would help, say only what to ask the person.
 Return JSON only: {"score": 1-10, "verdict": "one sentence", "strengths": ["..."], "items": [{"path": "the line's path, or 'headline', 'summary', 'skills'", "problem": "...", "fix": "what to change, without inventing facts"}]}`;
-  const r = await ask([{ role: "system", content: sys }, { role: "user", content: JSON.stringify(doc) }]);
+  let r = await ask([{ role: "system", content: sys }, { role: "user", content: JSON.stringify(doc) }]);
+  // An answer without a score or verdict is a failed read: one more try, then say so.
+  if (!Number(r.score) || !String(r.verdict || "").trim()) r = await ask([{ role: "system", content: sys }, { role: "user", content: JSON.stringify(doc) }]);
+  if (!Number(r.score) || !String(r.verdict || "").trim()) throw new Error("The recruiter read didn't come back complete. Try again.");
   const known = new Set(["headline", "summary", "skills", "layout"]);
   for (const s of doc.sections) for (const it of s.items) for (const l of it.lines) known.add(l.path);
   const items = arr(r.items).map((x) => ({ path: known.has(x.path) ? x.path : "layout", problem: String(x.problem || "").slice(0, 300), fix: String(x.fix || "").slice(0, 300) })).filter((x) => x.problem).slice(0, 12);

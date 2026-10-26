@@ -135,3 +135,17 @@ test("a rewording may not lose their number; a summary says what they are; a pla
   assert.strictEqual(skills["Licenses & Certifications"], "Class B CDL");
   assert.strictEqual(skills["Equipment & Tools"], "Winch, Vinyl cutter");
 });
+
+test("a casual or failed line gets one more try with the reason; still casual means a note for them", async () => {
+  let asked = "";
+  reply = (sys, user) => {
+    if (/fact-check/.test(sys)) return { lines: [] };
+    if (/Rewrite each resume line in professional/.test(sys)) { asked = user; return { lines: [{ n: 0, text: "Trained two new hires on the vinyl cutter" }, { n: 1, text: "Made road closure signs real quick in emergencies" }] }; }
+    return { jobs: [{ i: 0, lines: [{ text: "Trained two new guys on the vinyl cutter", from: [0] }, { text: "Made road closure signs real quick", from: [1] }] }], headline: "Class B CDL tow truck driver", summary: "Tow truck driver with a Class B CDL" };
+  };
+  const r = await P.polishCreated(created(), { ids: ["sign"], skillIds: [] });
+  assert.match(asked, /reads casually/, "the retry is told why");
+  const sign = r.profile.experience.find((e) => e.id === "sign");
+  assert.strictEqual(sign.bullets[0].text, "Trained two new hires on the vinyl cutter");
+  assert.ok(!sign.bullets.some((b) => /real quick/.test(b.text)), "a still-casual rewording is never used");
+});

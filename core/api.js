@@ -16,6 +16,7 @@ import { windowModeOf } from "./apply.js";
 import { AGENCIES, lastSearch } from "./discover.js";
 import { suggestTitles } from "./suggest.js";
 import { makeVersion, polishCreated, recruiterReview } from "./polish.js";
+import { applyFill, fillQuestions } from "./fill.js";
 import { listAccounts, passwordProblems } from "./accounts.js";
 import { addJob } from "./addjob.js";
 import { addRecalled, applySuggestion, checklist, createFromInterview, recallFor, rewriteWithAnswer, suggestImprovements } from "./studio.js";
@@ -275,6 +276,17 @@ const ROUTES = {
   "POST /api/resume/review": async (b) => {
     if (!aiSettings().apiKey) return bad("Connect an AI first (Settings > AI).");
     try { return await recruiterReview(getProfile(), { base: b.base, target: b.target }); } catch (e) { return bad(e.message); }
+  },
+  // "Fill out my page": questions about what people usually leave out, and the answers turned into pieces.
+  "POST /api/resume/fill/questions": async () => {
+    if (!getProfile()) return bad("Make your resume first.");
+    if (!aiSettings().apiKey) return { ...(await fillQuestions({ ...getProfile(), bases: [] })), numbers: [] };
+    try { return await fillQuestions(getProfile()); } catch (e) { return bad(e.message); }
+  },
+  "POST /api/resume/fill/apply": async (b) => {
+    if (!getProfile()) return bad("Make your resume first.");
+    if (!aiSettings().apiKey) return bad("Connect an AI first (Settings > AI).");
+    try { const r = await applyFill(getProfile(), b.input || {}, getAnswers()); placeProjects(r.profile); saveProfile(r.profile); return r; } catch (e) { return bad(e.message); }
   },
   "POST /api/resume/check": async () => {
     const raw = getProfile();

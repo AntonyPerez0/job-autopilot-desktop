@@ -51,6 +51,20 @@ test("recruiter checklist", () => {
   assert.strictEqual(S.checklist(p, {}, { overflow: true }).find((x) => x.id === "length").level, "fix");
 });
 
+test("casual wording is caught; professional wording and claim words are told apart", () => {
+  assert.deepStrictEqual(S.casualBits("Run hard recoveries like cars in ditches that dispatch sends"), ["like cars", "that dispatch sends"]);
+  assert.deepStrictEqual(S.casualBits("Trained two new guys on the vinyl cutter"), ["guys"]);
+  assert.deepStrictEqual(S.casualBits("Respond to dispatched breakdown and accident calls"), []);
+  assert.deepStrictEqual(S.claimWords("Coordinate with law enforcement on scene", ["talk with police at accident scenes"]), [], "a professional word for the same fact");
+  assert.deepStrictEqual(S.claimWords("Logged calls in a ticketing system", ["took calls"]).sort(), ["system", "ticket"], "a system they never named");
+  assert.ok(S.claimWords("Managed the crew", ["went out with the crew"]).length, "being in charge is a claim");
+  const p = approvedExample(Profile);
+  p.experience[0].bullets[0].text = "Did a lot of stuff for the guys in the shop";
+  const c = Object.fromEntries(S.checklist(p, exampleAnswers(), { overflow: false, slack: 40 }).map((x) => [x.id, x]));
+  assert.strictEqual(c.casual.level, "fix");
+  assert.strictEqual(c.casual.items[0].path, `experience.acme.${p.experience[0].bullets[0].id}`);
+});
+
 test("create: lines from the person's answers; invented facts are dropped", async () => {
   reply = () => ({
     summary: "Friendly cashier with two years serving customers at Corner Market.",
