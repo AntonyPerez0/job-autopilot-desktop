@@ -336,7 +336,7 @@ export async function recruiterReview(profile, { base = null, target = "" } = {}
     sections: arr(spec.sections).map((s) => ({ kind: s.kind, items: arr(s.items).map((it) => {
       const e = [...arr(p.experience), ...arr(p.projects)].find((x) => x.id === it.id) || {};
       return { title: e.title, org: e.org, dates: e.dates, lines: arr(it.bullets).map((id) => ({ path: `${s.kind}.${e.id}.${id}`, text: (arr(e.bullets).find((x) => x.id === id) || {}).text })).filter((x) => x.text) };
-    }) })) };
+    }), ...(s.kind === "education" ? { entries: arr(p.education).map((e) => [e.school, e.detail, e.dates].filter(Boolean).join(", ")) } : {}) })) };
   const sys = `You are an experienced recruiter${target ? ` hiring for ${target} roles` : ""} reviewing a one-page resume.
 ${REVIEW_RULES}
 Be specific and kind. Never suggest adding facts the resume doesn't show, and never put an example number, percentage, outcome or fact in a fix ("zero violations", "100% uptime", "e.g. heavy equipment"): when a detail would help, say only what to ask the person.
@@ -345,5 +345,5 @@ Return JSON only: {"score": 1-10, "verdict": "one sentence", "strengths": ["..."
   const known = new Set(["headline", "summary", "skills", "layout"]);
   for (const s of doc.sections) for (const it of s.items) for (const l of it.lines) known.add(l.path);
   const items = arr(r.items).map((x) => ({ path: known.has(x.path) ? x.path : "layout", problem: String(x.problem || "").slice(0, 300), fix: String(x.fix || "").slice(0, 300) })).filter((x) => x.problem).slice(0, 12);
-  return JSON.parse(JSON.stringify({ score: Math.max(1, Math.min(10, Number(r.score) || 0)), verdict: String(r.verdict || "").slice(0, 200), strengths: arr(r.strengths).map(String).slice(0, 4), items, base: b.id }));
+  return JSON.parse(JSON.stringify({ score: Math.max(1, Math.min(10, Number(r.score) || 0)), verdict: String(r.verdict || "").slice(0, 400), strengths: arr(r.strengths).map(String).slice(0, 4), items, base: b.id }));
 }
