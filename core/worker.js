@@ -68,7 +68,7 @@ const TRANSIENT = /timeout|timed out|net::|ECONN|socket|Target (page|closed)|bro
 
 function nextJob() {
   return db.prepare(`SELECT * FROM jobs WHERE status = 'queued' AND attempts < ?
-    ORDER BY (details LIKE '%"addedByUser":true%') DESC, (work_mode = 'remote') ASC, posted_at DESC LIMIT 1`).get(CONFIG.maxAttempts);
+    ORDER BY (reason LIKE 'you answered %') DESC, (details LIKE '%"addedByUser":true%') DESC, (work_mode = 'remote') ASC, posted_at DESC LIMIT 1`).get(CONFIG.maxAttempts);
 }
 
 // Applied, mid-submit, or possibly sent (an interrupted submit, here or on another computer).

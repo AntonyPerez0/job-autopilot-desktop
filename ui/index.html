@@ -12,7 +12,7 @@
 <body>
 <script src="icons.js"></script>
 <script>document.documentElement.dataset.platform = (window.ja && window.ja.platform) || "";</script>
-<div class="titlebar" aria-hidden="true"></div>
+<div class="app-top" aria-hidden="true"></div>
 
 <div class="app">
   <aside class="side">
@@ -125,7 +125,7 @@ function humanReason(j) {
   if (j.status === "applied") return "Submitted and confirmed by the employer.";
   if (/^screen:/.test(r)) return r.replace(/^screen:\s*/, "");
   if (/security code/.test(r)) return "Greenhouse wants the verification code it emailed. Connect your mailbox in Settings and this retries on its own.";
-  if (/^could not fill every required field:/.test(r)) return "Required answers missing: " + r.replace(/^could not fill every required field:\s*/, "");
+  if (/^could not fill every required field/.test(r)) return "Waiting for your answer: " + r.replace(/^could not fill every required field( \(page \d+\))?:\s*/, "").replace(/(required, no answer|needs you|still empty): /g, "");
   return r;
 }
 
@@ -364,7 +364,7 @@ async function renderLog() {
 async function openJob(slug) {
   open = await api("/api/job/" + encodeURIComponent(slug));
   if (!open || open.error) return;
-  if (!["answers", "resume", "shots", "posting"].includes(dtab)) dtab = "answers";
+  if (!["answers", "resume", "shots", "posting"].includes(dtab) || (open.asks || []).length) dtab = "answers";
   renderDrawer();
   $("drawer").classList.add("open"); $("scrim").classList.add("open"); $("drawer").setAttribute("aria-hidden", "false");
 }
@@ -382,7 +382,7 @@ function renderDrawer() {
     j.status === "manual" ? `<button class="btn sm primary" onclick="window.ja.openExternal('${esc(j.apply_url || j.url)}')">${icon("ext")}Open the application</button>
       <button class="btn sm" onclick="act('applied-myself')">${icon("check")}I applied</button>` : "",
     ["queued", "manual"].includes(j.status) ? `<button class="btn sm danger" onclick="act('skip')">${icon("skip")}Skip</button>` : "",
-    ["failed", "skipped", "filled"].includes(j.status) ? `<button class="btn sm ${j.status === "filled" && !j.reviewed ? "" : "primary"}" onclick="act('retry')">${icon("retry")}${j.status === "skipped" ? "Queue it" : "Try again"}</button>` : "",
+    ["failed", "skipped", "filled"].includes(j.status) ? `<button class="btn sm ${(j.status === "filled" && !j.reviewed) || (j.asks || []).length ? "" : "primary"}" onclick="act('retry')">${icon("retry")}${j.status === "skipped" ? "Queue it" : "Try again"}</button>` : "",
   ].join("");
   $("drawer").innerHTML = `
     <div class="dr-head">
@@ -397,8 +397,36 @@ function renderDrawer() {
     <div class="tabs">${tabs.map(([k, l]) => `<div class="${dtab === k ? "on" : ""}" onclick="dtab='${k}';renderDrawer()">${l}</div>`).join("")}</div>
     <div class="dr-body">${drawerTab(j, d)}</div>`;
 }
+// Questions the app stopped on: the user answers them here and the job goes back in the queue.
+function askForm(j) {
+  const asks = j.asks || [];
+  if (!asks.length) return "";
+  const company = String(j.company || "").toLowerCase();
+  const control = (q, i) => q.options.length
+    ? `<select name="ask-${i}" class="inp"><option value="">Pick an answer</option>${q.options.map((o) => `<option>${esc(o)}</option>`).join("")}</select>`
+    : q.long ? `<textarea name="ask-${i}" rows="4" class="inp" placeholder="Your answer, in your own words"></textarea>`
+    : `<input name="ask-${i}" class="inp" placeholder="Your answer">`;
+  const everywhere = (q) => !q.long && !(company && q.label.toLowerCase().includes(company));
+  return `<div class="ask" id="ask-form"><h3>Answer to continue</h3>
+    <p class="hint">The app stopped here instead of guessing: these required questions have no answer in your facts. Answer them, and the app fills them in exactly as you wrote and tries again. Only say what's true.</p>
+    ${asks.map((q, i) => `<div class="fld ask-q"><span>${esc(q.label)}</span>${q.note ? `<small>${esc(q.note)}</small>` : ""}${control(q, i)}
+      <label class="check"><input type="checkbox" name="ask-all-${i}" ${everywhere(q) ? "checked" : ""}>Use this answer for other applications that ask the same question</label></div>`).join("")}
+    <div class="row-actions"><button class="btn primary" id="ask-go" onclick="answerAsks()">${icon("check")}Save my answers and try again</button></div><div id="ask-msg"></div></div>`;
+}
+async function answerAsks() {
+  const f = $("ask-form"), asks = open.asks || [];
+  const answers = asks.map((q, i) => ({ label: q.label, value: f.querySelector(`[name="ask-${i}"]`).value.trim(), remember: f.querySelector(`[name="ask-all-${i}"]`).checked }));
+  const left = answers.filter((x) => !x.value);
+  if (left.length) return Forms.msg($("ask-msg"), "err", `Answer every question first (${left.length} left). The application can't go out with a required question empty.`);
+  $("ask-go").disabled = true;
+  const r = await api("/api/job/" + encodeURIComponent(open.slug), { action: "answer", answers });
+  if (r && r.error) { $("ask-go").disabled = false; return Forms.msg($("ask-msg"), "err", r.error); }
+  toast("Saved. The app tries this application again next.");
+  await openJob(open.slug); refresh(true);
+}
 function drawerTab(j, d) {
   if (dtab === "answers") {
+    const ask = askForm(j);
     const kit = (d.kit || []).filter((k) => k.kind !== "blank");
     const p = d.plan || {};
     let h = "";
@@ -410,7 +438,7 @@ function drawerTab(j, d) {
         <div class="a">${esc(k.value || "")}<span class="kind ${k.kind}">${names[k.kind] || k.kind}</span>${k.note && k.kind !== "text" ? `<span class="why">${esc(k.note)}</span>` : ""}</div></div>`).join("")}</div>`;
     }
     if ((p.notClaimed || []).length) h += `<div class="section-t">Deliberately not claimed</div><ul class="bul">${p.notClaimed.map((n) => `<li>${esc(n.what)} <span>${esc(n.why || "")}</span></li>`).join("")}</ul>`;
-    return h || empty("list", "No answers recorded", j.status === "queued" ? "This job has not been attempted yet." : "This job stopped before the form was filled.");
+    return ask + h || empty("list", "No answers recorded", j.status === "queued" ? "This job has not been attempted yet." : "This job stopped before the form was filled.");
   }
   if (dtab === "resume") {
     if (!j.resume_file) return empty("file", "No resume built", "A resume is tailored when the application starts.");
@@ -534,6 +562,9 @@ function banners() {
   if (!st) return "";
   const s = st.settings;
   let h = updateBanner();
+  const waiting = st.toAnswer || { count: 0 };
+  if (waiting.count && waiting.first) h += `<div class="banner amber">${icon("alert")}<div><b>${waiting.count} application${waiting.count === 1 ? " is" : "s are"} waiting for your answer</b>The app stopped on questions only you can answer. Answer them and it carries on with your answers.</div>
+    <div class="right"><button class="btn sm primary" onclick="openJob('${esc(waiting.first.slug)}')">Answer now</button></div></div>`;
   const mine = (st.counts || {}).manual || 0;
   if (mine && view === "overview") h += `<div class="banner amber">${icon("ext")}<div><b>${mine} good match${mine === 1 ? "" : "es"} for you to apply to</b>These sites need an account or use a chat bot, so the app can't apply for you. Each takes a few minutes.</div>
     <div class="right"><button class="btn sm" onclick="go('manual')">Show them</button></div></div>`;
@@ -613,17 +644,28 @@ async function renderConfig() {
       ${card("mailbox", "Mailbox", "Optional: email codes and spotting jobs you already applied to")}
       ${card("running", "Pace and browser", "How many a day, and the browser window")}
       <div class="card" style="margin-bottom:12px"><div class="card-h"><h2>Application history</h2><span class="sub">So you never apply twice, even after a reinstall</span></div><div class="sec" id="sec-history"></div></div>
+      <div class="card" style="margin-bottom:12px"><div class="card-h"><h2>Your answers to form questions</h2><span class="sub">Questions you answered when an application stopped; the app uses them again</span></div><div class="sec" id="sec-yours"></div></div>
       <div class="card sec"><h2>Your data</h2><p>Everything lives in one folder on this computer: <span class="mono">${esc(cfg.dataDir)}</span>. Version ${esc(cfg.version)}.</p>
         <div class="row-actions"><button class="btn sm" onclick="window.ja.showDataFolder()">${icon("ext")}Open the folder</button>
         <button class="btn sm" onclick="window.ja.go('onboarding.html')">${icon("retry")}Run the setup again</button></div></div></div>`;
     const forms = { prefs: Forms.prefs($("sec-prefs"), cfg), questions: Forms.questions($("sec-questions"), cfg), ai: Forms.ai($("sec-ai"), cfg),
       mailbox: Forms.mailbox($("sec-mailbox"), cfg), running: Forms.running($("sec-running"), cfg) };
     Forms.history($("sec-history"), cfg, () => refreshStatusOnly());
+    drawYours();
     document.querySelectorAll("#sec-theme [name=theme]").forEach((r) => r.onchange = async () => {
       cfg.settings.theme = window.ja.setTheme ? await window.ja.setTheme(r.value) : r.value;
     });
     bindSaves(forms);
   }
+}
+async function drawYours() {
+  const host = $("sec-yours"); if (!host) return;
+  const list = await api("/api/your-answers");
+  host.innerHTML = list.length ? `<div class="sub-list">${list.map((x, i) => `<div class="sub-item yours"><div><b>${esc(x.label)}</b><div>${esc(x.value)}</div>
+      <small class="muted">${x.scope === "all" ? "Used for every application that asks this" : `Only for ${esc(x.company || "one job")}`}</small></div>
+      <button class="btn ghost sm" data-i="${i}">${icon("trash")}Remove</button></div>`).join("")}</div>`
+    : `<p class="muted" style="margin:0">None yet. When an application stops on a question only you can answer, you answer it in the job's panel and it shows up here.</p>`;
+  host.querySelectorAll("[data-i]").forEach((b) => b.onclick = async () => { const x = list[Number(b.dataset.i)]; await api("/api/your-answers/remove", { key: x.key, scope: x.scope }); drawYours(); });
 }
 function bindSaves(forms) {
   document.querySelectorAll("[data-save]").forEach((b) => b.onclick = async () => {

@@ -288,11 +288,28 @@ it** puts it away again. In Settings > Pace and browser you can instead keep it
 in front, or run with no window at all. With no window, some sites are more
 likely to ask for an emailed security code.
 
+### When it stops on a question
+
+Some questions only you can answer: years of a particular kind of experience,
+whether you're a student, a company's own privacy acknowledgement. The app
+stops on those instead of guessing, and a banner on the Overview says how many
+are **waiting for your answer**. Open one: **Answer to continue** lists each
+question, with the form's own choices when it has them. Type or pick your
+answer and press **Save my answers and try again**. The app fills those
+questions in exactly as you wrote them and tries that application next.
+
+Short answers are kept for every application that asks the same question,
+so you answer it once. Untick **Use this answer for other applications** to
+keep one for that job only (long, written answers and questions that name the
+company start that way). Settings > **Your answers to form questions** lists
+them all, and you can remove any.
+
 ## What it won't do
 
 - **Submit an incomplete application.** If a required question has no
   answer, or no answer it can back up with your facts, the job goes to
-  **Needs attention** with the reason. Nothing goes out.
+  **Needs attention** with the reason. Nothing goes out. You answer the
+  question in the app and it carries on (see below).
 - **Make things up.**
   - Every fact comes from your approved resume pieces and your answers.
   - Truth rules check the questions that matter most against what you
@@ -483,10 +500,11 @@ OpenAI-compatible API" with their `http://localhost:.../v1` address and no key.
 - **Most matches are in Apply yourself.** That's normal for everyday jobs:
   many big employers use sites that need an account. Those take a few minutes
   each by hand.
-- **Lots of jobs in Needs attention with "Missing info."** Open one. The
-  reason names the question. Usually it's a fact the app doesn't have yet, like
-  years of a particular skill or a street address. Add it under Settings >
-  Common questions, then press **Try again** on the job.
+- **Lots of jobs in Needs attention with "Missing info."** Open one and
+  answer the questions under **Answer to continue**; see
+  [When it stops on a question](#when-it-stops-on-a-question). For facts that
+  many forms ask (a street address, years of experience), filling them in
+  under Settings > About you also helps.
 - **"Email code needed."** Connect your mailbox in Settings. Those jobs retry
   on their own.
 - **"The application browser is already open."** Close the extra browser

@@ -17,6 +17,7 @@ import { AGENCIES } from "./discover.js";
 import { addJob } from "./addjob.js";
 import { addRecalled, applySuggestion, checklist, createFromInterview, recallFor, rewriteWithAnswer, suggestImprovements } from "./studio.js";
 import { importProjects, listRepos, placeProjects, usernameOf } from "./github.js";
+import { asksFor, removeYourAnswer, saveYourAnswers } from "./asked.js";
 import { monthUse, testKey as testSerpKey } from "./sources/google.js";
 import { backupFile, collect, exportHistory, importHistory, peekBackup, writeBackup } from "./history.js";
 
@@ -33,10 +34,11 @@ function status() {
   const counts = Object.fromEntries(db.prepare("SELECT status, COUNT(*) n FROM jobs GROUP BY status").all().map((r) => [r.status, r.n]));
   const s = getSettings();
   const next = db.prepare(`SELECT slug, title, company FROM jobs WHERE status = 'queued' AND attempts < ?
-    ORDER BY (work_mode = 'remote') ASC, posted_at DESC LIMIT 1`).get(s.maxAttempts) || null;
+    ORDER BY (reason LIKE 'you answered %') DESC, (work_mode = 'remote') ASC, posted_at DESC LIMIT 1`).get(s.maxAttempts) || null;
   const firstFilled = db.prepare("SELECT slug, title, company FROM jobs WHERE status = 'filled' ORDER BY updated_at ASC LIMIT 1").get() || null;
+  const toAnswer = db.prepare("SELECT slug, title, company FROM jobs WHERE status = 'failed' AND reason LIKE 'could not fill every required field%' ORDER BY updated_at DESC").all();
   const { wake, ...st } = state;
-  return { state: st, counts, appliedToday: appliedToday(), settings: s, model: s.ai.model, serverNow: Date.now(), next, firstFilled, version: VERSION,
+  return { state: st, counts, appliedToday: appliedToday(), settings: s, model: s.ai.model, serverNow: Date.now(), next, firstFilled, toAnswer: { count: toAnswer.length, first: toAnswer[0] || null }, version: VERSION,
     browser: { open: browserOpen(), mode: windowModeOf(s) }, update: updater ? updater.state() : null };
 }
 
@@ -172,6 +174,9 @@ const ROUTES = {
     return { url: `ap-file://resumes/${file}`, file, fileName: Tailor.fileName(p, { employer: "", jobTitle: "" }), slack: r.slack, overflow: r.overflow, warnings: Array.from(r.warnings) };
   },
   "POST /api/answers/save": (b) => saveAnswers(b.answers || {}),
+  // Answers the user gave to questions the app stopped on.
+  "GET /api/your-answers": () => (getAnswers().yourAnswers || []),
+  "POST /api/your-answers/remove": (b) => { removeYourAnswer(String(b.key || ""), b.scope); return getAnswers().yourAnswers || []; },
   // ---------- resume studio: create, check, improve ----------
   "POST /api/resume/create": async (b) => {
     if (!aiSettings().apiKey) return bad("Connect an AI first (Settings > AI).");
@@ -332,6 +337,14 @@ function jobRoute(slug, b) {
       setJob(slug, { status: "applied", applied_at: new Date().toISOString(), reason: "applied by you" });
       log(slug, "you applied to this one yourself");
     }
+    // The user answered the questions the app stopped on: keep the answers, and try the job again.
+    if (b.action === "answer") {
+      if (j.status === "applied" || j.status === "submitting") return bad("Already applied; it will not be sent twice.", 409);
+      const n = saveYourAnswers(j, b.answers);
+      if (!n) return bad("Type an answer first.");
+      setJob(slug, { status: "queued", attempts: 0, reason: `you answered ${n} question${n === 1 ? "" : "s"}; trying again with your answer${n === 1 ? "" : "s"}` });
+      log(slug, `you answered ${n} question${n === 1 ? "" : "s"}; queued again`);
+    }
     if (b.action === "reviewed") {
       if (j.status !== "filled") return bad("Only a filled (dry run) application can be reviewed.", 409);
       setJob(slug, { reviewed: 1 });
@@ -342,6 +355,7 @@ function jobRoute(slug, b) {
   }
   const out = getJob(slug);
   const d = JSON.parse(out.details || "{}");
+  const asks = asksFor(out, d);
   delete d.fields;
-  return { ...out, details: d };
+  return { ...out, details: d, asks };
 }

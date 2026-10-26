@@ -30,6 +30,10 @@ const PAGES = {
       <label for="da">Days available *</label><input id="da" required>
       <button type="submit" onclick="window.SUBMITTED=JSON.stringify([fn.value,ln.value,em.value,ph.value,ad.value,da.value]);document.body.innerHTML='<h2>Thank you for applying!</h2>'">Submit application</button></div>
   </form>`,
+  "/ask": `<form id="f" onsubmit="return false"><label for="fn">First name *</label><input id="fn" required>
+    <label for="st">Are you currently enrolled in full-time studies? *</label><select id="st" required><option value="">Select...</option><option>Yes</option><option>No</option></select>
+    <label for="yr">How many years of professional experience do you have? *</label><input id="yr" required>
+    <button type="submit" onclick="if(!fn.value||!st.value||!yr.value)return;window.SUBMITTED=1;document.body.innerHTML='<h2>Thank you for applying!</h2>'">Submit application</button></form>`,
   "/signin": `<h1>Careers</h1><p>Sign in or create an account to apply.</p><label>Email<input></label><label>Password<input type="password"></label><button>Sign in</button>`,
 };
 let submitted = null;
@@ -47,7 +51,7 @@ const ai = http.createServer((req, res) => {
     const fields = (user.split("FORM FIELDS ON THE PAGE")[1] || "").split("\n").map((l) => l.match(/^(\d+)\. (.+?) \[/)).filter(Boolean);
     const answers = fields.map(([, i, label]) => {
       const v = ANSWERS[label.replace(/\*/g, "").trim().toLowerCase().replace(/\?$/, "")];
-      return v ? { i: Number(i), label, kind: "fill", value: v } : { i: Number(i), label, kind: "resume" };
+      return v ? { i: Number(i), label, kind: "fill", value: v } : /resume|cv/i.test(label) ? { i: Number(i), label, kind: "resume" } : { i: Number(i), label, kind: "decide", note: "no answer in your facts" };
     });
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ employer: "Globex", jobTitle: "Cashier", fit: { hardFails: [] }, base: "swe", answers }) } }] }));
@@ -84,4 +88,19 @@ test("a sign-in wall goes to Apply yourself", async () => {
   const r = await applyTo(job("/signin", "t-signin"), {}, { dryRun: false, browser: ctx });
   assert.strictEqual(r.status, "manual");
   assert.match(r.reason, /sign in or create an account/);
+});
+
+test("a question only the user can answer: the job stops, the user answers in the app, the next try uses the answers", async () => {
+  const { asksFor, saveYourAnswers } = await import("../core/asked.js");
+  const j = job("/ask", "t-ask");
+  const first = await applyTo(j, {}, { dryRun: false, browser: ctx });
+  assert.strictEqual(first.status, "failed");
+  const asks = asksFor({ ...j, status: first.status, reason: first.reason }, first.details);
+  assert.deepStrictEqual(asks.map((q) => q.label.replace(/\s*\*$/, "")).sort(), ["Are you currently enrolled in full-time studies?", "How many years of professional experience do you have?"]);
+  assert.deepStrictEqual(asks.find((q) => /enrolled/.test(q.label)).options, ["Yes", "No"]);
+  saveYourAnswers(j, asks.map((q) => ({ label: q.label, value: /enrolled/.test(q.label) ? "No" : "2", remember: true })));
+  const second = await applyTo(j, {}, { dryRun: false, browser: ctx });
+  assert.strictEqual(second.status, "applied", second.reason);
+  assert.ok(second.details.audit.some((x) => /your answer used for "Are you currently enrolled/.test(x)));
+  assert.ok(second.details.kit.some((k) => k.note === "your answer" && k.value === "2"));
 });

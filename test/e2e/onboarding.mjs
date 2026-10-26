@@ -238,6 +238,24 @@ try {
   await win.click("#drawer .dr-close");
   await win.click('.nav:has-text("Overview")');
 
+  // A job that stopped on questions only the user can answer: answered in the job's panel, it goes back in the queue.
+  new DatabaseSync(path.join(data, "autopilot.db")).prepare("INSERT INTO jobs (slug, title, company, location, status, reason, details, attempts) VALUES (?, ?, ?, ?, 'failed', ?, ?, 1)").run(
+    "initech-ask", "Backend Engineer", "Initech", "Austin, TX",
+    "could not fill every required field: needs you: How many years of professional software engineering experience do you have?* (no number for this kind of experience in your answers); required, no answer: Are you currently enrolled in full-time studies?",
+    JSON.stringify({ report: { decide: [{ label: "How many years of professional software engineering experience do you have?*", note: "no number for this kind of experience in your answers" }] },
+      fields: [{ type: "text", label: "How many years of professional software engineering experience do you have?*", required: true }, { type: "select", label: "Are you currently enrolled in full-time studies?", required: true, options: ["Select...", "Yes", "No"] }] }));
+  await win.click('button:has-text("Search now")');
+  await win.click('.banner:has-text("waiting for your answer") button:has-text("Answer now")');
+  await win.waitForSelector("#ask-form");
+  await win.fill('#ask-form [name=ask-0]', "3");
+  await win.selectOption('#ask-form [name=ask-1]', "No");
+  await shot("8d-answer");
+  await win.click("#ask-go");
+  await win.waitForSelector('#drawer .badge:has-text("Queued"), #drawer .badge:has-text("Applying now")');
+  const yours = JSON.parse(fs.readFileSync(path.join(data, "answers.json"), "utf8")).yourAnswers;
+  assert.deepStrictEqual(yours.map((x) => [x.value, x.scope]), [["3", "all"], ["No", "all"]], "answers saved for the next applications too");
+  await win.click("#drawer .dr-close");
+
   // Settings and profile pages render.
   await win.click('.nav:has-text("Settings")');
   await win.waitForSelector("#sec-prefs .tags");

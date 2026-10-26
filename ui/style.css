@@ -39,7 +39,7 @@ svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none;
 /* The app's own title bar: an empty strip you can drag the window by. The window buttons sit over its
    right end on Windows (titlebar-area-* is set by Electron), the traffic lights over its left end on a Mac. */
 :root { --tb-h: env(titlebar-area-height, 0px); }
-.titlebar { position: fixed; top: 0; left: 0; right: 0; height: var(--tb-h); z-index: var(--z-sticky-nav); -webkit-app-region: drag; app-region: drag;
+.app-top { position: fixed; top: 0; left: 0; right: 0; height: var(--tb-h); z-index: var(--z-sticky-nav); -webkit-app-region: drag; app-region: drag;
   background: linear-gradient(to right, var(--color-paper-2) var(--side-w), var(--color-paper) var(--side-w)); }
 body { padding-top: var(--tb-h); }
 /* A Mac keeps its traffic lights at the top left: make sure the strip is tall enough to hold them. */
@@ -463,7 +463,7 @@ details.card-fold[open] > summary h2::before, details.card-fold[open] > summary 
 /* The shell folds at 860px, where it always has; a desktop window rarely goes narrower. */
 @media (max-width: 860px) {
   .app, .wiz { padding-left: 0; }
-  .titlebar { background: var(--color-paper-2); }
+  .app-top { background: var(--color-paper-2); }
   .side { display: none; }
   .mobile-bar { display: flex; gap: var(--space-2xs); overflow-x: auto; padding: var(--space-xs) var(--space-md); background: var(--color-paper-2); position: sticky; top: var(--tb-h); z-index: var(--z-sticky-nav); }
   .mobile-bar .nav { flex: none; }
@@ -498,3 +498,14 @@ details.card-fold[open] > summary h2::before, details.card-fold[open] > summary 
   .tabs { padding: 0 var(--space-md); }
 }
 @media (pointer: coarse) { .btn, .nav, .radio-row label { min-height: 44px; } }
+
+/* Questions the app stopped on, answered in the job's panel. */
+.ask { display: grid; gap: var(--space-md); padding: var(--space-md); margin-bottom: var(--space-lg); border-radius: var(--radius-card); background: var(--color-attn-bg); }
+.ask h3 { font-size: var(--text-md); color: var(--color-ink); max-width: none; letter-spacing: -0.01em; }
+.ask .hint { color: var(--color-ink-2); margin-top: calc(var(--space-sm) * -1); }
+.ask-q { padding-top: var(--space-sm); border-top: 1px solid color-mix(in oklab, var(--color-attn) 25%, transparent); }
+.ask-q > span { color: var(--color-ink); }
+.ask .inp { background: var(--color-cotton); }
+.ask textarea.inp { min-height: 96px; resize: vertical; line-height: 1.5; }
+.sub-item.yours { grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
+.sub-item.yours > div > div { white-space: pre-wrap; color: var(--color-ink-2); font-size: var(--text-sm); margin: var(--space-3xs) 0; }

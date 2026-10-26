@@ -9,6 +9,7 @@ import { acquireBrowser, closeAppPage, closeBrowser, newAppPage } from "./browse
 import { dataDir, getAnswers, getPrefs, getSettings } from "./store.js";
 import { waitForCode } from "./mail.js";
 import { withinRadius } from "./geo.js";
+import { applyYourAnswers, yourAnswersFor } from "./asked.js";
 import { LOGIN_WALL_JS } from "./ats.js";
 
 // The steps of one application, in order, as the dashboard shows them.
@@ -651,6 +652,8 @@ export async function applyTo(job, hooks = {}, opts = {}) {
         }
       }
       b.audit.push(...await holdBindingAcks(page, b.kit));
+      // Last: what the user answered themselves when an earlier try stopped on these questions.
+      b.audit.push(...applyYourAnswers(b.kit, fields, yourAnswersFor(job, a)));
       for (const x of b.audit) log(job.slug, "truth check: " + x);
       audit.push(...b.audit);
 

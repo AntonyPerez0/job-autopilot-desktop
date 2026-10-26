@@ -1,0 +1,33 @@
+[
+ {
+  "mode": "redesign",
+  "depth": "full",
+  "scope": "app",
+  "shape": "app screen",
+  "theme": "coral",
+  "axes": "light/grotesk-sans/warm",
+  "hero": "none (app)",
+  "nav": "sidebar, kept",
+  "footer": "none (app)",
+  "imagery": "none",
+  "photos": [],
+  "entry": "none",
+  "sections": [
+   "overview",
+   "jobs table",
+   "job drawer",
+   "activity",
+   "resume",
+   "settings",
+   "setup"
+  ],
+  "signature": "the application in progress as one sheet of cotton stock",
+  "waived": [
+   "37",
+   "39b",
+   "72"
+  ],
+  "prompt": "a desktop tool that finds jobs, fills and submits applications on its own",
+  "date": "2026-10-25"
+ }
+]
