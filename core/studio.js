@@ -114,7 +114,7 @@ export function addedFacts(suggestion, sources, allowed = []) {
 }
 
 // Praise the person didn't claim: allowed only when their own words use it.
-const INFLATE = /\b(proven|expert|expertise|seasoned|highly[- ]skilled|skilled|adept|proficient|precision|meticulous|expertly|high[- ]performance|high[- ]performing|exceptional|outstanding|extensive|world[- ]class|top[- ]performing|award[- ]winning|experienced|mastery|master of)\b/gi;
+const INFLATE = /\b(proven|expert|expertise|seasoned|highly[- ]skilled|skilled|adept|proficient|precision|meticulous|expertly|high[- ]performance|high[- ]performing|exceptional|outstanding|extensive|world[- ]class|top[- ]performing|award[- ]winning|experienced|mastery|master of|spearhead(ed|ing)?|leverag(ed|ing|e)|orchestrat(ed|ing|e)|transformed|revolutioni[sz]ed|synerg\w*|hard[- ]working|team player|detail[- ]oriented|results[- ]driven|passionate|motivated|calm|careful|steady|dedicated|diligent|reliable|dependable)\b/gi;
 // Words that limit a claim, with the ones that mean the same: a rewrite may not drop them.
 const HEDGES = [["about", "approximately", "roughly", "around", "nearly", "almost", "some", "~"], ["help", "helped", "assist", "assisted", "support", "supported", "contributed", "helping", "assisting", "supporting"],
   ["part-time", "part time"], ["leaning"], ["junior"], ["intern", "internship"], ["co-led", "co-founded", "co-wrote", "co-authored", "jointly", "shared"], ["partially", "partly"]];
@@ -140,6 +140,22 @@ export function droppedApprox(sources, text) {
     if (!new RegExp(`\\b(${APPROX_WORDS})\\s*\\$?$`).test(before.trim()) && !new RegExp(`(${APPROX_WORDS})\\s*\\$?\\d*$`).test(before)) out.push(`${m[1]} ${m[2]}`);
   }
   return [...new Set(out)];
+}
+
+// Words a rewording may bring in without adding a fact: common resume verbs, connectors, and plain
+// synonyms ("car" -> "vehicle", "guys" -> "hires"). Anything else new is a claim the person didn't make.
+const REWORD_OK = new Set(("handle handled handles manage managed operate operated operates coordinate coordinated secure secured secures produce produced produces fabricate fabricated " +
+  "maintain maintained maintains troubleshoot troubleshot diagnose diagnosed resolve resolved respond responded responds complete completed completes deliver delivered support supported " +
+  "assist assisted train trained trains inspect inspected inspects install installed installs perform performed performs provide provided ensure ensured prepare prepared process processed " +
+  "build built follow followed use used using work worked serve served answer answered drive drove transport transported load loaded unload unloaded keep kept record recorded log logged " +
+  "communicate communicated update updated document documented review reviewed check checked verify verified repair repaired fix fixed set placed place direct directed control controlled " +
+  "with using during across while through within under into onto from each every daily routine regular regularly short notice quickly safely accurately on-site onsite site sites " +
+  "vehicle vehicles car cars customer customers client clients hire hires employee employees staff team crew scene scenes shift shifts call calls job jobs work tasks task equipment tool tools " +
+  "specification specifications spec specs order orders request requests issue issues problem problems service services standard standards quality new including such " +
+  "pre trip post inspection inspections run runs ran conduct conducted carry carried").split(/\s+/));
+export function newWords(text, sources) {
+  const have = new Set(lineWords(sources.join(" ")));
+  return [...lineWords(text)].filter((w) => !have.has(w) && !REWORD_OK.has(w) && ![...REWORD_OK].some((x) => x.replace(/(ing|ed|es|s|e)$/, "") === w));
 }
 
 // Accept a suggested line only if it adds nothing and breaks no rule; otherwise say why.
@@ -169,11 +185,11 @@ export function knownTerms(profile, answers = {}) {
 
 // ---------- shared writing rules for the AI ----------
 
-const GUIDE = `How recruiters want resume lines written:
+export const GUIDE = `How recruiters want resume lines written:
 - Start with a strong action verb (Served, Trained, Built, Organized, Resolved, Cut, Opened, Stocked, Led). Past tense for anything already done or finished, even at a current job; present tense only for ongoing daily duties at a current job. Never change the tense of a line that already uses the past tense for something finished.
 - Never describe the person with praise they didn't use themselves (proven, expert, experienced, seasoned, high-performing, exceptional). Keep every word that limits a claim (about, helped, part-time, assisted, leaning, shared).
 - Plain, concrete words. Avoid vague corporate phrases ("service delivery", "client relationships", "stakeholders", "various tasks") when a plain one says it ("families asked me back").
-- Say what was done and, when the person gave one, the size or result (how many, how much, how often, what improved).
+- Say what was done and, when the person gave one, the size or result (how many, how much, how often, what improved). Every number they gave goes into a line, exactly as given (with its "about").
 - One line each: about 8 to 20 words, at most 150 characters. No "I", "my" or "we". No buzzwords (hard-working, team player, detail-oriented, passionate, results-driven).
 - Plain words a hiring manager in that field uses. Keep the person's own specific terms (machines, tools, product names).
 - No em dashes.
@@ -182,7 +198,7 @@ THE HONESTY RULE (most important): use only facts the person gave. Never add a n
 
 const settings = () => aiSettings();
 // The model sometimes answers with broken JSON; ask again (up to three times) before giving up.
-async function ask(messages) {
+export async function ask(messages) {
   let last;
   for (let i = 0; i < 3; i++) {
     try { return await Tailor.chat(settings(), messages); } catch (e) { last = e; if (/Model API 4(0[0-3]|04)/.test(e.message)) break; }
@@ -357,7 +373,7 @@ Return JSON only:
     sections: [{ kind: "experience", items: newExp.filter((e) => e.bullets.length).map((e) => ({ id: e.id, bullets: e.bullets.slice(0, 4).map((b) => b.id) })) }, ...(p.education.length ? [{ kind: "education" }] : [])] });
   // No summary the checks accepted: a plain one built from their own titles and licenses, no AI words.
   if (!p.summaries.length) { p.summaries.push({ id: "summary", text: plainSummary(iv), approved: false, source: "your job titles and certifications" }); p.bases[p.bases.length - 1].summary = "summary"; }
-  return { profile: p, rejected, questions };
+  return { profile: p, rejected, questions, created: { experience: newExp.map((e) => e.id), skills: skillIds } };
 }
 
 // ---------- improve: suggestions for the lines the user already has ----------

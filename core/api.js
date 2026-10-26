@@ -15,6 +15,7 @@ import { browserOpen, detectBrowsers, installChromium, chromiumPath, showBrowser
 import { windowModeOf } from "./apply.js";
 import { AGENCIES, lastSearch } from "./discover.js";
 import { suggestTitles } from "./suggest.js";
+import { makeVersion, polishCreated, recruiterReview } from "./polish.js";
 import { listAccounts, passwordProblems } from "./accounts.js";
 import { addJob } from "./addjob.js";
 import { addRecalled, applySuggestion, checklist, createFromInterview, recallFor, rewriteWithAnswer, suggestImprovements } from "./studio.js";
@@ -219,6 +220,12 @@ const ROUTES = {
     if (!(iv.jobs || []).some((j) => j.title || j.employer) && !(iv.education || []).some((e) => e.school)) return bad("Add at least one job or school.");
     try {
       const r = await createFromInterview(iv, b.merge ? getProfile() : null, getAnswers());
+      // Then the recruiter's pass: the strongest lines first, a headline and summary, skills in groups.
+      try {
+        const pol = await polishCreated(r.profile, { target: iv.target, ids: r.created.experience, skillIds: r.created.skills, answers: getAnswers() });
+        r.profile = pol.profile;
+        r.rejected.push(...pol.rejected);
+      } catch (e) { log(null, "resume polish skipped: " + e.message, "warn"); }
       placeProjects(r.profile);
       saveProfile(r.profile);
       const cur = (iv.jobs || []).find((j) => j.current) || (iv.jobs || [])[0];
@@ -257,6 +264,17 @@ const ROUTES = {
   "POST /api/resume/recall/add": async (b) => {
     if (!(b.confirmed || []).length) return bad("Say yes to at least one thing first.");
     try { const r = await addRecalled(getProfile(), b.entryId, b.confirmed, getAnswers()); saveProfile(r.profile); return r; } catch (e) { return bad(e.message); }
+  },
+  // A version of the resume for one kind of job, and a recruiter's read of a version.
+  "POST /api/resume/version": async (b) => {
+    const target = String(b.target || "").trim();
+    if (!target) return bad("Type the kind of job, e.g. CDL driving or IT support.");
+    if (!aiSettings().apiKey) return bad("Connect an AI first (Settings > AI).");
+    try { const r = await makeVersion(getProfile(), target, getAnswers()); saveProfile(r.profile); return r; } catch (e) { return bad(e.message); }
+  },
+  "POST /api/resume/review": async (b) => {
+    if (!aiSettings().apiKey) return bad("Connect an AI first (Settings > AI).");
+    try { return await recruiterReview(getProfile(), { base: b.base, target: b.target }); } catch (e) { return bad(e.message); }
   },
   "POST /api/resume/check": async () => {
     const raw = getProfile();

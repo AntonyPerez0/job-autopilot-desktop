@@ -25,5 +25,8 @@ Local changes, kept as small as possible:
    entry in turn instead of every line of the first entry first, and tries up to
    40 additions instead of 12, so a long current job does not crowd out the others
    and leave the page part empty.
+5. `tailor.js` (`fit`): filling the page stops at 5 lines for the first job and 3 for each
+   other entry, as recruiters expect (docs/resume-research.md); a layout or plan that asks
+   for more keeps them.
 
-To update: copy the new files over these, reapply the four edits, run `npm test`.
+To update: copy the new files over these, reapply the five edits, run `npm test`.

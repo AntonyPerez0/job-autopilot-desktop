@@ -516,3 +516,9 @@ details.card-fold[open] > summary h2::before, details.card-fold[open] > summary 
 .sugg-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-sm); align-items: center; padding: var(--space-xs) var(--space-sm); border-radius: var(--radius-card); background: var(--color-paper-2); }
 .sugg-item .muted { margin-top: var(--space-3xs); }
 .banner.red { background: var(--color-error-bg); } .banner.red > svg.i { color: var(--color-error); }
+
+/* The recruiter's read: a score and what to fix. */
+.review { display: flex; gap: var(--space-md); align-items: flex-start; padding: var(--space-sm) var(--space-md); border-radius: var(--radius-card); background: var(--color-paper-2); margin-bottom: var(--space-xs); }
+.review-score { display: flex; align-items: baseline; gap: var(--space-3xs); flex: none; }
+.review-score .fig { font-size: var(--text-2xl); color: var(--color-ink); }
+.review-score span:last-child { color: var(--color-muted); }

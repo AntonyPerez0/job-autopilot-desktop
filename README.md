@@ -171,6 +171,29 @@ answer: ..."), and whether it's approved. **Add another resume** uploads
 another file. **Download my resume (PDF)** saves the general version, for jobs
 you apply to yourself.
 
+**The recruiter's pass.** After the creator writes your lines, the app goes over
+them the way a recruiter would (the rules, and the research behind them, are in
+[docs/resume-research.md](docs/resume-research.md)): the strongest few lines per
+job first (up to 5 for your current job, 3 for older ones; the rest stay
+available for tailoring), plain professional wording of your own facts ("two new
+guys" becomes "two new hires"), a headline under your name, a short summary
+aimed at the job you want, and your skills sorted into Licenses &
+Certifications, Equipment & Tools, Software & Systems and Languages. Every
+number stays exactly as you gave it, with its "about", and a rewording that adds
+a claim is thrown out.
+
+On **Check & improve**:
+- **Read it like a recruiter** scores a layout out of 10 and lists what is weak,
+  line by line, with **Improve this** next to each line. It never suggests adding
+  something you didn't do; when a number would help, it says what to ask you.
+- **A version for each kind of job** makes a layout for one field ("CDL
+  driving", "IT support"): your approved lines that matter most for it, worded
+  in that field's terms where the facts allow, with a headline and summary for
+  it. It also lists what job ads in that field often ask for that your resume
+  doesn't show (a certification, say) as advice; that never goes on the resume.
+  New wording waits for your approval, and when the app tailors a resume to a
+  posting it starts from the version that fits.
+
 **How the app keeps it honest:**
 - The AI may only reword what you said. Every line it writes is checked:
   - Rules with no AI involved reject any number, name or tool you didn't give,

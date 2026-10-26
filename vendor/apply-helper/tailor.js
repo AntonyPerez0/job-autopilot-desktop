@@ -304,8 +304,12 @@ ${fields || "(none found on this page)"}`;
     let tries = 0;
     for (const [eid, bid] of candidates(profile, cur, extra)) {
       if (r.overflow || r.slack <= SLACK_TARGET || tries > 40) break;
-      const { it } = entries(cur).find((x) => x.it.id === eid) || {};
+      const all = entries(cur), at = all.findIndex((x) => x.it.id === eid);
+      const { it, kind } = all[at] || {};
       if (!it || it.bullets.includes(bid) || it.bullets.some((b) => stem(b) === stem(bid))) continue;
+      // Recruiters read 3 to 5 lines for the latest job and 2 or 3 for the others: white space beats a longer list.
+      const first = all.findIndex((x) => x.kind === kind);
+      if (it.bullets.length >= (kind === "experience" && at === first ? 5 : 3)) continue;
       tries++;
       const next = cloneSpec(cur);
       entries(next).find((x) => x.it.id === eid).it.bullets.push(bid);

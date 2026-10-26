@@ -340,6 +340,15 @@
         <button type="button" class="btn ghost" data-preview>${icon("eye")}Preview</button>
       </div>
       <div data-smsg></div>
+      <div class="section-t">A recruiter's read</div>
+      <p class="hint" style="margin:-4px 0 0">The AI reads your resume the way a recruiter skims one, and says what stands out and what is weak, line by line. It never adds facts.</p>
+      <div class="row-actions"><select class="inp" data-rv-base style="max-width:18rem"></select><button type="button" class="btn" data-review>${icon("eye")}Read it like a recruiter</button></div>
+      <div data-rv-out></div>
+      <div class="section-t">A version for each kind of job</div>
+      <p class="hint" style="margin:-4px 0 0">Applying to different kinds of jobs (driving and IT support, say)? Make a version for each: your true lines, chosen and worded for that field, with a headline and summary for it. New wording waits for your approval.</p>
+      <div class="row-actions"><input class="inp" data-vt placeholder="e.g. CDL driving, IT support, Warehouse" style="max-width:18rem" list="vt-list"><datalist id="vt-list">${((cfg.prefs && cfg.prefs.titles) || []).map((t) => `<option value="${esc(t)}">`).join("")}</datalist>
+        <button type="button" class="btn" data-version>${icon("plus")}Make this version</button></div>
+      <div data-vt-out></div>
       <div class="section-t">What recruiters will notice</div>
       <div data-checks><div class="muted">Checking...</div></div>
       <div class="section-t">Remember more</div>
@@ -349,6 +358,37 @@
         <p class="hint" style="margin:-4px 0 8px">Every suggestion says the same facts you gave, worded the way recruiters like. Anything that added a number or claim you didn't give was left out; you'll see a question instead.</p>
         <div class="sub-list" data-sugg></div></div></div>`;
     const sm = el.querySelector("[data-smsg]");
+    // Layouts to read: every approved one, by what it is for.
+    const bases = ((cfg.profile && cfg.profile.bases) || []).filter((b) => b.approved);
+    el.querySelector("[data-rv-base]").innerHTML = bases.length ? bases.map((b) => `<option value="${esc(b.id)}">${esc(b.description || b.id)}</option>`).join("") : `<option value="">Approve a layout first</option>`;
+    el.querySelector("[data-review]").onclick = async (e) => {
+      const btn = e.currentTarget, out = el.querySelector("[data-rv-out]");
+      btn.disabled = true; msg(out, "info", "Reading your resume the way a recruiter would...");
+      const r = await api("/api/resume/review", { base: el.querySelector("[data-rv-base]").value });
+      btn.disabled = false;
+      if (r.error) return msg(out, "err", r.error);
+      const where = (path) => { if (["headline", "summary", "skills", "layout"].includes(path)) return path === "layout" ? "Overall" : path.charAt(0).toUpperCase() + path.slice(1);
+        const [k, eid, bid] = path.split("."); const e2 = ((cfg.profile[k] || []).find((x) => x.id === eid)) || {}; const b2 = (e2.bullets || []).find((x) => x.id === bid); return b2 ? `${e2.title}: "${b2.text}"` : e2.title || path; };
+      out.innerHTML = `<div class="review"><div class="review-score"><span class="fig">${r.score}</span><span>/10</span></div><div><b>${esc(r.verdict)}</b>
+          ${r.strengths.length ? `<ul class="bul" style="margin-top:6px">${r.strengths.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}</div></div>
+        ${r.items.length ? `<div class="checklist">${r.items.map((x) => `<div class="check-item"><span class="ck fix">!</span><div style="flex:1"><b>${esc(where(x.path))}</b><div class="muted">${esc(x.problem)}</div><div>${esc(x.fix)}</div></div>
+          ${/^(experience|projects)\./.test(x.path) ? `<button type="button" class="btn sm" data-rv-fix="${esc(x.path)}">Improve this</button>` : ""}</div>`).join("")}</div>` : ""}`;
+      out.querySelectorAll("[data-rv-fix]").forEach((b) => b.onclick = () => improve([b.dataset.rvFix]));
+    };
+    el.querySelector("[data-version]").onclick = async (e) => {
+      const btn = e.currentTarget, out = el.querySelector("[data-vt-out]");
+      const target = el.querySelector("[data-vt]").value.trim();
+      if (!target) return msg(out, "err", "Type the kind of job first.");
+      btn.disabled = true; msg(out, "info", `Choosing and wording your lines for ${target} jobs...`);
+      const r = await api("/api/resume/version", { target });
+      btn.disabled = false;
+      if (r.error) return msg(out, "err", r.error);
+      cfg.profile = r.profile;
+      out.innerHTML = `<div class="msg ok">Made a ${esc(target)} version${r.newLines ? ` with ${r.newLines} new piece${r.newLines === 1 ? "" : "s"} of wording` : ""}. Approve it under "All your resume pieces": the layout "${esc(target)} jobs" and anything new in it.${r.rejected.length ? ` ${r.rejected.length} rewording${r.rejected.length === 1 ? " was" : "s were"} left out because ${r.rejected.length === 1 ? "it" : "they"} added things your lines don't say.` : ""}</div>
+        ${r.gaps.length ? `<div class="sub-item" style="margin-top:8px"><b>What ${esc(target)} job ads often ask for that your resume doesn't show</b><ul class="bul">${r.gaps.map((g) => `<li><b>${esc(g.need)}</b> <span>${esc(g.how)}</span></li>`).join("")}</ul>
+          <small class="hint">Advice only: none of this goes on your resume until you have it and add it yourself.</small></div>` : ""}`;
+      onChange && onChange();
+    };
     const drawChecks = async () => {
       const r = await api("/api/resume/check", {});
       const host = el.querySelector("[data-checks]");
