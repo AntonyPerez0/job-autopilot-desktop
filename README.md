@@ -238,10 +238,16 @@ change all of it later under **Settings** and **Profile**.
 4. **Check it.** The app splits your resume into pieces: summaries, bullet
    points, skills, education and a layout. Fix anything that isn't exactly
    true, delete what you'd never send, and approve the rest. **Everything is
-   true: approve all** does it in one click once you've read them. Resumes are
-   only ever put together from approved pieces.
-5. **About you.** Name, email, phone, city, and whether you can work in the
-   country. Optional sections cover the questions forms ask most:
+   true: approve all** does it in one click once you've read them, except
+   lines with a **Check this** note: those stay unticked until you've read and
+   ticked each one. Resumes are only ever put together from approved pieces.
+   If your resume is short, **Want a fuller page?** at the top asks a few
+   questions about what people usually leave out (see
+   [Fill out my page](#making-and-improving-your-resume)).
+5. **About you.** Name, email, phone, city, whether you're allowed to work in
+   the country, whether you'll need a visa sponsor, and whether you're 18 or
+   older. The app never answers those for you: you pick each one. Optional
+   sections cover the questions forms ask most:
    - when you can work (days, shifts, hours, transportation, lifting, your
      own insured car, a clean driving record, 21 or older)
    - work and school
@@ -257,13 +263,17 @@ change all of it later under **Settings** and **Profile**.
    [Where the jobs come from](#where-the-jobs-come-from)). **More options** has
    company exclusions, posting age and experience limits.
 
-   **Not sure what to look for?** Press **Suggest jobs from my resume**. The
-   app reads your approved resume and lists job titles you already qualify for,
+   **Not sure what to look for?** The app suggests jobs from your resume on its
+   own when you haven't picked any titles yet (or press **Suggest jobs from my
+   resume**). It reads your approved resume and lists job titles you already
+   qualify for, matched to the license class you hold (a Class B driver sees
+   Class B jobs),
    the ones that tend to pay more than your current work first, each with the
    fact of yours that qualifies you ("You hold a Class B CDL"). Add any with one
    click. To move up in pay, put what you make now in **Lowest pay you'd take**:
    jobs whose posted top rate is lower are skipped (jobs that don't post pay are
-   kept), and every job you're shown lists its posted pay.
+   kept), and every job you're shown lists its posted pay. The app tells you if
+   the number looks like a yearly salary with "an hour" picked, or the reverse.
 7. **Mailbox (optional).** See [Mailbox](#mailbox).
 
 Then press **Start in dry run**.
@@ -740,7 +750,9 @@ OpenAI-compatible API" with their `http://localhost:.../v1` address and no key.
 - **Only two of a chain's jobs show up.** When one employer posts the same job
   for many stores ("Delivery Driver" at twenty locations), the app keeps two,
   so the queue isn't twenty copies of one job.
-- **Nothing gets queued.** Look at **Skipped** to see why jobs were left out.
+- **Nothing gets queued.** The Overview says when the next search is and the
+  main reasons jobs were left out ("8 need a Class A CDL"); **See why** opens
+  **Skipped** with each job's reason.
   Add more job titles (or click the suggestions), drag the distance slider
   further, tick more levels, turn on more places to look, or raise the maximum
   years required under More options.

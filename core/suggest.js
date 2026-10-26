@@ -36,6 +36,7 @@ export async function suggestTitles({ profile = getProfile(), answers = getAnswe
 - First, jobs they already qualify for that commonly pay more than their current or most recent job: the same work at a higher level or a better-paying kind of employer, and jobs their licenses, certifications and hands-on skills open up.
 - Then close matches to what they do now.
 - Only jobs whose usual must-haves their facts already show. Never one that needs a license, certification, degree or kind of experience they don't have (running heavy construction equipment is not driving a tow truck).
+- Match the license class and endorsements they hold. Most ads for a plain "CDL Driver", "Truck Driver" or "OTR Driver" want a Class A CDL: for someone with a Class B, name the Class B work instead ("Class B CDL Driver", "Straight Truck Driver", "Dump Truck Driver", "Box Truck Driver"). Same for endorsements (no tanker or hazmat jobs without them) and for any other licensed trade.
 - Not titles they already search for: ${JSON.stringify(facts.alreadySearching)}.
 For each: "why" is one short sentence to them ("You hold a Class B CDL and..."), naming only facts listed above, in their words: a tool they used is not a certification, and nothing is added.
 "pay" compares typical pay with their current job from your general knowledge: "more", "similar", "less", or "unsure" when you don't know.

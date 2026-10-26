@@ -571,7 +571,7 @@
     const draw = () => {
       const c = counts();
       let h = `<div class="banner blue"><div style="flex:1"><b>${c.ok} of ${c.n} pieces approved</b>Your resume is only ever made from pieces you approve here. Read each line, fix anything that isn't exactly true, delete what you'd never send, and tick the rest.</div>
-        <div class="right"><button type="button" class="btn sm primary" data-approve-everything>${icon("check")}Everything is true: approve all</button></div></div>`;
+        <div class="right"><button type="button" class="btn sm primary" data-approve-everything>${icon("check")}Everything is true: approve all</button></div></div><div data-held></div>`;
       h += group("Summaries", "summaries", arr(p.summaries).map((s, i) => item(`summaries.${i}.text`, s.text, s.approved, { warning: s.warning })).join(""), "summary");
       for (const [k, title] of [["experience", "Experience"], ["projects", "Projects"]]) {
         arr(p[k]).forEach((e, ei) => {
@@ -604,13 +604,18 @@
       el.querySelectorAll("[data-approve]").forEach((e) => e.onchange = () => { const [o] = at(e.dataset.approve); o.approved = e.checked; e.closest(".rv-item").classList.toggle("ok", e.checked); el.querySelector(".banner b").textContent = `${counts().ok} of ${counts().n} pieces approved`; });
       el.querySelectorAll("[data-del]").forEach((e) => e.onclick = () => { const parts = e.dataset.del.split("."); const idx = Number(parts.pop()); let o = p; for (const x of parts) o = o[x]; o.splice(idx, 1); draw(); });
       const everything = el.querySelector("[data-approve-everything]");
+      // Approving in bulk never approves a line the second check doubted: those wait to be read one by one.
+      const approveMany = (list) => {
+        let held = 0;
+        for (const x of list) { if (x.warning && !x.approved) { held++; continue; } x.approved = true; }
+        draw();
+        if (held) msg(el.querySelector("[data-held]"), "info", `${held} line${held === 1 ? " has" : "s have"} a "Check this" note, so ${held === 1 ? "it was" : "they were"} left unticked. Read ${held === 1 ? "it" : "each one"}, fix or delete what isn't true, then tick ${held === 1 ? "it" : "them"} yourself.`);
+      };
       if (everything) everything.onclick = () => {
         if (!confirm("Approve every piece? Only do this if you've read them and every line is true.")) return;
-        for (const k of ["summaries", "headers", "skills", "education", "bases"]) arr(p[k]).forEach((x) => { x.approved = true; });
-        for (const k of ["experience", "projects"]) arr(p[k]).forEach((e) => arr(e.bullets).forEach((x) => { x.approved = true; }));
-        draw();
+        approveMany([...["summaries", "headers", "skills", "education", "bases"].flatMap((k) => arr(p[k])), ...["experience", "projects"].flatMap((k) => arr(p[k]).flatMap((e) => arr(e.bullets)))]);
       };
-      el.querySelectorAll("[data-all]").forEach((e) => e.onclick = () => { let o = p; for (const x of e.dataset.all.split(".")) o = o[x]; arr(o).forEach((x) => { x.approved = true; }); draw(); });
+      el.querySelectorAll("[data-all]").forEach((e) => e.onclick = () => { let o = p; for (const x of e.dataset.all.split(".")) o = o[x]; approveMany(arr(o)); });
       el.querySelectorAll("[data-add]").forEach((e) => e.onclick = () => {
         const a = e.dataset.add;
         if (a === "summary") (p.summaries = arr(p.summaries)).push({ id: newId(p.summaries, "summary"), text: "", approved: false });
@@ -639,7 +644,13 @@
         if (r.error) return r.error;
         const c = counts();
         if (!c.ok) return "Approve at least a summary, some bullets, a skills group and one base layout.";
-        if (r.problems && r.problems.length) return "With only the approved pieces: " + r.problems.slice(0, 3).join(" ");
+        if (r.problems && r.problems.length) {
+          // Often the missing piece is one "approve all" held back because the second check doubted it.
+          const held = [...arr(p.summaries), ...["experience", "projects"].flatMap((k) => arr(p[k]).flatMap((e) => arr(e.bullets)))].filter((x) => x.warning && !x.approved);
+          const sumHeld = arr(p.summaries).some((x) => x.warning && !x.approved) && !arr(p.summaries).some((x) => x.approved);
+          if (sumHeld) return 'Your summary has a "Check this" note, so it is still unticked. Read it, fix anything that isn\'t true, then tick it.';
+          return "With only the approved pieces: " + r.problems.slice(0, 3).join(" ") + (held.length ? ` (${held.length} line${held.length === 1 ? " with a \"Check this\" note is" : "s with a \"Check this\" note are"} still unticked.)` : "");
+        }
         return null;
       },
     };
@@ -830,6 +841,8 @@
         b.disabled = true; b.innerHTML = `${icon("check")}Added`;
       });
     };
+    // Someone with a resume but no titles yet sees ideas from their own resume first, not a generic list.
+    if (!titles.get().length && cfg.profile && (cfg.profile.experience || []).some((e) => (e.bullets || []).some((b) => b.approved))) el.querySelector("[data-aigo]").click();
     const keywords = tagInput(el.querySelector("[data-keywords]"), p.keywords, "e.g. healthcare");
     const titleEx = tagInput(el.querySelector("[data-titleex]"), p.titleExclude, "e.g. night shift, sales");
     const exclude = tagInput(el.querySelector("[data-exclude]"), p.excludeCompanies, "Company name");
@@ -1034,5 +1047,5 @@
   }
   const importedText = (r) => `Imported ${r.total} application${r.total === 1 ? "" : "s"}: ${r.added} added, ${r.updated} marked as applied, ${r.already} already here. None of them will be applied to again.`;
 
-  window.Forms = { ai, resumes, creator, github, accounts, studio, review, questions, prefs, mailbox, running, history, importedText, esc, icon, msg };
+  window.Forms = { ai, resumes, creator, github, accounts, studio, review, fillPage, questions, prefs, mailbox, running, history, importedText, esc, icon, msg };
 })();

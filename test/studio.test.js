@@ -168,6 +168,19 @@ test("memory jog: the job's official tasks become questions; only yes answers be
   assert.strictEqual(a.profile.experience[0].bullets.at(-1).approved, false, "added lines wait for approval");
 });
 
+test("memory jog: no supervisor's list for a worker; when no occupation fits, plain questions instead", async () => {
+  let seen = "";
+  reply = (sys, user) => { if (!/help someone remember/.test(sys)) return { lines: [] }; seen = user;
+    return { occupation: -1, questions: [{ q: "Did you apply reflective sheeting to sign blanks?" }, { q: "Did you install signs on poles?" }, { q: "Did you cut vinyl letters?" }, { q: "Did you read work orders?" }] }; };
+  const r = await S.recallFor({ title: "Sign Shop Worker", daily: "made street signs, ran the vinyl cutter" });
+  const order = seen.split("\n").filter((l) => /^\d\. /.test(l)).map((l) => l.slice(3));
+  assert.ok(order.findIndex((t) => /First-Line Supervisors/.test(t)) === -1 || order.findIndex((t) => /First-Line Supervisors/.test(t)) === order.length - 1, "a supervisor's list comes last");
+  assert.strictEqual(r.occupation, "");
+  assert.deepStrictEqual(r.items.map((x) => x.from), ["ai", "ai", "ai", "ai"], "no task from an occupation that doesn't fit");
+  await S.recallFor({ title: "Production Supervisor", daily: "supervised the line" });
+  assert.match(seen, /0\. First-Line Supervisors/, "someone who supervised gets the supervisors' list first");
+});
+
 test("memory jog: task references in any shape, or by wording", async () => {
   reply = (sys) => (/help someone remember/.test(sys) ? { occupation: 0, questions: [{ q: "Did you greet customers entering the store?", t: "0,4" },
     { q: "Did you help customers find the location of products?" }, { q: "Did you process returns and exchanges?", t: { o: 0, t: 99 } }] } : { lines: [] });

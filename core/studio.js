@@ -502,16 +502,20 @@ const qid = (s) => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charC
 // job: { title, employer, daily, proud, tools, existing: [lines already on the resume] }
 // -> { occupation, items: [{ id, q, task, from: "onet"|"ai" }] }
 export async function recallFor(job) {
-  const { findOccupations } = await import("./onet.js");
-  const cands = findOccupations(job.title, 5);
+  const { findOccupations, BOSS, SAYS_BOSS } = await import("./onet.js");
   const said = [job.daily, job.proud, job.tools, ...arr(job.existing)].filter(Boolean).join("\n");
+  // A supervisor's or manager's list comes last unless they say they supervised.
+  const boss = SAYS_BOSS.test(`${job.title} ${said}`);
+  const pool = findOccupations(job.title, 6);
+  const cands = [...pool.filter((o) => boss || !BOSS.test(o.title)), ...pool.filter((o) => !boss && BOSS.test(o.title))].slice(0, 5);
   const fallback = () => {
     const o = cands[0];
     return { occupation: o ? o.title : "", items: o ? o.tasks.slice(0, 10).map((t) => ({ id: qid(t), q: `Did you: ${t.charAt(0).toLowerCase()}${t.slice(1).replace(/\.$/, "")}?`, task: t, from: "onet" })) : [] };
   };
   const sys = `You help someone remember what they did at a job, so their resume isn't missing things.
 You get their job title, employer, what they already said, and official task lists (U.S. Department of Labor O*NET) for the occupations that job title might be.
-1. Pick the occupation that best fits this job ("occupation": its index).
+1. Pick the occupation that best fits the work they describe ("occupation": its index), not just the title's words. Never a supervisor's or manager's list unless they say they supervised or managed.
+   If none of them is the work they describe (a sign shop worker is not a retail salesperson), set "occupation": -1 and write up to 12 questions about what this job usually involves instead, without "t".
 2. Turn the most relevant tasks from it (or from the second-best one) into up to 12 short, plain yes/no questions a non-expert understands
    ("Did you count the cash drawer at the end of a shift?"), fitted to this employer, and skip anything they already said. Each cites its task as "t": [occupationIndex, taskIndex].
 3. Add up to 3 more questions about things very common in this specific job or kind of workplace that the lists miss (no "t" for those).
@@ -520,7 +524,8 @@ Questions only ask; they never assume. Return JSON only: {"occupation": 0, "ques
     cands.map((o, i) => `${i}. ${o.title}\n${o.tasks.slice(0, 18).map((t, k) => `   ${k}. ${t}`).join("\n")}`).join("\n");
   let r;
   try { r = await ask([{ role: "system", content: sys }, { role: "user", content: user }]); } catch { return fallback(); }
-  const occ = cands[Number(r.occupation)] || cands[0];
+  const none = Number(r.occupation) === -1;
+  const occ = none ? null : cands[Number(r.occupation)] || cands[0];
   const items = [], seen = new Set();
   let ideas = 0;
   for (const x of arr(r.questions)) {
@@ -530,11 +535,11 @@ Questions only ask; they never assume. Return JSON only: {"occupation": 0, "ques
     let task = "", from = "ai";
     // The model writes the reference in more than one way: [0, 3], "0,3", "0-3", {"o": 0, "t": 3}.
     const ref = Array.isArray(x.t) ? x.t : typeof x.t === "string" ? x.t.split(/[^0-9]+/).filter(Boolean) : x.t && typeof x.t === "object" ? [x.t.o ?? x.t.occupation, x.t.t ?? x.t.task] : null;
-    if (ref && ref.length >= 2) { const o = cands[Number(ref[0])]; task = o ? o.tasks[Number(ref[1])] || "" : ""; }
+    if (!none && ref && ref.length >= 2) { const o = cands[Number(ref[0])]; task = o ? o.tasks[Number(ref[1])] || "" : ""; }
     // No usable reference: the official task the question repeats most of the words of.
-    if (!task) task = closestTask(q, cands) || "";
+    if (!task && !none) task = closestTask(q, cands) || "";
     if (task) from = "onet";
-    if (from === "ai" && ++ideas > 3) continue;
+    if (from === "ai" && ++ideas > (none ? 12 : 3)) continue;
     seen.add(q.toLowerCase());
     items.push({ id: qid(q), q, task, from });
     if (items.length >= 15) break;

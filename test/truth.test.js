@@ -157,3 +157,12 @@ test("criminal-history questions: the user's own answer, never the AI's", () => 
   assert.strictEqual(check(label, "No", ["Yes", "No"], { convictions: "none" }).notes.length, 0);
   assert.strictEqual(check("I authorize a criminal background check and waive all claims", "Yes", ["Yes", "No"], { convictions: "none", screenings: "yes" }).k.kind, "decide");
 });
+
+test("work authorization and sponsorship the person hasn't answered go to them, never a guess", () => {
+  const auth = check("Are you legally authorized to work in the US?", "Yes", ["Yes", "No"], { workAuthorized: "" });
+  assert.strictEqual(auth.k.kind, "decide");
+  assert.match(auth.k.note, /haven't answered/);
+  const sp = check("Will you now or in the future require sponsorship?", "No", ["Yes", "No"], { needsSponsorship: "" });
+  assert.strictEqual(sp.k.kind, "decide");
+  assert.strictEqual(check("Are you legally authorized to work in the US?", "No", ["Yes", "No"], { workAuthorized: "yes" }).k.value, "Yes", "an answer they gave still wins");
+});

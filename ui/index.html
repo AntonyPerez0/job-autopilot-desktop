@@ -577,6 +577,13 @@ function banners() {
     h += `<div class="banner amber">${icon("search")}<div><b>The last search found no jobs</b>Job sites had nothing new for these titles near you. Shorter, more common job titles, a wider distance, or older postings (Settings > Jobs to look for > More options) find more.</div>
       <div class="right"><button class="btn sm" onclick="go('settings')">Change what to look for</button></div></div>`;
   }
+  // Searched, nothing to apply to: when the next search is, and why the jobs it found were left out.
+  else if (sr && sr.done && sr.skipped && sr.skipped.total && view === "overview" && !(st.counts || {}).queued && !(st.counts || {}).working && !st.state.job && st.state.now !== "searching" && !(st.counts || {}).filled && !(st.counts || {}).applied) {
+    const next = sr.nextAt ? new Date(sr.nextAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
+    const why = sr.skipped.top.map((x) => `${x.count} ${esc(x.why)}`).join(", ");
+    h += `<div class="banner amber">${icon("search")}<div><b>Nothing to apply to right now${next ? `. Next search around ${next}` : ""}</b>${sr.skipped.total} job${sr.skipped.total === 1 ? " was" : "s were"} found and left out${why ? `: ${why}` : ""}. More job titles, a wider distance, or <b>Suggest jobs from my resume</b> (Settings > Jobs to look for) find more.</div>
+      <div class="right"><button class="btn sm" onclick="go('skipped')">See why</button><button class="btn sm" onclick="searchNow()">Search now</button></div></div>`;
+  }
   const mine = (st.counts || {}).manual || 0;
   if (mine && view === "overview") h += `<div class="banner amber">${icon("ext")}<div><b>${mine} good match${mine === 1 ? "" : "es"} for you to apply to</b>These sites need an account or use a chat bot, so the app can't apply for you. Each takes a few minutes.</div>
     <div class="right"><button class="btn sm" onclick="go('manual')">Show them</button></div></div>`;

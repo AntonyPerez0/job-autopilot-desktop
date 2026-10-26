@@ -80,14 +80,16 @@ export function rules(facts, a, ctx = {}) {
       // "authorized to work (with or without sponsorship)?" is about authorization; one that also asks
       // whether you will need sponsorship mixes two facts, and is left to the model and the user's answers.
       skip: /(require|need)\w*.{0,60}sponsor|sponsor\w*.{0,30}(require|need)/i,
-      bad: (v) => (facts.authorizedToWork ? !yes(v) : !no(v)),
-      fix: (o) => (facts.authorizedToWork ? pick(o, (x) => yes(x)) || (o && o.length ? null : "Yes") : pick(o, (x) => no(x)) || (o && o.length ? null : "No")),
+      bad: (v) => (facts.authorizedToWork === null ? true : facts.authorizedToWork ? !yes(v) : !no(v)),
+      fix: (o) => (facts.authorizedToWork === null ? null : facts.authorizedToWork ? pick(o, (x) => yes(x)) || (o && o.length ? null : "Yes") : pick(o, (x) => no(x)) || (o && o.length ? null : "No")),
+      why: facts.authorizedToWork === null ? "you haven't answered it under About you" : "",
     },
     {
       name: "sponsorship", label: /sponsor|visa (status|support)|immigration (case|support)|h-?1b|work permit/i,
       skip: /authori[sz]ed to work|eligible to work|right to work|legally (able|permitted) to work/i,
-      bad: (v) => (facts.needsSponsorship ? !yes(v) : !no(v) && !/^n\/?a$/i.test(String(v).trim())),
-      fix: (o) => (facts.needsSponsorship
+      why: facts.needsSponsorship === null ? "you haven't answered it under About you" : "",
+      bad: (v) => (facts.needsSponsorship === null ? true : facts.needsSponsorship ? !yes(v) : !no(v) && !/^n\/?a$/i.test(String(v).trim())),
+      fix: (o) => (facts.needsSponsorship === null ? null : facts.needsSponsorship
         ? pick(o, (x) => yes(x) || /will require|do require|need/i.test(x) && !/not|don.?t/i.test(x)) || (o && o.length ? null : "Yes")
         : pick(o, (x) => no(x) || /not? (require|need)|do not/i.test(x)) || (o && o.length ? null : "No")),
     },

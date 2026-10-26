@@ -33,6 +33,26 @@ export const setUpdater = (u) => { updater = u; };
 
 export const VERSION = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 
+// Why jobs were skipped, in a few plain groups, for "nothing to apply to right now" on the Overview.
+const SKIP_GROUPS = [
+  [/class a\b|cdl-a\b/i, "need a Class A CDL"],
+  [/endorsement|hazmat|tanker/i, "need a license endorsement you don't list"],
+  [/licen[cs]e|certif|clearance|degree/i, "need a license, certificate or degree you don't list"],
+  [/pays at most/i, "pay less than your lowest pay"],
+  [/years|experience|senior|level/i, "ask for more or different experience"],
+  [/miles|too far|location|relocat|remote|on-?site|outside/i, "are too far away or in the wrong place"],
+  [/title|does not match|doesn't match|different (kind|role)|not a .* role|unrelated/i, "are a different kind of job than your titles"],
+  [/already applied/i, "you already applied to"],
+  [/closed/i, "had closed"],
+  [/agency|staffing/i, "are from staffing agencies"],
+];
+function skipSummary(db) {
+  const rows = db.prepare("SELECT reason FROM jobs WHERE status = 'skipped' AND updated_at > datetime('now', '-1 day')").all();
+  const n = new Map();
+  for (const { reason } of rows) { const g = (SKIP_GROUPS.find(([rx]) => rx.test(reason || "")) || [null, "other reasons"])[1]; n.set(g, (n.get(g) || 0) + 1); }
+  return { total: rows.length, top: [...n].filter(([g]) => g !== "other reasons").sort((a, b) => b[1] - a[1]).slice(0, 3).map(([why, count]) => ({ why, count })) };
+}
+
 function status() {
   const db = getDb();
   const counts = Object.fromEntries(db.prepare("SELECT status, COUNT(*) n FROM jobs GROUP BY status").all().map((r) => [r.status, r.n]));
@@ -42,7 +62,7 @@ function status() {
   const firstFilled = db.prepare("SELECT slug, title, company FROM jobs WHERE status = 'filled' ORDER BY updated_at ASC LIMIT 1").get() || null;
   const toAnswer = db.prepare("SELECT slug, title, company FROM jobs WHERE status = 'failed' AND reason LIKE 'could not fill every required field%' ORDER BY updated_at DESC").all();
   const { wake, ...st } = state;
-  return { state: st, counts, appliedToday: appliedToday(), settings: s, model: s.ai.model, serverNow: Date.now(), next, firstFilled, toAnswer: { count: toAnswer.length, first: toAnswer[0] || null }, search: lastSearch.at ? { ...lastSearch } : null, version: VERSION,
+  return { state: st, counts, appliedToday: appliedToday(), settings: s, model: s.ai.model, serverNow: Date.now(), next, firstFilled, toAnswer: { count: toAnswer.length, first: toAnswer[0] || null }, search: lastSearch.at ? { ...lastSearch, nextAt: state.nextSearch || null, skipped: lastSearch.done && !counts.queued ? skipSummary(db) : null } : null, version: VERSION,
     browser: { open: browserOpen(), mode: windowModeOf(s) }, update: updater ? updater.state() : null };
 }
 

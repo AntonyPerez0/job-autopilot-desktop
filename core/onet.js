@@ -46,3 +46,7 @@ export function findOccupations(jobTitle, limit = 5) {
   return [...out.entries()].sort((a, b) => b[1] - a[1] || own(b[0]) - own(a[0])).slice(0, limit)
     .map(([code]) => { const o = d.occ[d.codes.indexOf(code)]; return { code, title: o[0], tasks: o[1] }; });
 }
+
+// A supervisor's or manager's task list only fits someone who says they supervised or managed.
+export const BOSS = /\b(first-line supervisors|managers?)\b/i;
+export const SAYS_BOSS = /\b(supervis\w*|manag\w*|lead|foreman|forewoman|head|chief|director|boss|superintendent|in charge)\b/i;

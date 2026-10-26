@@ -89,7 +89,25 @@ function show(k) {
   const sec = document.getElementById("sec");
   if (s.id === "ai") form = Forms.ai(sec, cfg);
   if (s.id === "resumes") form = Forms.resumes(sec, cfg, () => setTimeout(() => show(i + 1), 600));
-  if (s.id === "review") form = Forms.review(sec, cfg);
+  if (s.id === "review") {
+    form = Forms.review(sec, cfg);
+    // A short resume: the questions that fill the page, before the person approves anything.
+    const exp = (cfg.profile && cfg.profile.experience) || [];
+    const lines = exp.reduce((n, e) => n + (e.bullets || []).length, 0);
+    if (exp.length <= 2 || lines < 12) {
+      const fold = document.createElement("details");
+      fold.className = "more"; fold.style.marginBottom = "12px";
+      fold.innerHTML = `<summary><b>Want a fuller page?</b><span>Optional: a few questions about other work, licenses, records and school that people usually leave out</span></summary><div data-fill style="padding:4px 16px 16px"></div>`;
+      sec.parentNode.insertBefore(fold, sec);
+      let opened = false;
+      fold.ontoggle = async () => {
+        if (!fold.open || opened) return;
+        opened = true;
+        await form.save(); // keep what they ticked so far
+        Forms.fillPage(fold.querySelector("[data-fill]"), cfg, () => { form = Forms.review(sec, cfg); });
+      };
+    }
+  }
   if (s.id === "questions") form = Forms.questions(sec, cfg);
   if (s.id === "prefs") form = Forms.prefs(sec, cfg);
   if (s.id === "mail") form = Forms.mailbox(sec, cfg);
