@@ -36,13 +36,12 @@ For hourly and everyday jobs as well as office and tech work. Desktop app for ma
 
 ```mermaid
 flowchart LR
-    A["Find jobs<br><sub>HiringCafe, freehire,<br>Google Jobs, your links</sub>"] --> B["Screen each one<br><sub>against your facts<br>and preferences</sub>"]
-    B --> C["Build a resume<br><sub>one page, from pieces<br>you approved</sub>"]
-    C --> D["Fill the form<br><sub>in a browser<br>you can watch</sub>"]
-    D --> E["Check every answer<br><sub>truth rules and<br>a second AI pass</sub>"]
-    E --> F{"Live?"}
-    F -- "dry run" --> G["Stops for<br>your review"]
-    F -- "live" --> H["Submits and<br>keeps a record"]
+    A[Find jobs] --> B[Screen against<br>your facts]
+    B --> C[Build a<br>one-page resume]
+    C --> D[Fill the<br>application]
+    D --> E[Check every<br>answer]
+    E -->|dry run| G[Wait for<br>your review]
+    E -->|live| H[Submit and<br>keep a record]
 ```
 
 1. **You tell it once** what you've done and what you want: upload a resume, or
