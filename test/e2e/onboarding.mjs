@@ -163,6 +163,13 @@ try {
   assert.strictEqual(await win.inputValue("input[name=firstName]"), "Jordan");
   assert.strictEqual(await win.inputValue("input[name=email]"), "jordan.lee@example.com");
   await win.fill("input[name=city]", "Austin");
+  // Legal answers are never pre-filled: the app refuses to go on until the person picks them.
+  assert.ok(!(await win.isChecked("input[name=workAuthorized][value=yes]")), "work authorization is not pre-filled");
+  await next();
+  assert.match(await win.locator("#err").innerText(), /allowed to work/);
+  await win.check("input[name=workAuthorized][value=yes]");
+  await win.check("input[name=needsSponsorship][value=no]");
+  await win.check("input[name=over18][value=yes]");
   await win.fill("input[name=ytype]", "Software engineering");
   await win.fill("input[name=yyears]", "3");
   await shot("5-questions");

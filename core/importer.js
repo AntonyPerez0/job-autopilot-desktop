@@ -122,5 +122,7 @@ export async function importResumes(files, onStep = () => {}, settings = aiSetti
     const p = await Tailor.profileFromText(settings, text);
     merged = merged ? mergeProfiles(merged, p) : p;
   }
+  // The "own voice" paragraph is for words the person wrote themselves; the AI copies the example's and invents one.
+  if (merged) delete merged.essaySample;
   return { profile: unapproved(merged), texts };
 }

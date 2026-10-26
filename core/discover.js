@@ -113,10 +113,10 @@ const posted = (j) => (j.posted_at ? Date.parse(j.posted_at) : NaN);
 
 // What the last search found and what went wrong, for the dashboard: a search that quietly finds
 // nothing because a site would not open looks just like a quiet day.
-export const lastSearch = { at: null, found: 0, queued: 0, problems: [] };
+export const lastSearch = { at: null, found: 0, queued: 0, problems: [], done: false };
 
 export async function discover(progress = () => {}, ctx = {}) {
-  lastSearch.at = new Date().toISOString(); lastSearch.problems = []; lastSearch.found = 0; lastSearch.queued = 0;
+  lastSearch.at = new Date().toISOString(); lastSearch.problems = []; lastSearch.found = 0; lastSearch.queued = 0; lastSearch.done = false;
   const db = getDb();
   const prefs = getPrefs(), a = getAnswers();
   const seen = new Set(db.prepare("SELECT slug FROM jobs").all().map((r) => r.slug));
@@ -136,6 +136,7 @@ export async function discover(progress = () => {}, ctx = {}) {
   const profile = loadProfile();
   if (!(prefs.titles || []).length || (!(prefs.cities || []).length && !prefs.remote)) {
     log(null, "no searches to run: add job titles and a city (or remote) in Settings > Job preferences", "warn");
+    lastSearch.done = true;
     return 0;
   }
   const sources = enabledSources(prefs);
@@ -206,7 +207,7 @@ export async function discover(progress = () => {}, ctx = {}) {
     log(j.slug, `${status}: ${j.title} at ${j.company} (${j.location}) via ${j.board}${reason ? " - " + reason : ""}`);
   }
   log(null, `discovery done: ${found.size} new results, ${added} queued, ${toYou} for you to apply to`);
-  Object.assign(lastSearch, { found: found.size, queued: added, toYou });
+  Object.assign(lastSearch, { found: found.size, queued: added, toYou, done: true });
   return added;
 }
 

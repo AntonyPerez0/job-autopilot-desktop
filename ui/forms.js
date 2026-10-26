@@ -316,7 +316,7 @@
       const interview = { target: val(el, "c_target"), jobs, education, certifications: val(el, "c_certs"), languages: val(el, "c_langs"), skills: val(el, "c_skills"), summary: val(el, "c_summary") };
       const btn = el.querySelector("[data-cgo]");
       btn.disabled = true;
-      msg(m, "info", "Writing your resume from your answers. This takes up to a minute...");
+      msg(m, "info", "Writing your resume from your answers, then checking every line against what you said. This usually takes 2 to 7 minutes; you can leave this window open and wait.");
       const r = await api("/api/resume/create", { interview, merge: val(el, "c_merge") });
       btn.disabled = false;
       if (r.error) return msg(m, "err", r.error);
@@ -380,7 +380,7 @@
       const thin = [...input.jobs, ...input.volunteer].find((j) => !j.daily);
       if (thin) return msg(m, "err", `Say a few words about what you did at ${thin.title || thin.employer}.`);
       if (!Object.values(input).some((x) => x.length)) return msg(m, "err", "Answer at least one question first.");
-      btn.disabled = true; msg(m, "info", "Turning your answers into resume pieces. This takes up to a minute...");
+      btn.disabled = true; msg(m, "info", "Turning your answers into resume pieces and checking each one. This takes a minute or two...");
       const r = await api("/api/resume/fill/apply", { input });
       btn.disabled = false;
       if (r.error) return msg(m, "err", r.error);
@@ -585,7 +585,7 @@
         });
       }
       h += group("Skills", "skills", arr(p.skills).map((s, i) => `<div class="rv-item ${s.approved ? "ok" : ""}"><input type="checkbox" class="approve" data-approve="skills.${i}.text" ${s.approved ? "checked" : ""}>
-        <div class="form-row" style="grid-template-columns:200px 1fr"><input type="text" data-edit="skills.${i}.label" value="${esc(s.label)}"><input type="text" data-edit="skills.${i}.items" value="${esc(s.items)}"></div>
+        <div class="form-row" style="grid-template-columns:200px 1fr"><input type="text" data-edit="skills.${i}.label" value="${esc(s.label)}"><input type="text" data-edit="skills.${i}.items" value="${esc(s.items)}"></div>${s.offPage ? `<small class="hint" style="grid-column:2/-1">Kept off the resume: recruiters skip general abilities like these. Your lines already show them.</small>` : ""}
         <button type="button" class="btn ghost sm" data-del="skills.${i}">${icon("trash")}</button></div>`).join(""), "skill");
       h += group("Education (as it appears on the resume)", "education", arr(p.education).map((e, i) => `<div class="rv-item ${e.approved ? "ok" : ""}"><input type="checkbox" class="approve" data-approve="education.${i}.text" ${e.approved ? "checked" : ""}>
         <div class="form-row"><input type="text" data-edit="education.${i}.school" value="${esc(e.school)}" placeholder="School"><input type="text" data-edit="education.${i}.detail" value="${esc(e.detail || "")}" placeholder="Degree"><input type="text" data-edit="education.${i}.dates" value="${esc(e.dates || "")}" placeholder="Dates"></div>
@@ -745,6 +745,9 @@
         if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(out.email)) missing.push("a valid email address");
         if (!out.phone) missing.push("your phone number");
         if (!out.city) missing.push("your city");
+        if (!out.workAuthorized) missing.push("whether you're allowed to work there");
+        if (!out.needsSponsorship) missing.push("whether you'll need a visa sponsor");
+        if (!out.over18) missing.push("whether you're 18 or older");
         if (missing.length) return "Please add " + missing.join(", ") + ".";
         for (const e of out.education) if (e.end && e.start && e.end < e.start) return `${e.school}: the finish date is before the start date.`;
         cfg.answers = await api("/api/answers/save", { answers: out });
@@ -876,6 +879,8 @@
           minPay: Number(val(el, "minPay")) || 0, minPayPer: val(el, "minPayPer") || "hour",
         };
         if (!out.titles.length) return "Add at least one job title (type it and press Enter, or click a suggestion).";
+        if (out.minPayPer === "hour" && out.minPay > 300) return `Lowest pay: $${out.minPay.toLocaleString()} an hour looks like a yearly salary. Choose "a year" next to it, or fix the number.`;
+        if (out.minPayPer === "year" && out.minPay > 0 && out.minPay < 1000) return `Lowest pay: $${out.minPay} a year looks like an hourly rate. Choose "an hour" next to it, or fix the number.`;
         if (!out.cities.length && !out.remote) return "Pick your city from the list, or tick remote jobs.";
         if (!lv.length) return "Pick at least one level.";
         if (!Object.values(boards).some(Boolean)) return "Pick at least one place to look for jobs.";

@@ -74,7 +74,7 @@ export const ANSWERS_DEFAULTS = {
   firstName: "", lastName: "", preferredName: "", email: "", phone: "",
   linkedin: "", github: "", website: "", otherLinks: "",
   street: "", city: "", state: "", zip: "", country: "United States",
-  workAuthorized: "yes", needsSponsorship: "no", authCountry: "United States",
+  workAuthorized: "", needsSponsorship: "", authCountry: "United States", // legal answers: never pre-filled
   education: [],             // [{ school, degree, field, start: "YYYY-MM", end: "YYYY-MM" }]
   years: [],                 // [{ type: "Software engineering", years: 2 }]
   totalYears: 0,             // all professional work, any field
@@ -97,7 +97,7 @@ export const ANSWERS_DEFAULTS = {
   over21: "",                // yes | no (driving and alcohol jobs ask)
   convictions: "ask",        // ask | none: criminal-history questions         // ask | yes: background checks and drug tests if offered a job
   heardAbout: "Job board",
-  over18: "yes",
+  over18: "",
   travel: "some",            // yes | some | no
   salary: "",
   demographics: { gender: "decline", race: "decline", hispanic: "decline", veteran: "decline", disability: "decline", lgbtq: "decline" },

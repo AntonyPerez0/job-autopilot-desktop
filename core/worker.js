@@ -89,7 +89,8 @@ async function stillOpen(slug) {
   try {
     const r = await call("check_jobs_open", { slugs: [slug] });
     const j = (r.jobs || [])[0];
-    return !j || j.status === "open";
+    // freehire only knows its own postings: "not_found" (every HiringCafe job, for one) says nothing about whether it's open.
+    return !j || j.status !== "closed";
   } catch { return true; }
 }
 
@@ -99,6 +100,10 @@ async function withTimeout(p, ms) {
 }
 
 async function applyOne(job) {
+  try { return await applyOneInner(job); } finally { state.job = null; state.progress = null; }
+}
+
+async function applyOneInner(job) {
   state.now = "applying"; state.job = { slug: job.slug, title: job.title, company: job.company };
   setJob(job.slug, { status: "working", attempts: job.attempts + 1 });
   const twin = appliedSameRole(job);
@@ -114,7 +119,7 @@ async function applyOne(job) {
     return false;
   }
   if (!(await stillOpen(job.slug))) {
-    setJob(job.slug, { status: "skipped", reason: "posting closed (freehire)" });
+    setJob(job.slug, { status: "skipped", reason: "posting closed before the app got to it" });
     log(job.slug, "closed before we got to it");
     return false;
   }
@@ -151,7 +156,7 @@ async function applyOne(job) {
     setJob(job.slug, { status: retry ? "queued" : "failed", reason: "error: " + e.message.slice(0, 400) });
     log(job.slug, `error${retry ? " (will retry)" : ""}: ${e.message}`, "error");
     return false;
-  } finally { state.job = null; state.progress = null; }
+  }
 }
 
 let running = false, stopping = false, held = false;

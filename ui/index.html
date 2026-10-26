@@ -573,8 +573,8 @@ function banners() {
       ${all && (sr.sources || []).length < 2 ? " It's the only place the app looks right now: turn on another in Settings > Jobs to look for, or press Search now to try again." : " The app tries again on the next search."}</div>
       <div class="right"><button class="btn sm" onclick="searchNow()">Search now</button></div></div>`;
   }
-  else if (sr && sr.at && sr.found === 0 && view === "overview" && !Object.values(st.counts || {}).some(Boolean)) {
-    h += `<div class="banner amber">${icon("search")}<div><b>The last search found no jobs</b>Job sites had nothing new for these titles near you. Shorter, more common titles ("CDL Driver" rather than "Fleet Vehicle Transport Driver"), a wider distance, or older postings (Settings > Jobs to look for > More options) find more.</div>
+  else if (sr && sr.at && sr.done && sr.found === 0 && view === "overview" && !Object.values(st.counts || {}).some(Boolean)) {
+    h += `<div class="banner amber">${icon("search")}<div><b>The last search found no jobs</b>Job sites had nothing new for these titles near you. Shorter, more common job titles, a wider distance, or older postings (Settings > Jobs to look for > More options) find more.</div>
       <div class="right"><button class="btn sm" onclick="go('settings')">Change what to look for</button></div></div>`;
   }
   const mine = (st.counts || {}).manual || 0;

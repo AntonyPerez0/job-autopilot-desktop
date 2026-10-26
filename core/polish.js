@@ -231,8 +231,9 @@ Return JSON only: {"jobs": [{"i": 0, "lines": [{"text": "...", "from": [0, 3]}]}
     for (const b of arr(p.bases)) if (arr(b.skills).some((id) => oldIds.has(id))) b.skills = [...arr(b.skills).filter((id) => !oldIds.has(id)), ...fresh.map((s0) => s0.id)];
     notes.push(`skills in ${fresh.length} groups`);
   }
-  // The second, separate AI pass over everything reworded.
-  const verdict = await factCheck(toCheck.map((x) => ({ text: x.text, source: x.source })));
+  // The second, separate AI pass over everything reworded; it knows the tools and skills they listed too.
+  const listed = skillItems.length ? `. Tools, skills and licenses they listed: ${skillItems.join(", ")}` : "";
+  const verdict = await factCheck(toCheck.map((x) => ({ text: x.text, source: x.source + listed })));
   toCheck.forEach((x, k) => {
     if (verdict === null) x.b.warning = "This line wasn't double-checked. Read it carefully.";
     else if (verdict[k]) x.b.warning = `Check this: "${verdict[k]}" goes beyond what you said.`;
