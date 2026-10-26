@@ -235,9 +235,43 @@ Many employers use application sites that make you **create an account**
 first (Workday, iCIMS, Taleo, Oracle, ADP, UKG). Some use a **chat bot**
 instead of a form (Paradox's "Olivia"), and some links only lead to a **job
 board's** copy of the posting (Indeed, LinkedIn, ZipRecruiter). The app doesn't
-create accounts, chat with bots or log in anywhere. Good matches on those sites
-go to **Apply yourself**. Open one, apply on the site, then press **I applied**
-so it's never suggested again.
+chat with bots, and it makes accounts only on Workday and only if you turn that
+on (see [Job site accounts](#job-site-accounts-workday)). Good matches on the
+other sites go to **Apply yourself**. Open one, apply on the site, then press
+**I applied** so it's never suggested again.
+
+### Job site accounts (Workday)
+
+Workday is the most common of those sites, and every company has its own
+Workday site with its own account. Settings > **Job site accounts** lets the app
+make those accounts for you:
+
+1. Tick **Make accounts and sign in on Workday job sites for me**.
+2. Type the email and the password the accounts should use. It's the same
+   password on every site, so use one you don't use anywhere else. Workday asks
+   for 8 or more characters with upper and lower case, a number and a symbol;
+   the app checks that when you save.
+3. Tick the box that lets it accept each site's ordinary terms of use and privacy
+   policy when it signs up. Arbitration agreements and other legal waivers still
+   always wait for you.
+4. Connect your mailbox too: Workday emails a link to confirm each new account,
+   and the app opens it for you.
+
+Then for each Workday job the app chooses **Apply manually**, makes the account
+(or signs in, if it made one there before), confirms it from your email, and
+fills every page. In dry run it stops before **Submit**: the filled pages are
+saved as a draft in your account on that site, which you can open and check.
+Workday jobs already waiting in Apply yourself move to the queue when you turn it
+on. Settings lists every account the app made.
+
+Things to know:
+- Some job sites' terms may not allow sign-ups by software, and you are
+  responsible for the accounts made in your name.
+- If you already have an account on a company's Workday site with a different
+  password, the app can't sign in there; the job stops and says so.
+- A site that shows a CAPTCHA at sign-up still waits for you.
+- Workday's own forms vary by company. This has been tested on a practice copy
+  of a Workday site, not on real ones yet, so check the first few dry runs.
 
 The app applies by itself on sites that need no account. That includes
 Greenhouse, Lever, Ashby, SmartRecruiters, Workable, CareerPlug, Paycom,
@@ -354,8 +388,9 @@ them all, and you can remove any.
     you a "thank you for applying" email about.
   - If the app is closed in the middle of pressing Submit, that job is never
     pressed again automatically. It waits for you.
-- **Solve CAPTCHAs, create accounts or log in anywhere.** Jobs that need any of
-  that are skipped or left for you.
+- **Solve CAPTCHAs, or make accounts without your go-ahead.** Accounts are made
+  only on Workday, and only once you turn on Job site accounts. Jobs that need
+  anything else are skipped or left for you.
 
 ### Mailbox
 
@@ -417,7 +452,7 @@ the folder):
 
 That folder holds your profile, answers, preferences, the job list, every
 resume that was sent, and the screenshots. The only file kept elsewhere is the
-application history described above (you can turn it off in Settings). The API key and mailbox password
+application history described above (you can turn it off in Settings). The API key, the mailbox password and the job-site account password
 are encrypted by your operating system's keychain (macOS Keychain, Windows
 DPAPI).
 
@@ -432,7 +467,8 @@ The app only sends data to:
   (searched in the app's browser), GitHub (Simplify's lists) and, with your
   key, SerpApi for Google Jobs.
 - **The job sites themselves** (the employers and their application sites):
-  the application you send.
+  the application you send, and, with Job site accounts on, the email and
+  password the app signs up and signs in with on Workday sites.
 - **Your mailbox** (if connected): read-only access over IMAP.
 - **GitHub**: a check for new versions, and, if you use **Projects from
   GitHub**, your username, to read your public projects. Chromium is downloaded from

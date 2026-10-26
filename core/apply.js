@@ -7,14 +7,15 @@ import { CONTENT_JS, loadProfile, plan, build } from "./engine.js";
 import { log } from "./db.js";
 import { acquireBrowser, closeAppPage, closeBrowser, newAppPage } from "./browser.js";
 import { dataDir, getAnswers, getPrefs, getSettings } from "./store.js";
-import { waitForCode } from "./mail.js";
+import { waitForCode, waitForLink } from "./mail.js";
+import { isWorkday, siteAccounts, workdayAccount, workdayApplyManually } from "./accounts.js";
 import { withinRadius } from "./geo.js";
 import { applyYourAnswers, yourAnswersFor } from "./asked.js";
 import { LOGIN_WALL_JS } from "./ats.js";
 
 // The steps of one application, in order, as the dashboard shows them.
 export const STEPS = [
-  ["browser", "Starting browser"], ["open", "Opening application"], ["read", "Reading the form"],
+  ["browser", "Starting browser"], ["open", "Opening application"], ["read", "Reading the form"], ["account", "Signing in to the job site"],
   ["plan", "Tailoring with AI"], ["build", "Resume and fact-check"], ["fill", "Filling the form"],
   ["verify", "Checking every answer"], ["submit", "Submitting"], ["code", "Reading email code"], ["confirm", "Waiting for confirmation"],
 ];
@@ -608,11 +609,27 @@ export async function applyTo(job, hooks = {}, opts = {}) {
       ({ text, fields } = await scrapeAll(page));
     }
     if (CLOSED_RX.test(text.slice(0, 3000)) && fields.length < 5) return { ...result, status: "skipped", reason: "posting is closed" };
+    if (isWorkday(page.url()) && await workdayApplyManually(page)) ({ text, fields } = await scrapeAll(page));
+    // A Workday site, and the user let the app make accounts: sign up (or sign in) with their email and password.
+    const creds = siteAccounts(settings);
+    let signedIn = false;
+    const accountNotes = [];
+    if (creds && (isWorkday(page.url()) || isWorkday(job.apply_url))) {
+      step("account");
+      const waitLink = opts.waitLink || ((since, host) => (opts.mailbox ? waitForLink(opts.mailbox, since, host, 180) : Promise.resolve(null)));
+      const r = await workdayAccount(page, creds, { waitLink, log: (m) => log(job.slug, m) });
+      if (!r.ok) return { ...result, status: "failed", reason: r.reason, screenshot: await shot(page, job.slug, "account") };
+      signedIn = true;
+      accountNotes.push(...r.notes);
+      for (const x of r.notes) log(job.slug, x);
+      await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+      ({ text, fields } = await scrapeAll(page));
+    }
     if (await loginWall(page)) return { ...manual(`${new URL(page.url()).hostname} asks you to sign in or create an account first`), screenshot: await shot(page, job.slug, "signin") };
     if (fields.length < 3) return { ...manual("the app found no form it can fill on this page (it may be a chat, or a site the app does not know)"), screenshot: await shot(page, job.slug, "noform") };
 
     const postingText = [text, details.description ? "\n\nFROM THE JOB LISTING:\n" + details.description : ""].join("").slice(0, 30000);
-    const allKit = [], allFields = [], audit = [];
+    const allKit = [], allFields = [], audit = [...accountNotes];
     const rep = { filled: [], kept: [], decide: [], drafts: [], missing: [] };
     let resume = null; // built on the first page, uploaded wherever a page asks for it
     for (let n = 1; ; n++) {
@@ -676,7 +693,9 @@ export async function applyTo(job, hooks = {}, opts = {}) {
       for (const f of page.frames()) { nextLabel = await f.evaluate(NEXT_JS).catch(() => null); if (nextLabel) { nextFrame = f; break; } }
       if (!nextFrame) break;
       // A dry run never moves past the first page: some sites save an application as soon as you press Next.
-      if (dryRun) return { ...result, status: "filled", reason: `dry run: page 1 of a form with several pages filled and checked; later pages are filled when you go live` };
+      // On a site where the app signed in, pages are saved to the user's own account as a draft and nothing is
+      // sent before Submit, so a dry run fills every page and stops there.
+      if (dryRun && !signedIn) return { ...result, status: "filled", reason: `dry run: page 1 of a form with several pages filled and checked; later pages are filled when you go live` };
       if (n >= MAX_PAGES) return { ...result, status: "failed", reason: `the form kept asking for more after ${MAX_PAGES} pages` };
       const before = page.url(), beforeLabels = fields.map((f) => f.label).join("|");
       log(job.slug, `pressing "${nextLabel}"`);
@@ -693,7 +712,7 @@ export async function applyTo(job, hooks = {}, opts = {}) {
       // A review page with only a Submit button left.
       if (!fields.length) break;
     }
-    if (dryRun) return { ...result, status: "filled", reason: "dry run: filled and checked, not submitted" };
+    if (dryRun) return { ...result, status: "filled", reason: signedIn ? `dry run: signed in, filled all ${result.details.pages || 1} pages and stopped before Submit` : "dry run: filled and checked, not submitted" };
 
     // Submit.
     step("submit");

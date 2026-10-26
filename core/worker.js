@@ -38,7 +38,7 @@ export const state = { now: "starting", job: null, lastSearch: null, nextSearch:
 const TIMINGS = () => dataDir("timings.json");
 let timing;
 function loadTimings() {
-  timing = Object.assign({ browser: 5, open: 12, read: 10, plan: 25, build: 30, fill: 30, verify: 4, submit: 3, code: 12, confirm: 8 },
+  timing = Object.assign({ browser: 5, open: 12, read: 10, account: 40, plan: 25, build: 30, fill: 30, verify: 4, submit: 3, code: 12, confirm: 8 },
     (() => { try { return JSON.parse(fs.readFileSync(TIMINGS(), "utf8")); } catch { return {}; } })());
 }
 function learn(key, seconds) {
@@ -173,7 +173,7 @@ export async function run() {
   }
   // Once the mailbox is set up, Greenhouse jobs that stopped at the emailed code get another go.
   if (mailbox()) {
-    const n = db.prepare("UPDATE jobs SET status = 'queued', attempts = 0 WHERE status = 'failed' AND reason LIKE 'security code:%'").run().changes;
+    const n = db.prepare("UPDATE jobs SET status = 'queued', attempts = 0 WHERE status = 'failed' AND (reason LIKE 'security code:%' OR reason LIKE 'verify email:%')").run().changes;
     if (n) log(null, `mailbox configured: ${n} jobs that needed an emailed code are queued again`);
   }
   log(null, `autopilot started (${CONFIG.dryRun ? "dry run" : "live"}, cap ${CONFIG.dailyCap}/day)`);

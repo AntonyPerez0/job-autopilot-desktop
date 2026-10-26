@@ -212,7 +212,7 @@ function header() {
 }
 
 // ---------- progress ----------
-const SHORT = { browser: "Browser", open: "Open form", read: "Read form", plan: "AI tailoring", build: "Resume + fact-check",
+const SHORT = { browser: "Browser", open: "Open form", read: "Read form", account: "Sign in", plan: "AI tailoring", build: "Resume + fact-check",
   fill: "Fill form", verify: "Check answers", submit: "Submit", code: "Email code", confirm: "Confirmation" };
 let skew = 0;
 const now = () => Date.now() + skew;
@@ -225,7 +225,7 @@ function progressCard() {
   if (!p) return "";
   if (p.kind === "apply" && st.state.job) {
     const job = st.state.job;
-    const steps = p.steps.filter((x) => x.key !== "code" || p.step === "code" || p.done.includes("code"));
+    const steps = p.steps.filter((x) => !["code", "account"].includes(x.key) || p.step === x.key || p.done.includes(x.key));
     const cur = steps.findIndex((x) => x.key === p.step);
     const inStep = (now() - p.stepAt) / 1000;
     let total = 0, doneT = 0;
@@ -654,6 +654,7 @@ async function renderConfig() {
       ${card("questions", "About you", "The answers application forms ask for")}
       ${card("ai", "AI", "The AI service the app uses")}
       ${card("mailbox", "Mailbox", "Optional: email codes and spotting jobs you already applied to")}
+      ${card("accounts", "Job site accounts", "Optional: let the app make accounts on Workday sites and apply there too")}
       ${card("running", "Pace and browser", "How many a day, and the browser window")}
       <div class="card" style="margin-bottom:12px"><div class="card-h"><h2>Application history</h2><span class="sub">So you never apply twice, even after a reinstall</span></div><div class="sec" id="sec-history"></div></div>
       <div class="card" style="margin-bottom:12px"><div class="card-h"><h2>Your answers to form questions</h2><span class="sub">Questions you answered when an application stopped; the app uses them again</span></div><div class="sec" id="sec-yours"></div></div>
@@ -661,7 +662,7 @@ async function renderConfig() {
         <div class="row-actions"><button class="btn sm" onclick="window.ja.showDataFolder()">${icon("ext")}Open the folder</button>
         <button class="btn sm" onclick="window.ja.go('onboarding.html')">${icon("retry")}Run the setup again</button></div></div></div>`;
     const forms = { prefs: Forms.prefs($("sec-prefs"), cfg), questions: Forms.questions($("sec-questions"), cfg), ai: Forms.ai($("sec-ai"), cfg),
-      mailbox: Forms.mailbox($("sec-mailbox"), cfg), running: Forms.running($("sec-running"), cfg) };
+      mailbox: Forms.mailbox($("sec-mailbox"), cfg), running: Forms.running($("sec-running"), cfg), accounts: Forms.accounts($("sec-accounts")) };
     Forms.history($("sec-history"), cfg, () => refreshStatusOnly());
     drawYours();
     document.querySelectorAll("#sec-theme [name=theme]").forEach((r) => r.onchange = async () => {

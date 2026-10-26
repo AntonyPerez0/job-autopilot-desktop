@@ -9,6 +9,7 @@ import { getAnswers, getPrefs } from "./store.js";
 import { cleanUrl, familyKey, inAppliedList, jobKey, parseAppliedList, roleKey } from "./dedupe.js";
 import { KIND_TEXT } from "./ats.js";
 import { payPerHour } from "./suggest.js";
+import { siteAccounts } from "./accounts.js";
 import { SOURCES, enabledSources } from "./sources/index.js";
 import { searchesFor } from "./sources/freehire.js";
 
@@ -105,7 +106,7 @@ export function manualReason(j) {
   if (j.kind === "auto" || j.kind === "unknown") return null;
   let host = "";
   try { host = new URL(j.apply_url || j.url).hostname.replace(/^www\./, ""); } catch { /* no link */ }
-  return `Apply yourself: ${host || j.ats || "this site"} ${KIND_TEXT[j.kind] || "needs you"}`;
+  return `Apply yourself: ${host || j.ats || "this site"} ${KIND_TEXT[j.kind] || "needs you"}${j.ats === "workday" ? " (or turn on Settings > Job site accounts and the app does it)" : ""}`;
 }
 
 const posted = (j) => (j.posted_at ? Date.parse(j.posted_at) : NaN);
@@ -181,7 +182,8 @@ export async function discover(progress = () => {}, ctx = {}) {
     }
     else if ((families.get(fam) || 0) >= PER_FAMILY) { status = "skipped"; reason = `the same job at another location: ${PER_FAMILY} of these are already in your list`; }
     else {
-      const why = manualReason(j);
+      // Workday needs an account; with the user's go-ahead the app makes it, so the job is the app's to apply to.
+      const why = j.ats === "workday" && siteAccounts() ? null : manualReason(j);
       if (why) { status = "manual"; reason = why; }
       try {
         const s = verdicts.get(fam) || await screen(profile, j, j.description, a, prefs);

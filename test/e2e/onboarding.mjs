@@ -262,6 +262,23 @@ try {
   await win.waitForSelector('#sec-history .hint:has-text("3 so far")');
   await win.waitForSelector('#update-card button:has-text("Update now")');
   await shot("9-settings");
+  // Job site accounts: off until the user turns it on, agrees to sign-up terms, and gives a password sites accept.
+  await win.click('details:has(#sec-accounts) > summary');
+  await win.waitForSelector("#sec-accounts [name=acc_on]");
+  await win.check("#sec-accounts [name=acc_on]");
+  await win.fill("#sec-accounts [name=acc_pass]", "password");
+  await win.click('[data-save="accounts"]');
+  await win.waitForSelector('#msg-accounts .msg.err:has-text("Tick the box")');
+  await win.check("#sec-accounts [name=acc_consent]");
+  await win.click('[data-save="accounts"]');
+  await win.waitForSelector('#msg-accounts .msg.err:has-text("uppercase letter")');
+  await win.fill("#sec-accounts [name=acc_pass]", "Tow-Truck-2026!");
+  await win.click('[data-save="accounts"]');
+  await win.waitForSelector('#msg-accounts .msg.ok');
+  await shot("9c-accounts");
+  const acc = JSON.parse(fs.readFileSync(path.join(data, "settings.json"), "utf8")).siteAccounts;
+  assert.deepStrictEqual([acc.enabled, acc.consent, acc.email], [true, true, "jordan.lee@example.com"], "turned on with the user's email");
+  assert.ok(!fs.readFileSync(path.join(data, "settings.json"), "utf8").includes("Tow-Truck-2026!"), "the password is not stored in plain text");
   // Appearance: Dark switches the whole app through Electron's nativeTheme and is remembered; "Match my computer" undoes it.
   const theme = () => app.evaluate(({ nativeTheme }) => [nativeTheme.themeSource, nativeTheme.shouldUseDarkColors]);
   await win.check('#sec-theme input[value=dark]');

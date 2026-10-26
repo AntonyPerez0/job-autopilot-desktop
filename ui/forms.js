@@ -778,6 +778,36 @@
     };
   }
 
+  // ---------- Job site accounts (Workday): the app signs up and signs in, only when the user turns it on ----------
+  function accounts(el) {
+    let st = null;
+    const draw = () => {
+      el.innerHTML = `<div class="form">
+        <p class="hint" style="margin:0">Many big employers take applications only through Workday, where every company is its own site and you need an account on each one. With this on, the app makes the account with the email and password below, confirms it from your mailbox, signs in and fills the whole application. Without it, those jobs go to <b>Apply yourself</b>.</p>
+        <label class="check"><input type="checkbox" name="acc_on" ${st.enabled ? "checked" : ""}><span><b>Make accounts and sign in on Workday job sites for me</b></span></label>
+        <div class="form-row">${fld("Email for the accounts", inp("acc_email", st.email, 'type="email" autocomplete="email"'), "Employers write to this address.")}
+          ${fld("Password for the accounts", inp("acc_pass", "", `type="password" autocomplete="new-password" placeholder="${st.hasPassword ? "Saved. Type a new one to change it" : "Type a password"}"`),
+            "The same password on every site, as you chose. Use one you don't use anywhere else: if one site leaks it, the others are at risk. It needs 8+ characters with upper and lower case, a number and a symbol.")}</div>
+        <label class="check"><input type="checkbox" name="acc_consent" ${st.consent ? "checked" : ""}><span>The app may accept each site's ordinary terms of use and privacy policy when it makes an account for me. Arbitration agreements and other legal waivers still always wait for me. Some job sites' terms may not allow sign-ups by software; I am responsible for the accounts made in my name.</span></label>
+        ${st.mailbox ? "" : `<div class="msg info">Connect your mailbox (the Mailbox section) too: Workday emails a link to confirm each new account, and the app clicks it for you.</div>`}
+        ${st.sites.length ? `<div class="section-t">Accounts the app has made (${st.sites.length})</div><div class="sub-list">${st.sites.map((x) => `<div class="sub-item" style="grid-template-columns:minmax(0,1fr) auto;display:grid;align-items:center">
+            <div><b>${esc(x.host)}</b><div class="muted">${esc(x.email || "")}, ${esc({ created: "made and confirmed", unverified: "waiting for the confirmation email", existed: "you already had one", failed: "could not be made: " + (x.error || "") }[x.status] || x.status)}</div></div>
+            <span class="muted">${esc(String(x.createdAt || "").slice(0, 10))}</span></div>`).join("")}</div>` : ""}
+      </div>`;
+    };
+    el.innerHTML = `<div class="muted">Loading...</div>`;
+    api("/api/accounts").then((r) => { st = r; draw(); });
+    return {
+      async save() {
+        if (!st) return null;
+        const r = await api("/api/accounts/save", { enabled: val(el, "acc_on"), consent: val(el, "acc_consent"), email: val(el, "acc_email"), password: el.querySelector("[name=acc_pass]").value });
+        if (r.error) return r.error;
+        st = await api("/api/accounts"); draw();
+        return null;
+      },
+    };
+  }
+
   // ---------- 5. Mailbox (optional) ----------
   function mailbox(el, cfg) {
     const m0 = cfg.settings.mailbox || {};
@@ -891,5 +921,5 @@
   }
   const importedText = (r) => `Imported ${r.total} application${r.total === 1 ? "" : "s"}: ${r.added} added, ${r.updated} marked as applied, ${r.already} already here. None of them will be applied to again.`;
 
-  window.Forms = { ai, resumes, creator, github, studio, review, questions, prefs, mailbox, running, history, importedText, esc, icon, msg };
+  window.Forms = { ai, resumes, creator, github, accounts, studio, review, questions, prefs, mailbox, running, history, importedText, esc, icon, msg };
 })();

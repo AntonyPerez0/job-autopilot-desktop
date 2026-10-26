@@ -126,7 +126,7 @@ export const saveProfile = (p) => writeJSON("profile.json", p);
 // Secrets (API key, mailbox password). main.js plugs in safeStorage; tests and
 // scripts read environment variables.
 let secrets = {
-  get: (k) => process.env[{ apiKey: "JA_API_KEY", mailPassword: "JA_MAIL_PASSWORD" }[k] || ""] || "",
+  get: (k) => process.env[{ apiKey: "JA_API_KEY", mailPassword: "JA_MAIL_PASSWORD", sitePassword: "JA_SITE_PASSWORD" }[k] || ""] || "",
   set: () => { throw new Error("secret storage is not available here"); },
 };
 export const setSecretStore = (s) => { secrets = s; };

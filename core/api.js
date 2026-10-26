@@ -15,6 +15,7 @@ import { browserOpen, detectBrowsers, installChromium, chromiumPath, showBrowser
 import { windowModeOf } from "./apply.js";
 import { AGENCIES, lastSearch } from "./discover.js";
 import { suggestTitles } from "./suggest.js";
+import { listAccounts, passwordProblems } from "./accounts.js";
 import { addJob } from "./addjob.js";
 import { addRecalled, applySuggestion, checklist, createFromInterview, recallFor, rewriteWithAnswer, suggestImprovements } from "./studio.js";
 import { importProjects, listRepos, placeProjects, usernameOf } from "./github.js";
@@ -175,6 +176,34 @@ const ROUTES = {
     return { url: `ap-file://resumes/${file}`, file, fileName: Tailor.fileName(p, { employer: "", jobTitle: "" }), slack: r.slack, overflow: r.overflow, warnings: Array.from(r.warnings) };
   },
   "POST /api/answers/save": (b) => saveAnswers(b.answers || {}),
+  // Job site accounts: the email and one password the app signs up with (Workday), only if the user turns it on.
+  "GET /api/accounts": () => {
+    const a = getSettings().siteAccounts || {};
+    return { enabled: !!a.enabled, consent: !!a.consent, email: a.email || getAnswers().email || "", hasPassword: !!getSecret("sitePassword"),
+      mailbox: !!(getSettings().mailbox && getSecret("mailPassword")), sites: listAccounts() };
+  },
+  "POST /api/accounts/save": async (b) => {
+    const before = getSettings().siteAccounts || {};
+    const email = String(b.email || "").trim();
+    const password = String(b.password || "");
+    if (b.enabled) {
+      if (!b.consent) return bad("Tick the box to let the app accept each site's terms of use when it makes an account.");
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return bad("Type the email the accounts should use.");
+      if (!password && !getSecret("sitePassword")) return bad("Type the password the accounts should use.");
+      const problems = password ? passwordProblems(password) : [];
+      if (problems.length) return bad(`Job sites will refuse this password. It needs ${problems.join(", ")}.`);
+    }
+    if (password) await setSecret("sitePassword", password);
+    saveSettings({ siteAccounts: { enabled: !!b.enabled, consent: !!b.consent, email } });
+    // Turned on: the Workday jobs waiting in "Apply yourself" are the app's to apply to now.
+    let requeued = 0;
+    if (b.enabled && !before.enabled) {
+      requeued = getDb().prepare("UPDATE jobs SET status = 'queued', attempts = 0, reason = 'the app can make the account now' WHERE status = 'manual' AND (source = 'workday' OR apply_url LIKE '%myworkdayjobs.com%' OR apply_url LIKE '%.myworkday.com%')").run().changes;
+      if (requeued) log(null, `${requeued} Workday job${requeued === 1 ? "" : "s"} moved from Apply yourself to the queue: the app can make the accounts now`);
+      kick();
+    }
+    return { ok: true, requeued };
+  },
   // "Not sure what to look for?": titles from the approved resume, the ones that tend to pay more first.
   "POST /api/prefs/suggest": async () => {
     if (!aiSettings().apiKey) return bad("Connect an AI first (Settings > AI).");

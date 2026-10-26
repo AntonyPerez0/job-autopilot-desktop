@@ -54,6 +54,20 @@ export function findCode(text) {
   return null;
 }
 
+// An account-confirmation link in an email: the first link on the site that asked (hostHint), or one
+// whose address or text says verify/activate/confirm.
+export const LINK_SUBJECT = /verify|activate|confirm|validate|complete your (account|registration)|welcome/i;
+export function findLink(html, text, hostHint = "") {
+  const links = [];
+  for (const m of String(html || "").matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) links.push({ url: m[1].replace(/&amp;/g, "&"), label: htmlToText(m[2]).trim() });
+  for (const m of String(text || "").matchAll(/https?:\/\/[^\s<>"')]+/g)) links.push({ url: m[0], label: "" });
+  const host = (u) => { try { return new URL(u).hostname.toLowerCase(); } catch { return ""; } };
+  const hint = String(hostHint || "").toLowerCase();
+  const ok = links.filter((l) => /^https:\/\//i.test(l.url) && !/unsubscribe|privacy|terms|help|support|mailto:/i.test(l.url + " " + l.label));
+  const wanted = (l) => /verif|activat|confirm|validat/i.test(l.url + " " + l.label);
+  return (ok.find((l) => hint && host(l.url).endsWith(hint) && wanted(l)) || ok.find((l) => hint && host(l.url).endsWith(hint)) || ok.find(wanted) || {}).url || null;
+}
+
 export const CONFIRM = /thank(s| you)[^.]{0,40}(appl|interest)|application (has been |was )?(received|submitted|complete)|we('ve| have)? received your application|your application (to|for)/i;
 const NOISE = new Set(["the", "a", "an", "and", "of", "for", "to", "at", "in", "inc", "llc", "corp", "co", "remote", "hybrid", "onsite", "us", "usa", "new"]);
 const words = (s) => (String(s || "").toLowerCase().match(/[a-z0-9]+/g) || []).filter((w) => !NOISE.has(w));
@@ -104,7 +118,7 @@ async function folders(client) {
 
 const textOf = async (source) => {
   const m = await simpleParser(source);
-  return { subject: m.subject || "", date: m.date ? m.date.toISOString() : "", from: (m.from && m.from.text) || "", text: (m.text || "") + "\n" + htmlToText(m.html || "") };
+  return { subject: m.subject || "", date: m.date ? m.date.toISOString() : "", from: (m.from && m.from.text) || "", text: (m.text || "") + "\n" + htmlToText(m.html || ""), html: m.html || "", plain: m.text || "" };
 };
 
 export async function testMailbox(cfg) {
@@ -131,6 +145,33 @@ export async function waitForCode(cfg, since, timeoutSec = 180) {
           if (when < since - 60 || !CODE_SUBJECT.test((msg.envelope && msg.envelope.subject) || "")) continue;
           const code = findCode((await textOf(msg.source)).text);
           if (code) return code;
+        }
+      }
+    } catch { /* try again until the deadline */ } finally { if (c) await c.logout().catch(() => {}); }
+    await new Promise((r) => setTimeout(r, 8000));
+  }
+  return null;
+}
+
+// Wait for an account-confirmation email that arrived after `since` (seconds); returns its link or null.
+export async function waitForLink(cfg, since, hostHint = "", timeoutSec = 180) {
+  const deadline = Date.now() + timeoutSec * 1000;
+  while (Date.now() < deadline) {
+    let c;
+    try {
+      c = await connect(cfg);
+      if (!c) return null;
+      for (const box of await folders(c)) {
+        try { await c.mailboxOpen(box, { readOnly: true }); } catch { continue; }
+        const uids = (await c.search({ since: new Date((since - 86400) * 1000) }, { uid: true })) || [];
+        for (const uid of uids.slice(-30).reverse()) {
+          const msg = await c.fetchOne(String(uid), { source: true, envelope: true }, { uid: true });
+          if (!msg) continue;
+          const when = msg.envelope && msg.envelope.date ? msg.envelope.date.getTime() / 1000 : 0;
+          if (when < since - 60 || !LINK_SUBJECT.test((msg.envelope && msg.envelope.subject) || "")) continue;
+          const t = await textOf(msg.source);
+          const link = findLink(t.html, t.plain, hostHint);
+          if (link) return link;
         }
       }
     } catch { /* try again until the deadline */ } finally { if (c) await c.logout().catch(() => {}); }
