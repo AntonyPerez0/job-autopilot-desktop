@@ -128,8 +128,8 @@ key (about a cent per application) or a free model on your own computer.
 <sub><b>Fill out my page.</b> Plain questions; every answer becomes a line you approve.</sub>
 </td>
 <td valign="top" align="center">
-<img src="docs/images/resume-after.png" alt="A sample one-page resume made by the app"><br>
-<sub><b>The result.</b> A sample resume for a made-up tow truck driver, unedited.</sub>
+<img src="docs/images/resume-sample.png" alt="A sample one-page resume made by the app, for a made-up software engineer named John Doe"><br>
+<sub><b>A finished resume.</b> One page, drawn by the app, for a made-up software engineer.</sub>
 </td>
 </tr>
 </table>
