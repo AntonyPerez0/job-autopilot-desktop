@@ -1,28 +1,158 @@
+<div align="center">
+
+<img src="docs/images/logo.png" alt="Job Autopilot" width="96" height="96">
+
 # Job Autopilot
 
-A desktop app for macOS and Windows that finds jobs that match what you're
-looking for and applies to them: everyday hourly jobs (cashier, warehouse,
-food service, healthcare support) as well as office and tech jobs. For each job it builds a one-page resume from
-pieces of your own resume that you approved, fills in the application in a
-browser window you can watch, checks every answer, and submits it. It keeps a
-full record of every application.
+**Finds jobs that fit you, writes an honest one-page resume for each one, and applies for you.**<br>
+For hourly and everyday jobs as well as office and tech work. Desktop app for macOS and Windows.
 
-It starts in **dry run**: forms get filled in but nothing is sent until you have
-checked one and switched it to live.
+[![Latest release](https://img.shields.io/github/v/release/AntonyPerez0/job-autopilot-desktop?style=flat-square&label=release&color=4f46e5)](https://github.com/AntonyPerez0/job-autopilot-desktop/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/AntonyPerez0/job-autopilot-desktop/total?style=flat-square&color=4f46e5)](https://github.com/AntonyPerez0/job-autopilot-desktop/releases)
+[![Tests](https://img.shields.io/github/actions/workflow/status/AntonyPerez0/job-autopilot-desktop/ci.yml?branch=main&style=flat-square&label=tests)](https://github.com/AntonyPerez0/job-autopilot-desktop/actions/workflows/ci.yml)
+[![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey?style=flat-square)](#download)
+[![License: MIT](https://img.shields.io/github/license/AntonyPerez0/job-autopilot-desktop?style=flat-square&color=lightgrey)](LICENSE)
 
-## Download and install
+[**Download**](#download) · [How it works](#how-it-works) · [Features](#features) · [Your resume](#making-and-improving-your-resume) · [Privacy](#privacy) · [FAQ](#faq)
 
-Download the latest version from
-[Releases](https://github.com/AntonyPerez0/job-autopilot-desktop/releases/latest):
+<br>
 
-- **Mac** (Apple Silicon or Intel): `Job-Autopilot-<version>-mac-universal.dmg`
-- **Windows** 10 or 11: `Job-Autopilot-Setup-<version>.exe`
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/overview-dark.png">
+  <img src="docs/images/overview-light.png" alt="The Job Autopilot overview: applications sent, the queue, and jobs waiting for an answer" width="900">
+</picture>
+
+</div>
+
+<br>
+
+> [!IMPORTANT]
+> **It starts in dry run.** Forms get filled in, but nothing is sent until you
+> have checked a filled application yourself and switched it to live. It never
+> states anything you didn't tell it, never guesses a legal agreement, and never
+> applies to the same job twice.
+
+## How it works
+
+```mermaid
+flowchart LR
+    A["Find jobs<br><sub>HiringCafe, freehire,<br>Google Jobs, your links</sub>"] --> B["Screen each one<br><sub>against your facts<br>and preferences</sub>"]
+    B --> C["Build a resume<br><sub>one page, from pieces<br>you approved</sub>"]
+    C --> D["Fill the form<br><sub>in a browser<br>you can watch</sub>"]
+    D --> E["Check every answer<br><sub>truth rules and<br>a second AI pass</sub>"]
+    E --> F{"Live?"}
+    F -- "dry run" --> G["Stops for<br>your review"]
+    F -- "live" --> H["Submits and<br>keeps a record"]
+```
+
+1. **You tell it once** what you've done and what you want: upload a resume, or
+   answer a short interview and it writes one with you. You approve every line.
+2. **Every two hours** it searches for jobs that match your titles, city and
+   pay floor, and reads each posting against your facts.
+3. **For each good fit** it builds a one-page resume from your approved pieces,
+   fills in the application in its own browser window, and checks every answer.
+4. **Anything only you can answer** (a legal agreement, a question it can't back
+   up with your facts) waits for you. Answer it once, and it's reused next time.
+
+## Features
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**Applies for you, at a steady pace**<br>
+Greenhouse, Lever, Ashby, SmartRecruiters, Workable and many more, including
+forms spread over several pages. 10 applications a day by default, 6 minutes
+apart. Workday accounts too, if you turn it on.
+
+</td>
+<td width="50%" valign="top">
+
+**Resumes recruiters read**<br>
+A recruiter's pass on every resume: the strongest lines first, professional
+wording of your own facts, a headline and summary, grouped skills. A score out
+of 10 with line-by-line notes, and a version for each kind of job.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**Honest by design**<br>
+The AI may only reword what you said. Rules with no AI involved reject any
+number, tool or claim you didn't give, and a second AI pass fact-checks every
+line. Nothing is used until you approve it.
+
+</td>
+<td valign="top">
+
+**Fills a short resume with real facts**<br>
+"Fill out my page" asks about what people usually leave out: other work,
+licenses with their year, records and recognition, volunteering, and the
+numbers behind your lines. Never filler.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**Built for everyday jobs**<br>
+Cashier, warehouse, driving, food service, healthcare support. "Help me
+remember" jogs your memory with the tasks people in your job usually do (from
+the U.S. Department of Labor's O*NET), and suggests jobs you already qualify for.
+
+</td>
+<td valign="top">
+
+**Private, and cheap to run**<br>
+Everything stays on your computer. No accounts, no analytics. Use your own AI
+key (about a cent per application) or a free model on your own computer.
+
+</td>
+</tr>
+</table>
+
+<table>
+<tr>
+<td width="50%" valign="top" align="center">
+<img src="docs/images/review.png" alt="A filled application: every answer and where it came from"><br>
+<sub><b>Review a filled application.</b> Every answer, where it came from, and what it deliberately didn't claim.</sub>
+</td>
+<td width="50%" valign="top" align="center">
+<img src="docs/images/welcome.png" alt="The first-run setup"><br>
+<sub><b>A guided setup</b> for people who've never used a tool like this.</sub>
+</td>
+</tr>
+<tr>
+<td valign="top" align="center">
+<img src="docs/images/fill-form.png" alt="Fill out my page: questions about other work, licenses and records"><br>
+<sub><b>Fill out my page.</b> Plain questions; every answer becomes a line you approve.</sub>
+</td>
+<td valign="top" align="center">
+<img src="docs/images/resume-after.png" alt="A sample one-page resume made by the app"><br>
+<sub><b>The result.</b> A sample resume for a made-up tow truck driver, unedited.</sub>
+</td>
+</tr>
+</table>
+
+## Download
+
+| | File | Needs |
+|---|---|---|
+| **macOS** | [`Job-Autopilot-<version>-mac-universal.dmg`](https://github.com/AntonyPerez0/job-autopilot-desktop/releases/latest) | Apple Silicon or Intel |
+| **Windows** | [`Job-Autopilot-Setup-<version>.exe`](https://github.com/AntonyPerez0/job-autopilot-desktop/releases/latest) | Windows 10 or 11, no admin rights |
+
+You'll also need an AI key: a free [OpenRouter](https://openrouter.ai) account
+with $5 of credit covers hundreds of applications, and the setup walks you
+through it. Or use a free model on your own computer
+([Using a local model](#using-a-local-model)).
 
 These builds are not signed with an Apple or Microsoft certificate yet, so your
-computer will warn you the first time you open the app. Here's how to get past
-the warning once.
+computer warns you the first time you open the app. Here's how to get past the
+warning once:
 
-### Mac
+<details>
+<summary><b>macOS: first launch</b></summary>
 
 1. Open the `.dmg` and drag **Job Autopilot** into **Applications**.
 2. Double-click Job Autopilot in Applications. macOS says it "cannot verify"
@@ -37,7 +167,10 @@ in Applications, choose **Open**, then **Open** again.
 The first time you save your API key, macOS may ask to let Job Autopilot use
 your keychain. Click **Always Allow**: that's where the key is kept, encrypted.
 
-### Windows
+</details>
+
+<details>
+<summary><b>Windows: first launch</b></summary>
 
 1. Run `Job-Autopilot-Setup-<version>.exe`.
 2. If Windows shows **"Windows protected your PC"**, click **More info**, then
@@ -45,12 +178,14 @@ your keychain. Click **Always Allow**: that's where the key is kept, encrypted.
 3. Follow the installer. It installs just for you and doesn't need admin
    rights. You'll find Job Autopilot in the Start menu and on your desktop.
 
+</details>
+
 ### Updates
 
 The app checks for a new version when it starts and every few hours after.
 The sidebar always shows your version. When a new one is out, the sidebar
-shows an **Update to x.y.z** button, the Overview shows a banner, and **Settings
-> Updates** (at the top of Settings) has **Update now**. **Check for updates**
+shows an **Update to x.y.z** button, the Overview shows a banner, and
+**Settings > Updates** (at the top of Settings) has **Update now**. **Check for updates**
 in either place checks right away. If you already have the latest version,
 Update now stays greyed out. Press it and the app does the rest:
 
@@ -67,6 +202,18 @@ macOS may ask once more to let Job Autopilot use your keychain: click **Always
 Allow**. That's because these builds aren't signed yet (see
 [docs/SIGNING.md](docs/SIGNING.md)). You can always download a version from
 Releases by hand and install it over the old one instead.
+
+## Contents
+
+- [First run: the setup](#first-run-the-setup)
+- [Making and improving your resume](#making-and-improving-your-resume)
+- [Where the jobs come from](#where-the-jobs-come-from)
+- [What happens next](#what-happens-next)
+- [What it won't do](#what-it-wont-do)
+- [Moving to a new computer](#moving-to-a-new-computer-or-reinstalling)
+- [Privacy](#privacy) · [What it costs](#what-it-costs) · [Using a local model](#using-a-local-model)
+- [Things to know](#things-to-know) · [Troubleshooting](#troubleshooting) · [FAQ](#faq)
+- [For developers](#for-developers)
 
 ## First run: the setup
 
@@ -619,6 +766,75 @@ OpenAI-compatible API" with their `http://localhost:.../v1` address and no key.
 - **Start over.** Settings > Your data > **Run the setup again**. To wipe
   everything, quit the app and delete the data folder listed above.
 
+## FAQ
+
+<details>
+<summary><b>Will it make things up to get me the job?</b></summary>
+
+No. Every fact comes from your approved resume pieces and your answers. Rules
+with no AI involved reject numbers, tools, praise and claims you didn't give,
+truth rules correct the questions that matter most (work authorization, years
+of experience, start date...), and a second AI pass fact-checks every written
+answer. Anything it can't back up waits for you. See
+[What it won't do](#what-it-wont-do).
+
+</details>
+
+<details>
+<summary><b>Do I need a resume to start?</b></summary>
+
+No. Choose **I don't have a resume** in the setup and answer a few questions in
+your own words. The app writes one with you, asks yes/no questions to help you
+remember what you did, and you approve every line.
+
+</details>
+
+<details>
+<summary><b>Does it work for hourly jobs, not just tech?</b></summary>
+
+Yes. That's what it was built around: retail, food service, warehouse, driving,
+healthcare support, customer service, and office and tech jobs too. Many big
+employers use sites that need an account; the app makes those on Workday if you
+turn it on, and lists the rest under **Apply yourself**.
+
+</details>
+
+<details>
+<summary><b>How much does it cost?</b></summary>
+
+The app is free and open source. You pay your AI provider for what it uses,
+usually a cent or less per application with the default model, or nothing with
+a local model. See [What it costs](#what-it-costs).
+
+</details>
+
+<details>
+<summary><b>Is my data sent anywhere?</b></summary>
+
+Only to your AI provider, the job sources you turn on, and the job sites you
+apply to. Nothing goes to the author of this app, and there are no analytics.
+See [Privacy](#privacy).
+
+</details>
+
+<details>
+<summary><b>Does it work on Linux?</b></summary>
+
+There's no Linux installer. Developers can run it from source with `npm start`
+(see [For developers](#for-developers)).
+
+</details>
+
+<details>
+<summary><b>Is using it allowed by job sites?</b></summary>
+
+Some job sites and employers don't allow automated applications. You're
+responsible for every application sent in your name, which is why the app starts
+in dry run, keeps a steady pace and records everything. See
+[Things to know](#things-to-know).
+
+</details>
+
 ## For developers
 
 ```sh
@@ -666,6 +882,12 @@ questions. O*NET® is a trademark of USDOL/ETA. pdf-lib, unpdf,
 mammoth, imapflow, mailparser and playwright-core are used under their own
 licenses.
 
+## Contributing
+
+Issues and pull requests are welcome. Run `npm test` and `npm run e2e` before
+sending a change, and keep the honesty rules intact: the app never states a fact
+the user didn't give.
+
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). Made for people looking for work.
