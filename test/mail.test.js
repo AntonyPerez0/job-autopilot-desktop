@@ -29,3 +29,12 @@ test("presets cover the four big providers, with steps", () => {
   for (const k of ["gmail", "yahoo", "outlook", "icloud"]) assert.ok(PRESETS[k].steps.length >= 2, k);
   assert.ok(PRESETS.outlook.unsupported, "Outlook.com no longer allows app passwords for IMAP");
 });
+
+test("the confirmation link in a Workday sign-up email", async () => {
+  const { findLink } = await import("../core/mail.js");
+  const html = `<p>Welcome</p><a href="https://globex.wd5.myworkdayjobs.com/en-US/careers/activate/abc123?x=1&amp;y=2">Verify Account</a>
+    <a href="https://www.myworkday.com/privacy">Privacy</a><a href="https://globex.wd5.myworkdayjobs.com/unsubscribe">Unsubscribe</a>`;
+  assert.strictEqual(findLink(html, "", "globex.wd5.myworkdayjobs.com"), "https://globex.wd5.myworkdayjobs.com/en-US/careers/activate/abc123?x=1&y=2");
+  assert.strictEqual(findLink("", "Confirm here: https://acme.example.com/confirm?t=9 thanks", ""), "https://acme.example.com/confirm?t=9");
+  assert.strictEqual(findLink("<a href='https://acme.example.com/terms'>Terms</a>", "", ""), null);
+});
