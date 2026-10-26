@@ -21,5 +21,9 @@ Local changes, kept as small as possible:
 2. `tailor.js`: an example employer in one prompt line is a placeholder
    ("Acme Corp").
 3. `content.js`: the example city in one comment is a neutral one.
+4. `tailor.js` (`candidates`, `fit`): the one-page fill takes one more line from each
+   entry in turn instead of every line of the first entry first, and tries up to
+   40 additions instead of 12, so a long current job does not crowd out the others
+   and leave the page part empty.
 
-To update: copy the new files over these, reapply the three edits, run `npm test`.
+To update: copy the new files over these, reapply the four edits, run `npm test`.

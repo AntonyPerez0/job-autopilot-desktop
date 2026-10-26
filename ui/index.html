@@ -565,6 +565,18 @@ function banners() {
   const waiting = st.toAnswer || { count: 0 };
   if (waiting.count && waiting.first) h += `<div class="banner amber">${icon("alert")}<div><b>${waiting.count} application${waiting.count === 1 ? " is" : "s are"} waiting for your answer</b>The app stopped on questions only you can answer. Answer them and it carries on with your answers.</div>
     <div class="right"><button class="btn sm primary" onclick="openJob('${esc(waiting.first.slug)}')">Answer now</button></div></div>`;
+  // A search that found nothing because a site would not open, said plainly instead of "queue empty".
+  const sr = st.search;
+  if (sr && sr.problems && sr.problems.length && view === "overview") {
+    const all = sr.found === 0;
+    h += `<div class="banner ${all ? "red" : "amber"}">${icon("alert")}<div><b>${all ? "The last search found nothing: " : ""}${sr.problems.map((x) => esc(x.source)).join(" and ")} could not be searched</b>${esc(sr.problems[0].message)}.
+      ${all && (sr.sources || []).length < 2 ? " It's the only place the app looks right now: turn on another in Settings > Jobs to look for, or press Search now to try again." : " The app tries again on the next search."}</div>
+      <div class="right"><button class="btn sm" onclick="searchNow()">Search now</button></div></div>`;
+  }
+  else if (sr && sr.at && sr.found === 0 && view === "overview" && !Object.values(st.counts || {}).some(Boolean)) {
+    h += `<div class="banner amber">${icon("search")}<div><b>The last search found no jobs</b>Job sites had nothing new for these titles near you. Shorter, more common titles ("CDL Driver" rather than "Fleet Vehicle Transport Driver"), a wider distance, or older postings (Settings > Jobs to look for > More options) find more.</div>
+      <div class="right"><button class="btn sm" onclick="go('settings')">Change what to look for</button></div></div>`;
+  }
   const mine = (st.counts || {}).manual || 0;
   if (mine && view === "overview") h += `<div class="banner amber">${icon("ext")}<div><b>${mine} good match${mine === 1 ? "" : "es"} for you to apply to</b>These sites need an account or use a chat bot, so the app can't apply for you. Each takes a few minutes.</div>
     <div class="right"><button class="btn sm" onclick="go('manual')">Show them</button></div></div>`;

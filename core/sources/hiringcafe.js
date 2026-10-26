@@ -20,14 +20,20 @@ export function levelOf(s) {
   return "";
 }
 
-function salaryOf(v) {
+// The pay as the posting lists it. HiringCafe's per-period numbers are sometimes an hourly wage
+// filed under "Weekly" or "Yearly" ($23.25 a week); an amount that can't be right for its period
+// but is a normal hourly wage is shown per hour.
+const PERIODS = { Hourly: ["hourly", "hour", 5], Daily: ["daily", "day", 50], Weekly: ["weekly", "week", 200], "Bi-Weekly": ["bi-weekly", "2 weeks", 400],
+  Monthly: ["monthly", "month", 800], Yearly: ["yearly", "year", 10000] };
+export function salaryOf(v) {
   const cur = v.listed_compensation_currency || "USD";
-  const money = (n) => (cur === "USD" ? "$" : cur + " ") + Math.round(n).toLocaleString("en-US");
-  if (v.listed_compensation_frequency === "Hourly" && v.hourly_min_compensation) {
-    return `${money(v.hourly_min_compensation)}${v.hourly_max_compensation && v.hourly_max_compensation !== v.hourly_min_compensation ? "-" + money(v.hourly_max_compensation) : ""}/hour`;
-  }
-  if (v.yearly_min_compensation) return `${money(v.yearly_min_compensation)}${v.yearly_max_compensation ? "-" + money(v.yearly_max_compensation) : ""}/year`;
-  return null;
+  const money = (n) => (cur === "USD" ? "$" : cur + " ") + (Math.round(n) === n || n >= 100 ? Math.round(n).toLocaleString("en-US") : n.toFixed(2));
+  let [key, unit, floor] = PERIODS[v.listed_compensation_frequency] || PERIODS.Yearly;
+  let min = v[`${key}_min_compensation`], max = v[`${key}_max_compensation`];
+  if (!min && v.listed_compensation_frequency !== "Yearly" && v.yearly_min_compensation) { [key, unit, floor] = PERIODS.Yearly; min = v.yearly_min_compensation; max = v.yearly_max_compensation; }
+  if (!min) return null;
+  if (min < floor && min >= 7 && min <= 150) unit = "hour";
+  return `${money(min)}${max && Math.round(max * 100) !== Math.round(min * 100) ? "-" + money(max) : ""}/${unit}`;
 }
 
 // One hit from a results page -> the app's job shape.
@@ -83,7 +89,11 @@ export function countryPlace(cc, name) {
 
 async function readResults(page, url) {
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
-  await page.waitForSelector("#__NEXT_DATA__", { state: "attached", timeout: 30000 });
+  try { await page.waitForSelector("#__NEXT_DATA__", { state: "attached", timeout: 30000 }); } catch {
+    const title = await page.title().catch(() => "");
+    if (/just a moment|attention required|verif/i.test(title)) throw new Error("its bot check would not let the app's browser in");
+    throw new Error("its results page did not load");
+  }
   const raw = await page.evaluate(() => document.getElementById("__NEXT_DATA__").textContent);
   const pp = (JSON.parse(raw).props || {}).pageProps || {};
   if (pp.ssrError) throw new Error("HiringCafe: " + String(pp.ssrError).slice(0, 120));

@@ -509,3 +509,10 @@ details.card-fold[open] > summary h2::before, details.card-fold[open] > summary 
 .ask textarea.inp { min-height: 96px; resize: vertical; line-height: 1.5; }
 .sub-item.yours { grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
 .sub-item.yours > div > div { white-space: pre-wrap; color: var(--color-ink-2); font-size: var(--text-sm); margin: var(--space-3xs) 0; }
+
+/* Job ideas from the resume, on the Jobs to look for step. */
+.ai-sugg { display: grid; gap: var(--space-xs); }
+.sugg-list { display: grid; gap: var(--space-xs); }
+.sugg-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-sm); align-items: center; padding: var(--space-xs) var(--space-sm); border-radius: var(--radius-card); background: var(--color-paper-2); }
+.sugg-item .muted { margin-top: var(--space-3xs); }
+.banner.red { background: var(--color-error-bg); } .banner.red > svg.i { color: var(--color-error); }

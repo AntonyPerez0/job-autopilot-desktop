@@ -95,6 +95,7 @@ export function standardAnswers(a) {
   add("Willing to relocate", { no: "No", anywhere: "Yes", radius: "Only within commuting distance" }[a.relocation]);
   add("How did you hear about us", a.heardAbout || "Job board");
   add("Are you 18 years of age or older?", yn(a.over18));
+  add("Are you 21 years of age or older?", yn(a.over21));
   add("Willing to travel for work", { yes: "Yes", no: "No", some: "Yes, occasionally" }[a.travel]);
   add("Desired salary", a.salary);
   const days = a.daysAvailable || [];
@@ -107,6 +108,8 @@ export function standardAnswers(a) {
   add("Do you have reliable transportation", yn(a.transportation));
   add("Do you have a valid driver's license", yn(a.driversLicense));
   if (Number(a.canLift) > 0) add("How much weight can you lift", `${Number(a.canLift)} pounds`);
+  add("Do you have your own insured vehicle", yn(a.ownVehicle));
+  add("Do you have a clean driving record", { clean: "Yes", no: "No" }[a.drivingRecord]);
   const d = a.demographics || {};
   const dem = (v) => (!v || v === "decline" ? DECLINE : v);
   add("Gender", dem(d.gender));
@@ -138,6 +141,13 @@ export function candidateFacts(a, profile, prefs) {
     maxYearsRequired: prefs ? Number(prefs.maxYearsRequired) : null,
     wantsInternships: !!(prefs && prefs.internships),
     interests: prefs ? prefs.keywords || [] : [],
+    // What hourly postings ask about. Missing means "not stated", never "no".
+    practical: Object.fromEntries(Object.entries({
+      over18: yn(a.over18), over21: yn(a.over21), driversLicense: yn(a.driversLicense), ownInsuredVehicle: yn(a.ownVehicle),
+      cleanDrivingRecord: { clean: "Yes", no: "No" }[a.drivingRecord], reliableTransportation: yn(a.transportation),
+      canLiftPounds: Number(a.canLift) > 0 ? Number(a.canLift) : "", daysAvailable: (a.daysAvailable || []).join(", "), shifts: (a.shifts || []).join(", "),
+      hours: { full: "Full-time", part: "Part-time", either: "Full-time or part-time" }[a.hoursWanted],
+    }).filter(([, v]) => v !== undefined && v !== "")),
   };
 }
 

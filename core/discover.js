@@ -6,8 +6,9 @@ import { getDb, log } from "./db.js";
 import { loadProfile, screen } from "./engine.js";
 import { km, remoteOk, toKm, withinRadius } from "./geo.js";
 import { getAnswers, getPrefs } from "./store.js";
-import { cleanUrl, inAppliedList, jobKey, parseAppliedList, roleKey } from "./dedupe.js";
+import { cleanUrl, familyKey, inAppliedList, jobKey, parseAppliedList, roleKey } from "./dedupe.js";
 import { KIND_TEXT } from "./ats.js";
+import { payPerHour } from "./suggest.js";
 import { SOURCES, enabledSources } from "./sources/index.js";
 import { searchesFor } from "./sources/freehire.js";
 
@@ -109,12 +110,23 @@ export function manualReason(j) {
 
 const posted = (j) => (j.posted_at ? Date.parse(j.posted_at) : NaN);
 
+// What the last search found and what went wrong, for the dashboard: a search that quietly finds
+// nothing because a site would not open looks just like a quiet day.
+export const lastSearch = { at: null, found: 0, queued: 0, problems: [] };
+
 export async function discover(progress = () => {}, ctx = {}) {
+  lastSearch.at = new Date().toISOString(); lastSearch.problems = []; lastSearch.found = 0; lastSearch.queued = 0;
   const db = getDb();
   const prefs = getPrefs(), a = getAnswers();
   const seen = new Set(db.prepare("SELECT slug FROM jobs").all().map((r) => r.slug));
   const keys = new Set(db.prepare("SELECT key FROM jobs").all().map((r) => r.key));
-  const roles = new Set(db.prepare("SELECT company, title FROM jobs WHERE status != 'skipped'").all().map((r) => roleKey(r.company, r.title)));
+  const live = db.prepare("SELECT company, title FROM jobs WHERE status != 'skipped'").all();
+  const roles = new Set(live.map((r) => roleKey(r.company, r.title)));
+  // The same job at many locations: two of them at most, and one screening decision for all of them.
+  const PER_FAMILY = 2;
+  const families = new Map();
+  for (const r of live) { const f = familyKey(r.company, r.title); families.set(f, (families.get(f) || 0) + 1); }
+  const verdicts = new Map();
   const urls = new Set(db.prepare("SELECT url, apply_url FROM jobs").all().flatMap((r) => [r.url, r.apply_url]).filter(Boolean).map(cleanUrl));
   const manual = parseAppliedList(prefs.alreadyApplied);
   for (const r of db.prepare("SELECT url, apply_url FROM jobs WHERE status IN ('applied', 'submitting') OR (status = 'failed' AND reason LIKE '%may have gone through%')").all()) {
@@ -128,17 +140,23 @@ export async function discover(progress = () => {}, ctx = {}) {
   const sources = enabledSources(prefs);
   const found = new Map();
   for (const [si, src] of sources.entries()) {
+    const warnings = [];
     try {
       const list = await src.search(prefs, {
         browser: ctx.browser,
         progress: (u) => progress({ phase: "search", i: si, n: sources.length, label: u.label || src.name }),
-        log: (m) => log(null, m, "warn"),
+        log: (m) => { warnings.push(m); log(null, m, "warn"); },
       });
       for (const j of list) if (j && j.slug && !seen.has(j.slug) && !found.has(j.slug)) found.set(j.slug, j);
       log(null, `${src.name}: ${list.length} results`);
-    } catch (e) { log(null, `${src.name} search failed: ${e.message}`, "warn"); }
+      if (!list.length && warnings.some((w) => /failed/i.test(w))) lastSearch.problems.push({ source: src.name, message: warnings.find((w) => /failed/i.test(w)).split("\n")[0].slice(0, 200) });
+    } catch (e) { log(null, `${src.name} search failed: ${e.message}`, "warn"); lastSearch.problems.push({ source: src.name, message: String(e.message).split("\n")[0].slice(0, 200) }); }
   }
+  lastSearch.sources = sources.map((s) => s.name);
   const maxAge = (Number(prefs.postedWithinDays) || 14) * 86400000;
+  // The lowest pay the person would take, as an hourly figure (a yearly one counts 2,080 hours).
+  const floor = Number(prefs.minPay) > 0 ? (prefs.minPayPer === "year" ? Number(prefs.minPay) / 2080 : Number(prefs.minPay)) : 0;
+  const dollars = (n) => "$" + (n >= 100 ? Math.round(n).toLocaleString("en-US") : (Math.round(n * 100) / 100).toString());
   let added = 0, toYou = 0, ji = 0;
   const list = [...found.values()];
   for (let j of list) {
@@ -152,16 +170,22 @@ export async function discover(progress = () => {}, ctx = {}) {
     if (j.details) {
       try { j = { ...j, ...(await j.details()) }; } catch (e) { log(j.slug, "reading the posting failed: " + e.message, "warn"); continue; }
     }
+    const fam = familyKey(j.company, j.title);
     let status = "queued", reason = null;
     if (excludedCompany(j.company, prefs)) { status = "skipped"; reason = "excluded company, recruiter or repost aggregator"; }
     else if (j.ghost) { status = "skipped"; reason = "freehire says this posting is likely a ghost listing"; }
     else if (inAppliedList(manual, { ...j, apply_url: j.apply_url || j.url })) { status = "skipped"; reason = "already applied (your history or your already-applied list)"; }
     else if (!j.url) { status = "skipped"; reason = "no link to the employer's application"; }
+    else if (floor && payPerHour(j.salary) && payPerHour(j.salary).max < floor - 0.005) {
+      status = "skipped"; reason = `pays at most ${dollars(payPerHour(j.salary).max)} an hour, under the ${prefs.minPayPer === "year" ? dollars(Number(prefs.minPay)) + " a year" : dollars(floor) + " an hour"} you asked for`;
+    }
+    else if ((families.get(fam) || 0) >= PER_FAMILY) { status = "skipped"; reason = `the same job at another location: ${PER_FAMILY} of these are already in your list`; }
     else {
       const why = manualReason(j);
       if (why) { status = "manual"; reason = why; }
       try {
-        const s = await screen(profile, j, j.description, a, prefs);
+        const s = verdicts.get(fam) || await screen(profile, j, j.description, a, prefs);
+        verdicts.set(fam, s);
         if (!s.ok) { status = "skipped"; reason = `screen: ${s.reason}`; }
         else reason = status === "manual" ? `${why}. Screen: ${s.reason}` : `screen: ${s.reason}`;
       } catch (e) { log(j.slug, "screen failed, will retry next search: " + e.message, "warn"); continue; }
@@ -174,11 +198,13 @@ export async function discover(progress = () => {}, ctx = {}) {
     keys.add(key);
     roles.add(roleKey(j.company, j.title));
     if (j.url) urls.add(cleanUrl(j.url));
+    if (status !== "skipped") families.set(fam, (families.get(fam) || 0) + 1);
     if (status === "queued") added++;
     if (status === "manual") toYou++;
     log(j.slug, `${status}: ${j.title} at ${j.company} (${j.location}) via ${j.board}${reason ? " - " + reason : ""}`);
   }
   log(null, `discovery done: ${found.size} new results, ${added} queued, ${toYou} for you to apply to`);
+  Object.assign(lastSearch, { found: found.size, queued: added, toYou });
   return added;
 }
 

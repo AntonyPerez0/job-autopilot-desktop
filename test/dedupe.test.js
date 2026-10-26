@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert";
 import { tempDataDir } from "./helpers.js";
-import { cleanUrl, inAppliedList, jobKey, parseAppliedList, roleKey, sameRoleAs } from "../core/dedupe.js";
+import { cleanUrl, familyKey, inAppliedList, jobKey, parseAppliedList, roleKey, sameRoleAs } from "../core/dedupe.js";
 
 test("the same role under variant titles has one role key", () => {
   const k = roleKey("Globex", "Software Engineer, New Grad");
@@ -59,4 +59,12 @@ test("restart: a job stopped mid-submit is never pressed again", async () => {
   assert.strictEqual(getJob("s1").status, "failed");
   assert.match(getJob("s1").reason, /may have gone through/);
   assert.strictEqual(getJob("w1").status, "queued", "an interrupted fill (not submit) goes back to the queue");
+});
+
+test("one job posted for many stores is one family", () => {
+  const a = familyKey("Domino's", "Delivery Driver(07800) - 5051 Auburn Blvd., #B-100");
+  assert.strictEqual(a, familyKey("Domino's", "Delivery Driver(07906) - 6306 Fair Oaks Blvd"));
+  assert.strictEqual(a, familyKey("Domino's", "Delivery Driver"));
+  assert.notStrictEqual(a, familyKey("Domino's", "Shift Manager"));
+  assert.notStrictEqual(familyKey("Globex", "Software Engineer - Platform"), familyKey("Globex", "Software Engineer - Payments"));
 });

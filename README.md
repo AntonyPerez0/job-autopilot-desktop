@@ -96,7 +96,8 @@ change all of it later under **Settings** and **Profile**.
    only ever put together from approved pieces.
 5. **About you.** Name, email, phone, city, and whether you can work in the
    country. Optional sections cover the questions forms ask most:
-   - when you can work (days, shifts, hours, transportation, lifting)
+   - when you can work (days, shifts, hours, transportation, lifting, your
+     own insured car, a clean driving record, 21 or older)
    - work and school
    - links
    - legal questions
@@ -109,6 +110,14 @@ change all of it later under **Settings** and **Profile**.
    jobs if you want them. Then choose where to look (see
    [Where the jobs come from](#where-the-jobs-come-from)). **More options** has
    company exclusions, posting age and experience limits.
+
+   **Not sure what to look for?** Press **Suggest jobs from my resume**. The
+   app reads your approved resume and lists job titles you already qualify for,
+   the ones that tend to pay more than your current work first, each with the
+   fact of yours that qualifies you ("You hold a Class B CDL"). Add any with one
+   click. To move up in pay, put what you make now in **Lowest pay you'd take**:
+   jobs whose posted top rate is lower are skipped (jobs that don't post pay are
+   kept), and every job you're shown lists its posted pay.
 7. **Mailbox (optional).** See [Mailbox](#mailbox).
 
 Then press **Start in dry run**.
@@ -493,6 +502,13 @@ OpenAI-compatible API" with their `http://localhost:.../v1` address and no key.
 - **"The key did not work."** Check you copied the whole key and that your
   OpenRouter account has credit. For other providers, check the API address
   ends in `/v1`.
+- **"The last search found nothing: HiringCafe could not be searched."** The
+  site would not let the app's browser in, or did not load. Press **Search
+  now** to try again; if it keeps happening, turn on another place to look in
+  Settings > Jobs to look for.
+- **Only two of a chain's jobs show up.** When one employer posts the same job
+  for many stores ("Delivery Driver" at twenty locations), the app keeps two,
+  so the queue isn't twenty copies of one job.
 - **Nothing gets queued.** Look at **Skipped** to see why jobs were left out.
   Add more job titles (or click the suggestions), drag the distance slider
   further, tick more levels, turn on more places to look, or raise the maximum

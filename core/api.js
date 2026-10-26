@@ -13,7 +13,8 @@ import { PRESETS, testMailbox } from "./mail.js";
 import { countries, searchCities } from "./geo.js";
 import { browserOpen, detectBrowsers, installChromium, chromiumPath, showBrowser } from "./browser.js";
 import { windowModeOf } from "./apply.js";
-import { AGENCIES } from "./discover.js";
+import { AGENCIES, lastSearch } from "./discover.js";
+import { suggestTitles } from "./suggest.js";
 import { addJob } from "./addjob.js";
 import { addRecalled, applySuggestion, checklist, createFromInterview, recallFor, rewriteWithAnswer, suggestImprovements } from "./studio.js";
 import { importProjects, listRepos, placeProjects, usernameOf } from "./github.js";
@@ -38,7 +39,7 @@ function status() {
   const firstFilled = db.prepare("SELECT slug, title, company FROM jobs WHERE status = 'filled' ORDER BY updated_at ASC LIMIT 1").get() || null;
   const toAnswer = db.prepare("SELECT slug, title, company FROM jobs WHERE status = 'failed' AND reason LIKE 'could not fill every required field%' ORDER BY updated_at DESC").all();
   const { wake, ...st } = state;
-  return { state: st, counts, appliedToday: appliedToday(), settings: s, model: s.ai.model, serverNow: Date.now(), next, firstFilled, toAnswer: { count: toAnswer.length, first: toAnswer[0] || null }, version: VERSION,
+  return { state: st, counts, appliedToday: appliedToday(), settings: s, model: s.ai.model, serverNow: Date.now(), next, firstFilled, toAnswer: { count: toAnswer.length, first: toAnswer[0] || null }, search: lastSearch.at ? { ...lastSearch } : null, version: VERSION,
     browser: { open: browserOpen(), mode: windowModeOf(s) }, update: updater ? updater.state() : null };
 }
 
@@ -174,6 +175,11 @@ const ROUTES = {
     return { url: `ap-file://resumes/${file}`, file, fileName: Tailor.fileName(p, { employer: "", jobTitle: "" }), slack: r.slack, overflow: r.overflow, warnings: Array.from(r.warnings) };
   },
   "POST /api/answers/save": (b) => saveAnswers(b.answers || {}),
+  // "Not sure what to look for?": titles from the approved resume, the ones that tend to pay more first.
+  "POST /api/prefs/suggest": async () => {
+    if (!aiSettings().apiKey) return bad("Connect an AI first (Settings > AI).");
+    try { return { titles: await suggestTitles() }; } catch (e) { return bad(e.message); }
+  },
   // Answers the user gave to questions the app stopped on.
   "GET /api/your-answers": () => (getAnswers().yourAnswers || []),
   "POST /api/your-answers/remove": (b) => { removeYourAnswer(String(b.key || ""), b.scope); return getAnswers().yourAnswers || []; },
@@ -188,6 +194,7 @@ const ROUTES = {
       saveProfile(r.profile);
       const cur = (iv.jobs || []).find((j) => j.current) || (iv.jobs || [])[0];
       if (cur) saveAnswers(prefillAnswers({ ...r.profile, experience: [{ title: cur.title, org: cur.employer, dates: cur.current ? "Present" : "" }] }));
+      saveAnswers(yearsFromInterview(iv, getAnswers()));
       return { profile: r.profile, answers: getAnswers(), rejected: r.rejected, questions: r.questions };
     } catch (e) { return bad(e.message); }
   },
@@ -308,6 +315,37 @@ const ROUTES = {
 };
 
 // body undefined means a read (GET), anything else a change (POST).
+// Forms ask "how many years of X": the creator's own start and end dates answer it for each kind of
+// work, and in total. Only months the person gave count; anything already filled in stays.
+const MONTH = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+function monthOf(s, now = new Date()) {
+  const t = String(s || "").toLowerCase();
+  if (/present|now|current/.test(t)) return now.getFullYear() * 12 + now.getMonth();
+  const y = t.match(/\b(19|20)\d\d\b/);
+  if (!y) return null;
+  const m = t.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/);
+  return Number(y[0]) * 12 + (m ? MONTH[m[1]] : 6);
+}
+export function yearsFromInterview(iv, a, now = new Date()) {
+  const years = [...(a.years || [])];
+  const spans = [];
+  for (const j of iv.jobs || []) {
+    const s = monthOf(j.start, now), e = j.current ? monthOf("present", now) : monthOf(j.end, now);
+    if (s === null || e === null || e < s || !j.title) continue;
+    spans.push([s, e]);
+    const n = Math.floor(((e - s + 1) / 12) * 2) / 2; // rounded down: never more than they worked
+    if (n > 0 && !years.some((y) => String(y.type).toLowerCase() === String(j.title).toLowerCase())) years.push({ type: j.title, years: n });
+  }
+  const out = { years };
+  if (!Number(a.totalYears) && spans.length) {
+    // Months worked, overlapping jobs counted once.
+    const months = new Set();
+    for (const [s, e] of spans) for (let m = s; m <= e; m++) months.add(m);
+    out.totalYears = Math.floor((months.size / 12) * 2) / 2;
+  }
+  return out;
+}
+
 export async function handle(route, body) {
   const u = new URL(String(route), "http://app");
   const method = body === undefined || body === null ? "GET" : "POST";

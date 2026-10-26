@@ -111,3 +111,13 @@ test("a job title from the link itself, for pages built by JavaScript", async ()
   assert.strictEqual(titleFromPath(new URL("https://acme.wd5.myworkdayjobs.com/en-US/careers/job/Austin-TX/Cashier---Front-End_R123")), "Cashier - Front End");
   assert.strictEqual(titleFromPath(new URL("https://x.com/jobs/12345")), "");
 });
+
+test("HiringCafe pay: the listed period, an hourly wage filed under the wrong period, no $17-$17", () => {
+  assert.strictEqual(hc.salaryOf({ listed_compensation_frequency: "Hourly", hourly_min_compensation: 17, hourly_max_compensation: 17 }), "$17/hour");
+  assert.strictEqual(hc.salaryOf({ listed_compensation_frequency: "Hourly", hourly_min_compensation: 28, hourly_max_compensation: 30 }), "$28-$30/hour");
+  assert.strictEqual(hc.salaryOf({ listed_compensation_frequency: "Weekly", weekly_min_compensation: 20, weekly_max_compensation: 24, yearly_min_compensation: 1040 }), "$20-$24/hour");
+  assert.strictEqual(hc.salaryOf({ listed_compensation_frequency: "Weekly", weekly_min_compensation: 1200, weekly_max_compensation: 1500 }), "$1,200-$1,500/week");
+  assert.strictEqual(hc.salaryOf({ listed_compensation_frequency: "Yearly", yearly_min_compensation: 72800, yearly_max_compensation: 78000 }), "$72,800-$78,000/year");
+  assert.strictEqual(hc.salaryOf({ listed_compensation_frequency: "Hourly", hourly_min_compensation: 23.25, hourly_max_compensation: 23.25 }), "$23.25/hour");
+  assert.strictEqual(hc.salaryOf({ listed_compensation_frequency: "Hourly" }), null);
+});

@@ -92,6 +92,9 @@ export const ANSWERS_DEFAULTS = {
   transportation: "",        // yes | no
   driversLicense: "",        // yes | no
   canLift: "",               // pounds the user can lift, e.g. "50"
+  ownVehicle: "",            // yes | no: their own insured car (delivery jobs ask)
+  drivingRecord: "",         // clean | no: a clean driving record
+  over21: "",                // yes | no (driving and alcohol jobs ask)
   convictions: "ask",        // ask | none: criminal-history questions         // ask | yes: background checks and drug tests if offered a job
   heardAbout: "Job board",
   over18: "yes",

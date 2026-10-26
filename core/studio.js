@@ -114,7 +114,7 @@ export function addedFacts(suggestion, sources, allowed = []) {
 }
 
 // Praise the person didn't claim: allowed only when their own words use it.
-const INFLATE = /\b(proven|expert|expertise|seasoned|highly[- ]skilled|high[- ]performance|high[- ]performing|exceptional|outstanding|extensive|world[- ]class|top[- ]performing|award[- ]winning|experienced|mastery|master of)\b/gi;
+const INFLATE = /\b(proven|expert|expertise|seasoned|highly[- ]skilled|skilled|adept|proficient|precision|meticulous|expertly|high[- ]performance|high[- ]performing|exceptional|outstanding|extensive|world[- ]class|top[- ]performing|award[- ]winning|experienced|mastery|master of)\b/gi;
 // Words that limit a claim, with the ones that mean the same: a rewrite may not drop them.
 const HEDGES = [["about", "approximately", "roughly", "around", "nearly", "almost", "some", "~"], ["help", "helped", "assist", "assisted", "support", "supported", "contributed", "helping", "assisting", "supporting"],
   ["part-time", "part time"], ["leaning"], ["junior"], ["intern", "internship"], ["co-led", "co-founded", "co-wrote", "co-authored", "jointly", "shared"], ["partially", "partly"]];
@@ -127,6 +127,21 @@ export function droppedHedges(original, text) {
     : g.some((w) => has(o, w)) && !g.some((w) => has(t, w)))).map((g, i) => (g === HEDGES[0] ? (o.match(APPROX) || [])[1] : g.find((w) => has(o, w))));
 }
 
+// A number the person gave as a guess ("about 8 to 12 calls") must stay a guess wherever it is used.
+export function droppedApprox(sources, text) {
+  const src = String(sources.join(" ")).toLowerCase(), t = String(text || "").toLowerCase();
+  const APPROX_WORDS = "about|approximately|roughly|around|nearly|almost|maybe|up to|over|more than|~";
+  const out = [];
+  for (const m of src.matchAll(new RegExp(`\\b(${APPROX_WORDS})\\s*(\\$?\\d[\\d,.]*)`, "g"))) {
+    const num = m[2].replace(/^\$/, "");
+    const at = t.search(new RegExp(`(^|[^\\d.,])\\$?${num.replace(/[.,]/g, "\\$&")}(?![\\d])`));
+    if (at < 0) continue;
+    const before = t.slice(Math.max(0, at - 20), at + 1);
+    if (!new RegExp(`\\b(${APPROX_WORDS})\\s*\\$?$`).test(before.trim()) && !new RegExp(`(${APPROX_WORDS})\\s*\\$?\\d*$`).test(before)) out.push(`${m[1]} ${m[2]}`);
+  }
+  return [...new Set(out)];
+}
+
 // Accept a suggested line only if it adds nothing and breaks no rule; otherwise say why.
 // original: the line being reworded, whose limiting words must survive.
 export function vet(text, sources, profile, allowed = [], original = null) {
@@ -136,6 +151,7 @@ export function vet(text, sources, profile, allowed = [], original = null) {
   const why = [...addedFacts(t, sources, allowed).map((x) => `adds ${x}, which you didn't say`), ...Profile.textIssues(t, profile)];
   for (const m of t.matchAll(INFLATE)) if (!src.includes(m[0].toLowerCase())) why.push(`calls you "${m[0]}", which you didn't say`);
   if (original) for (const h of droppedHedges(original, t)) why.push(`drops "${h}", which makes the claim bigger`);
+  for (const h of droppedApprox(sources, t)) if (!why.some((w) => w.includes(`"${h.split(" ")[0]}"`))) why.push(`says the number without "${h.split(" ").slice(0, -1).join(" ")}", which makes a guess sound exact`);
   if (PRONOUN.test(t)) why.push("uses I/my");
   return { ok: !why.length, why };
 }
@@ -161,6 +177,7 @@ const GUIDE = `How recruiters want resume lines written:
 - One line each: about 8 to 20 words, at most 150 characters. No "I", "my" or "we". No buzzwords (hard-working, team player, detail-oriented, passionate, results-driven).
 - Plain words a hiring manager in that field uses. Keep the person's own specific terms (machines, tools, product names).
 - No em dashes.
+- The summary starts with what they do or did ("Tow truck driver with a Class B CDL..."), never with "Possesses", "Skilled in" or "Experienced".
 THE HONESTY RULE (most important): use only facts the person gave. Never add a number, percentage, amount, tool, employer, certification, title or result they did not state. If a line would be stronger with a number or result you don't have, do NOT guess: write the honest line without it and ask a short question to get it.`;
 
 const settings = () => aiSettings();
@@ -191,6 +208,22 @@ Rewording, a stronger verb, and a direct summary of what they said are fine. Ret
 
 // ---------- create: from the user's answers to resume pieces ----------
 
+// "Tow Truck Driver with a Class B CDL. Before that, Sign Shop Worker at City of Sacramento."
+export function plainSummary(iv) {
+  const jobs = arr(iv.jobs).filter((j) => j.title);
+  const cur = jobs.find((j) => j.current) || jobs[0];
+  const certs = String(iv.certifications || "").split(/\s*[,;\n]\s*/).filter(Boolean).slice(0, 3);
+  const list = (xs) => (xs.length > 1 ? xs.slice(0, -1).join(", ") + " and " + xs[xs.length - 1] : xs[0]);
+  const parts = [];
+  if (cur) parts.push(`${cur.title}${cur.employer ? " at " + cur.employer : ""}${certs.length ? `, with ${list(certs)}` : ""}.`);
+  else if (certs.length) parts.push(`Holds ${list(certs)}.`);
+  const before = jobs.filter((j) => j !== cur).slice(0, 2);
+  if (before.length) parts.push(`Before that, ${list(before.map((j) => `${j.title}${j.employer ? " at " + j.employer : ""}`))}.`);
+  const school = arr(iv.education).find((e) => e.school);
+  if (!parts.length && school) parts.push(`${school.earned || "Studied"} at ${school.school}.`);
+  return parts.join(" ") || "Summary to write.";
+}
+
 // interview: { target, summary, jobs: [{ title, employer, location, start, end, current, daily, proud, numbers, tools }],
 //   education: [{ school, earned, year }], certifications, skills, languages, volunteer }
 export function interviewText(iv) {
@@ -198,7 +231,7 @@ export function interviewText(iv) {
   if (iv.target) lines.push(`JOB THEY WANT NEXT: ${iv.target}`);
   if (iv.summary) lines.push(`ABOUT THEM, IN THEIR WORDS: ${iv.summary}`);
   arr(iv.jobs).forEach((j, i) => {
-    lines.push(`\nJOB ${i + 1}: ${j.title || "?"} at ${j.employer || "?"}${j.location ? ", " + j.location : ""} (${j.start || "?"} to ${j.current ? "now" : j.end || "?"})`);
+    lines.push(`\nJOB ${i + 1}: ${j.title || "?"} at ${j.employer || "?"}${j.location ? ", " + j.location : ""} (${j.start || "?"} to ${j.current ? "now" : j.end || "?"})${j.current ? " CURRENT JOB: write its ongoing duties in the present tense" : " PAST JOB: past tense"}`);
     if (j.daily) lines.push(`What they did on a normal day: ${j.daily}`);
     if (j.proud) lines.push(`What they're proud of / what went well: ${j.proud}`);
     if (j.numbers) lines.push(`Numbers they gave: ${j.numbers}`);
@@ -224,6 +257,7 @@ export async function createFromInterview(iv, profile0 = null, answers = {}) {
   const facts = interviewText(iv);
   const sys = `You write a one-page resume from a person's own answers to interview questions.
 ${GUIDE}
+Never ask a question about something they already answered (their dates, how long they worked there, or a number they gave).
 Write 2 to 4 lines per job from what they said (not from the "They also confirmed" items: those get their own lines separately), and a 2 to 3 sentence summary aimed at the job they want next (only from their facts).
 For every line, quote the part of their answers it comes from in "source".
 Return JSON only:
@@ -244,7 +278,8 @@ Return JSON only:
     const bt = new Set();
     const bullets = [];
     for (const b of arr(out.bullets)) {
-      const text = Profile.stripDashes(String(b.text || "")).trim();
+      const text = Profile.stripDashes(String(b.text || "")).trim().replace(/\.$/, "");
+      if (bullets.some((x) => sameLine(x.text, text))) continue;
       const v = vet(text, sources, p, [...known, ...specificTerms(j.title), ...specificTerms(j.employer)]);
       if (v.ok) bullets.push({ id: slug(text.split(/\s+/).slice(0, 2).join(" "), bt), text, approved: false, source: String(b.source || "").slice(0, 300) });
       else rejected.push({ job: j.title, text, why: v.why });
@@ -257,12 +292,16 @@ Return JSON only:
     if (arr(j.confirmed).length) {
       const extra = await linesFromConfirmed(j, j.confirmed, p, answers);
       for (const l of extra.lines) {
-        if (bullets.some((b) => b.text.toLowerCase() === l.text.toLowerCase())) continue;
+        if (bullets.some((b) => sameLine(b.text, l.text))) continue;
         bullets.push({ id: slug(l.text.split(/\s+/).slice(0, 2).join(" "), bt), text: l.text, approved: false, source: l.source, ...(l.warning ? { warning: l.warning } : {}), recalled: true });
       }
       rejected.push(...extra.rejected.map((x) => ({ job: j.title, ...x })));
     }
-    for (const q of arr(out.questions).slice(0, 3)) questions.push({ job: `${j.title} at ${j.employer}`, question: String(q) });
+    // Never ask for what they already gave: their dates (so how long they worked there), or a number they typed.
+    const asked = (q) => (/how (many|long)\b.*\b(years?|months?)\b|how long have you|how long did you/i.test(q) && (j.start || j.end || j.current)) ||
+      (numbersIn(j.numbers || "").size > 0 && /how many|average|number of/i.test(q) &&
+        String(j.numbers).toLowerCase().split(/[^a-z]+/).filter((w) => w.length > 3).some((w) => q.toLowerCase().includes(w.replace(/s$/, ""))));
+    for (const q of arr(out.questions).filter((q) => !asked(String(q))).slice(0, 3)) questions.push({ job: `${j.title} at ${j.employer}`, question: String(q) });
     const dates = `${j.start || ""}${j.start || j.end || j.current ? " – " : ""}${j.current ? "Present" : j.end || ""}`.trim();
     newExp.push({ id: slug(j.employer || j.title, expIds), title: j.title || "", org: j.employer || "", location: j.location || "", dates, minBullets: Math.min(2, bullets.length), bullets });
   }
@@ -316,7 +355,8 @@ Return JSON only:
   p.bases.push({ id: bid, description: "Made with the resume creator", approved: false, header: null, summary: summaryId || (p.summaries[0] || {}).id,
     skills: skillIds.length ? skillIds : p.skills.slice(0, 2).map((s) => s.id),
     sections: [{ kind: "experience", items: newExp.filter((e) => e.bullets.length).map((e) => ({ id: e.id, bullets: e.bullets.slice(0, 4).map((b) => b.id) })) }, ...(p.education.length ? [{ kind: "education" }] : [])] });
-  if (!p.summaries.length) { p.summaries.push({ id: "summary", text: `${iv.target ? iv.target + " " : ""}candidate.`.trim(), approved: false }); p.bases[p.bases.length - 1].summary = "summary"; }
+  // No summary the checks accepted: a plain one built from their own titles and licenses, no AI words.
+  if (!p.summaries.length) { p.summaries.push({ id: "summary", text: plainSummary(iv), approved: false, source: "your job titles and certifications" }); p.bases[p.bases.length - 1].summary = "summary"; }
   return { profile: p, rejected, questions };
 }
 
@@ -432,7 +472,8 @@ Questions only ask; they never assume. Return JSON only: {"occupation": 0, "ques
   let ideas = 0;
   for (const x of arr(r.questions)) {
     const q = String(x.q || "").trim();
-    if (!q || !/\?$/.test(q) || seen.has(q.toLowerCase())) continue;
+    // Yes/no questions only: "What types of materials did you use?" can't be answered with Yes.
+    if (!q || !/\?$/.test(q) || !/^(did|do|have|had|were|was|are|is|could|can|would)\b/i.test(q) || seen.has(q.toLowerCase())) continue;
     let task = "", from = "ai";
     // The model writes the reference in more than one way: [0, 3], "0,3", "0-3", {"o": 0, "t": 3}.
     const ref = Array.isArray(x.t) ? x.t : typeof x.t === "string" ? x.t.split(/[^0-9]+/).filter(Boolean) : x.t && typeof x.t === "object" ? [x.t.o ?? x.t.occupation, x.t.t ?? x.t.task] : null;
@@ -464,6 +505,17 @@ export function closestTask(q, cands) {
 // What a "yes" says, as the source a line may be written from.
 const yesSource = (c) => [c.q.replace(/^did you\s*/i, "").replace(/\?$/, ""), c.task, c.detail].filter(Boolean).join(". ");
 
+// Two lines that say the same thing in other words ("Set out cones..." twice, "Trained two new guys" and
+// "Trained new employees"): most of the longer one's words are in the shorter one.
+const lineWords = (t) => new Set(String(t).toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !STOPW.has(w)).map((w) => w.replace(/(ing|ed|es|s|e)$/, "")));
+export function sameLine(a, b) {
+  const x = lineWords(a), y = lineWords(b);
+  if (!x.size || !y.size) return false;
+  const [small, big] = x.size <= y.size ? [x, y] : [y, x];
+  const hits = [...small].filter((w) => big.has(w)).length;
+  return hits >= 2 && hits / small.size >= 0.5;
+}
+
 // Lines for one job from the things the person said yes to. Returns [{ text, source, warning? }] and what was left out.
 export async function linesFromConfirmed(job, confirmed, profile, answers = {}) {
   if (!arr(confirmed).length) return { lines: [], rejected: [] };
@@ -475,10 +527,13 @@ Return JSON only: {"lines": [{"text": "...", "from": [0]}]}`;
   const list = (cs) => cs.map((c, i) => `${i}. ${c.q}${c.detail ? `  Their detail: ${c.detail}` : ""}`).join("\n");
   const p = profile || {};
   const known = [...knownTerms(p, answers), ...specificTerms(job.title), ...specificTerms(job.employer)];
+  // A job they still have: ongoing duties in the present tense, like the rest of that job's lines.
+  const now = job.current || /present|now|current/i.test(String(job.dates || job.end || ""));
+  const tense = now ? "\nThey still work at this job: write ongoing duties in the present tense (\"Secure vehicles...\", not \"Secured vehicles...\")." : "\nThis job is in the past: write every line in the past tense.";
   const write = async (cs, note = "") => {
-    const r = await ask([{ role: "system", content: sys + note }, { role: "user", content: `JOB: ${job.title}${job.employer ? " at " + job.employer : ""}\nTHEY CONFIRMED:\n${list(cs)}` }]);
+    const r = await ask([{ role: "system", content: sys + tense + note }, { role: "user", content: `JOB: ${job.title}${job.employer ? " at " + job.employer : ""}${now ? " (they work here now)" : ""}\nTHEY CONFIRMED:\n${list(cs)}` }]);
     return arr(r.lines).map((l) => {
-      const text = Profile.stripDashes(String(l.text || "")).trim();
+      const text = Profile.stripDashes(String(l.text || "")).trim().replace(/\.$/, "");
       const used = arr(l.from).map((i) => cs[Number(i)]).filter(Boolean);
       const from = used.length ? used : cs;
       const v = vet(text, [...from.map(yesSource), job.title, job.employer || ""], p, known, from.map((c) => `${c.q} ${c.detail || ""}`).join(" "));
@@ -486,7 +541,7 @@ Return JSON only: {"lines": [{"text": "...", "from": [0]}]}`;
     });
   };
   const out = [], rejected = [];
-  const keep = (x) => out.some((y) => y.text.toLowerCase() === x.text.toLowerCase()) || out.push({ text: x.text, source: "You said yes to: " + x.from.map((c) => c.q).join(" / ") + (x.from.some((c) => c.detail) ? ` (${x.from.map((c) => c.detail).filter(Boolean).join("; ")})` : ""), check: x.from.map(yesSource).join(". ") });
+  const keep = (x) => out.some((y) => sameLine(y.text, x.text)) || out.push({ text: x.text, source: "You said yes to: " + x.from.map((c) => c.q).join(" / ") + (x.from.some((c) => c.detail) ? ` (${x.from.map((c) => c.detail).filter(Boolean).join("; ")})` : ""), check: x.from.map(yesSource).join(". ") });
   const first = await write(confirmed);
   first.filter((x) => x.v.ok).forEach(keep);
   // One more try for the lines that broke a rule, saying what was wrong with each.
@@ -512,7 +567,7 @@ export async function addRecalled(profile, entryId, confirmed, answers = {}) {
   const p = JSON.parse(JSON.stringify(profile));
   const e = arr(p.experience).find((x) => x.id === entryId) || arr(p.projects).find((x) => x.id === entryId);
   if (!e) throw new Error("That job is gone.");
-  const { lines, rejected } = await linesFromConfirmed({ title: e.title, employer: e.org }, confirmed, approvedOnly(p), answers);
+  const { lines, rejected } = await linesFromConfirmed({ title: e.title, employer: e.org, dates: e.dates }, confirmed, approvedOnly(p), answers);
   const bt = new Set(arr(e.bullets).map((b) => b.id));
   for (const l of lines) e.bullets.push({ id: slug(l.text.split(/\s+/).slice(0, 2).join(" "), bt), text: l.text, approved: false, source: l.source, ...(l.warning ? { warning: l.warning } : {}) });
   return { profile: p, added: lines.length, rejected };

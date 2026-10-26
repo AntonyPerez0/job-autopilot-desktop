@@ -13,6 +13,13 @@ export function roleKey(company, title) {
   return co + "|" + t.join(" ");
 }
 
+// One job posted for many locations ("Delivery Driver(07800) - 5051 Auburn Blvd", "Delivery Driver(07906) - 6306 Fair
+// Oaks Blvd"): the same employer and the same title once store numbers and addresses are taken off.
+export function familyKey(company, title) {
+  const t = String(title || "").replace(/\s+[-–|:]\s+(?=.*\d).*$/, " ").replace(/\d+/g, " ");
+  return roleKey(company, t);
+}
+
 export const cleanUrl = (u) => String(u || "").trim().replace(/[?#].*$/, "").replace(/\/(apply|application)\/?$/, "").replace(/\/+$/, "").toLowerCase();
 
 // The user's own list: one per line, a posting URL or "Company - Title" / "Title at Company" / "Company, Title".

@@ -55,7 +55,17 @@ export async function launch({ headless = false, choice = "auto", onStatus = () 
         if (!exe) { onStatus("Downloading Chromium (about 150 MB, once)"); exe = await installChromium((l) => onStatus("Chromium: " + l.slice(0, 80))); }
         opts = { ...base, executablePath: exe, channel: headless ? "chromium" : undefined };
       } else opts = { ...base, channel: ch };
-      const ctx = await chromium.launchPersistentContext(userDataDir, opts);
+      let ctx = await chromium.launchPersistentContext(userDataDir, opts);
+      // With no window, the browser calls itself "HeadlessChrome", and sites behind bot checks
+      // (HiringCafe's Cloudflare among them) refuse it. Start it again under its ordinary name.
+      if (headless) {
+        const p = ctx.pages()[0] || await ctx.newPage();
+        const ua = String(await p.evaluate(() => navigator.userAgent).catch(() => ""));
+        if (/HeadlessChrome/.test(ua)) {
+          await ctx.close();
+          ctx = await chromium.launchPersistentContext(userDataDir, { ...opts, userAgent: ua.replace(/HeadlessChrome/g, "Chrome") });
+        }
+      }
       preferred = ch;
       return { ctx, channel: ch };
     } catch (e) {

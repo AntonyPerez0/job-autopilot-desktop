@@ -287,10 +287,9 @@ ${fields || "(none found on this page)"}`;
     const out = [];
     const onPage = new Map(entries(spec).map(({ kind, it }) => [it.id, { kind, it }]));
     for (const [e, b] of extra) if (onPage.has(e)) out.push([e, b]);
-    for (const [id, { kind, it }] of onPage) {
-      const e = entryOf(profile, kind, id);
-      for (const b of arr(e.bullets)) out.push([id, b.id]);
-    }
+    // One line from each entry in turn, so a long first job does not take all the room.
+    const lists = [...onPage].map(([id, { kind }]) => arr(entryOf(profile, kind, id).bullets).map((b) => [id, b.id]));
+    for (let k = 0; lists.some((l) => k < l.length); k++) for (const l of lists) if (l[k]) out.push(l[k]);
     return out.filter(([e, b], i, a) => a.findIndex((x) => x[0] === e && x[1] === b) === i);
   }
 
@@ -304,7 +303,7 @@ ${fields || "(none found on this page)"}`;
     }
     let tries = 0;
     for (const [eid, bid] of candidates(profile, cur, extra)) {
-      if (r.overflow || r.slack <= SLACK_TARGET || tries > 12) break;
+      if (r.overflow || r.slack <= SLACK_TARGET || tries > 40) break;
       const { it } = entries(cur).find((x) => x.it.id === eid) || {};
       if (!it || it.bullets.includes(bid) || it.bullets.some((b) => stem(b) === stem(bid))) continue;
       tries++;

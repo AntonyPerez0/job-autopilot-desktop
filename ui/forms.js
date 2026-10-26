@@ -580,6 +580,9 @@
         <div class="form-row">${fld("Reliable transportation?", radios("transportation", a.transportation, [["yes", "Yes"], ["no", "No"], ["", "Don't say"]]))}
           ${fld("Valid driver's license?", radios("driversLicense", a.driversLicense, [["yes", "Yes"], ["no", "No"], ["", "Don't say"]]))}
           ${fld("Most you can lift (pounds)", inp("canLift", a.canLift, 'type="number" min="0" placeholder="e.g. 50"'), "Leave empty to be asked.")}</div>
+        <div class="form-row">${fld("Your own insured car?", radios("ownVehicle", a.ownVehicle, [["yes", "Yes"], ["no", "No"], ["", "Don't say"]]), "Delivery jobs often need one.")}
+          ${fld("Clean driving record?", radios("drivingRecord", a.drivingRecord, [["clean", "Yes"], ["no", "No"], ["", "Don't say"]]))}
+          ${fld("Are you 21 or older?", radios("over21", a.over21, [["yes", "Yes"], ["no", "No"], ["", "Don't say"]]), "Some driving jobs require it.")}</div>
         <div class="form-row">${fld("Notice to give your current job", inp("noticePeriod", a.noticePeriod, 'placeholder="2 weeks, None..."'))}
           ${fld("Desired pay (optional)", inp("salary", a.salary, 'placeholder="e.g. $18 an hour"'), "Empty: the posted range, or \"open to discussing\".")}</div>
         <div class="form-row">${fld("Willing to move for a job?", radios("relocation", a.relocation, [["no", "No"], ["radius", "Only nearby"], ["anywhere", "Yes, anywhere"]]))}
@@ -620,7 +623,7 @@
         const out = {};
         for (const k of ["firstName", "lastName", "preferredName", "email", "phone", "linkedin", "github", "website", "otherLinks", "street", "city", "state", "zip", "country",
           "authCountry", "workAuthorized", "needsSponsorship", "travel", "over18", "currentEmployer", "currentTitle", "noticePeriod", "startAvailability", "relocation", "heardAbout",
-          "salary", "arbitration", "screenings", "convictions", "hoursWanted", "transportation", "driversLicense", "canLift"]) out[k] = val(el, k);
+          "salary", "arbitration", "screenings", "convictions", "hoursWanted", "transportation", "driversLicense", "canLift", "ownVehicle", "drivingRecord", "over21"]) out[k] = val(el, k);
         out.daysAvailable = [...el.querySelectorAll("[name=days]:checked")].map((x) => x.value);
         out.shifts = [...el.querySelectorAll("[name=shifts]:checked")].map((x) => x.value);
         out.totalYears = Number(val(el, "totalYears")) || 0;
@@ -663,6 +666,12 @@
     el.innerHTML = `<div class="form">
       ${fld("What jobs do you want?", `<div data-titles></div><div class="chips" data-sugg style="margin-top:8px">${sugg.map((t) => `<button type="button" class="tag chip-add">+ ${esc(t)}</button>`).join("")}</div>`,
         "Type a job title and press Enter, or click a suggestion. Add a few similar titles to find more jobs.")}
+      <div class="ai-sugg" data-aisugg>
+        <div class="row-actions"><button type="button" class="btn sm" data-aigo>${icon("bolt")}Not sure? Suggest jobs from my resume</button>
+          <small class="hint">Jobs your experience, licenses and certificates qualify you for, the ones that tend to pay more first.</small></div>
+        <div data-ailist></div></div>
+      <div class="form-row">${fld("Lowest pay you'd take (optional)", `<div class="row-actions" style="flex-wrap:nowrap"><input class="inp" name="minPay" type="number" min="0" step="0.5" value="${esc(p.minPay || "")}" placeholder="e.g. 25" style="max-width:9rem">
+          ${sel("minPayPer", p.minPayPer || "hour", [["hour", "an hour"], ["year", "a year"]])}</div>`, "Jobs that post a lower top rate are skipped. Jobs that don't post pay are kept.")}</div>
       <div class="fld"><span>Where?</span><div class="suggest"><input class="inp" data-city placeholder="Type your city, then pick it from the list"><div class="suggest-list" hidden></div></div>
         <div data-cities class="tags" style="margin-top:6px"></div></div>
       <div class="fld"><span>How far are you willing to go? <b data-radius-val>${esc(p.radius)} ${p.radiusUnit === "km" ? "km" : "miles"}</b></span>
@@ -691,6 +700,25 @@
       input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
       b.remove();
     });
+    // Suggestions from the resume: each one names what of theirs qualifies them, and adds with one click.
+    el.querySelector("[data-aigo]").onclick = async (e) => {
+      const btn = e.currentTarget, host = el.querySelector("[data-ailist]");
+      btn.disabled = true;
+      msg(host, "info", "Reading your resume and thinking about jobs you qualify for...");
+      const r = await api("/api/prefs/suggest", {});
+      btn.disabled = false;
+      if (r.error) return msg(host, "err", r.error);
+      if (!r.titles.length) return msg(host, "info", "No new ideas beyond the titles you already have.");
+      host.innerHTML = `<div class="sugg-list">${r.titles.map((x, i) => `<div class="sugg-item"><div><b>${esc(x.title)}</b>${x.payText ? ` <span class="pill ${x.pay === "more" ? "ok" : ""}">${esc(x.payText)}</span>` : ""}
+          <div class="muted">${esc(x.why)}</div></div><button type="button" class="btn sm" data-add-sugg="${i}">${icon("plus")}Add</button></div>`).join("")}</div>
+        <small class="hint">Ideas from the AI, based only on your approved resume. To be shown only jobs that pay more than you make now, put your current pay in <b>Lowest pay you'd take</b> below.</small>`;
+      host.querySelectorAll("[data-add-sugg]").forEach((b) => b.onclick = () => {
+        const input = el.querySelector("[data-titles] input");
+        input.value = r.titles[Number(b.dataset.addSugg)].title;
+        input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+        b.disabled = true; b.innerHTML = `${icon("check")}Added`;
+      });
+    };
     const keywords = tagInput(el.querySelector("[data-keywords]"), p.keywords, "e.g. healthcare");
     const titleEx = tagInput(el.querySelector("[data-titleex]"), p.titleExclude, "e.g. night shift, sales");
     const exclude = tagInput(el.querySelector("[data-exclude]"), p.excludeCompanies, "Company name");
@@ -737,6 +765,7 @@
           seniority: lv.filter((x) => x !== "intern").flatMap((x) => (x === "lead" ? ["lead", "staff", "principal"] : [x])), internships: lv.includes("intern"),
           maxYearsRequired: Number(val(el, "maxYearsRequired")) || 0, postedWithinDays: Number(val(el, "postedWithinDays")) || 14,
           excludeAgencies: val(el, "excludeAgencies"), alreadyApplied: val(el, "alreadyApplied"), boards,
+          minPay: Number(val(el, "minPay")) || 0, minPayPer: val(el, "minPayPer") || "hour",
         };
         if (!out.titles.length) return "Add at least one job title (type it and press Enter, or click a suggestion).";
         if (!out.cities.length && !out.remote) return "Pick your city from the list, or tick remote jobs.";

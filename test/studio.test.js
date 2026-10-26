@@ -169,3 +169,24 @@ test("'about' limits a number, not a topic", () => {
   assert.deepStrictEqual(S.droppedHedges("Served about 150 customers", "Served 150 customers"), ["about"]);
   assert.deepStrictEqual(S.droppedHedges("Greeted customers, maybe 20 a shift", "Greeted about 20 customers a shift"), []);
 });
+
+test("a guess stays a guess in new lines and summaries", () => {
+  const src = ["take calls from dispatch", "about 8 to 12 calls a shift"];
+  assert.ok(!S.vet("Handle 8 to 12 tow calls a shift", src, Profile.EXAMPLE).ok, "'about' dropped");
+  assert.ok(S.vet("Handle about 8 to 12 tow calls a shift", src, Profile.EXAMPLE).ok);
+  assert.deepStrictEqual(S.droppedApprox(["Served about 150 customers, trained 3 people"], "Trained 3 new people"), [], "an exact number given exactly is fine");
+  assert.ok(!S.vet("Skilled in precision sign manufacturing", ["made street signs"], Profile.EXAMPLE).ok, "praise they didn't use");
+});
+
+test("the same line twice in other words is kept once", () => {
+  assert.ok(S.sameLine("Set out cones, flares, and warning lights at accident scenes", "Set out cones, flares, and warning lights at accident scenes."));
+  assert.ok(S.sameLine("Kept truck clean, reported problems and kept driving hour and service logs", "Maintain logs of driving hours and vehicle service status"));
+  assert.ok(!S.sameLine("Ran the vinyl cutter", "Ran the register"));
+  assert.ok(!S.sameLine("Hook up cars with the flatbed", "Collect payment from customers at the scene"));
+});
+
+test("no summary passed the checks: a plain one from their own titles, never 'Something that pays better candidate'", () => {
+  assert.strictEqual(S.plainSummary({ target: "Something that pays better", jobs: [{ title: "Tow Truck Driver", employer: "Initech Towing", current: true }, { title: "Sign Shop Worker", employer: "Globex" }], certifications: "Class B CDL" }),
+    "Tow Truck Driver at Initech Towing, with Class B CDL. Before that, Sign Shop Worker at Globex.");
+  assert.strictEqual(S.plainSummary({ education: [{ school: "Acme High School", earned: "Diploma" }] }), "Diploma at Acme High School.");
+});
