@@ -4,6 +4,7 @@
 // needs no account, and lists the rest under "Apply yourself".
 import { getDb, log } from "./db.js";
 import { loadProfile, screen } from "./engine.js";
+import { plainAiError } from "./llm.js";
 import { km, remoteOk, toKm, withinRadius } from "./geo.js";
 import { getAnswers, getPrefs } from "./store.js";
 import { cleanUrl, familyKey, inAppliedList, jobKey, parseAppliedList, roleKey } from "./dedupe.js";
@@ -113,10 +114,24 @@ const posted = (j) => (j.posted_at ? Date.parse(j.posted_at) : NaN);
 
 // What the last search found and what went wrong, for the dashboard: a search that quietly finds
 // nothing because a site would not open looks just like a quiet day.
+// A license class named in the job title ("CLASS A Delivery Driver", "CDL-A Driver") that the person doesn't hold:
+// a must-have, checked without the AI. A Class A holder can drive B and C jobs; a B holder can drive C.
+export function licenseGap(title, profile) {
+  const m = String(title || "").match(/\bclass[\s-]*([abc])\b|\bcdl[\s-]*([abc])\b|\b([abc])[\s-]*cdl\b/i);
+  // "Class A Office Building Engineer" is about buildings: only driving jobs count.
+  if (!m || (!/\bcdl\b/i.test(title) && !/driv|truck|tow|deliver|haul|route|transport|tanker|dump|bus\b|freight|tractor|flatbed|operator/i.test(title))) return "";
+  const need = (m[1] || m[2] || m[3]).toUpperCase();
+  const have = ((profile && profile.skills) || []).map((x) => `${x.label}: ${x.items}`).join(" ; ");
+  const held = [...have.matchAll(/\bclass[\s-]*([abc])\b|\bcdl[\s-]*([abc])\b|\b([abc])[\s-]*cdl\b/gi)].map((x) => (x[1] || x[2] || x[3]).toUpperCase());
+  if (!held.length && !/\bcdl\b|driver'?s licen[cs]e/i.test(have)) return `the title asks for a Class ${need} license, and your resume doesn't list one`;
+  if (held.some((c) => c <= need)) return "";
+  return held.length ? `the title asks for a Class ${need} CDL; you hold Class ${held.sort()[0]}` : "";
+}
+
 export const lastSearch = { at: null, found: 0, queued: 0, problems: [], done: false };
 
 export async function discover(progress = () => {}, ctx = {}) {
-  lastSearch.at = new Date().toISOString(); lastSearch.problems = []; lastSearch.found = 0; lastSearch.queued = 0; lastSearch.done = false;
+  lastSearch.at = new Date().toISOString(); lastSearch.problems = []; lastSearch.found = 0; lastSearch.queued = 0; lastSearch.done = false; lastSearch.aiProblem = "";
   const db = getDb();
   const prefs = getPrefs(), a = getAnswers();
   const seen = new Set(db.prepare("SELECT slug FROM jobs").all().map((r) => r.slug));
@@ -181,6 +196,7 @@ export async function discover(progress = () => {}, ctx = {}) {
     else if (floor && payPerHour(j.salary) && payPerHour(j.salary).max < floor - 0.005) {
       status = "skipped"; reason = `pays at most ${dollars(payPerHour(j.salary).max)} an hour, under the ${prefs.minPayPer === "year" ? dollars(Number(prefs.minPay)) + " a year" : dollars(floor) + " an hour"} you asked for`;
     }
+    else if (licenseGap(j.title, profile)) { status = "skipped"; reason = licenseGap(j.title, profile); }
     else if ((families.get(fam) || 0) >= PER_FAMILY) { status = "skipped"; reason = `the same job at another location: ${PER_FAMILY} of these are already in your list`; }
     else {
       // Workday needs an account; with the user's go-ahead the app makes it, so the job is the app's to apply to.
@@ -191,7 +207,7 @@ export async function discover(progress = () => {}, ctx = {}) {
         verdicts.set(fam, s);
         if (!s.ok) { status = "skipped"; reason = `screen: ${s.reason}`; }
         else reason = status === "manual" ? `${why}. Screen: ${s.reason}` : `screen: ${s.reason}`;
-      } catch (e) { log(j.slug, "screen failed, will retry next search: " + e.message, "warn"); continue; }
+      } catch (e) { log(j.slug, "screen failed, will retry next search: " + e.message, "warn"); lastSearch.aiProblem = plainAiError(e.message); continue; }
     }
     const apply = status === "skipped" ? null : await applyUrl(j.ats, j.apply_url || j.url);
     db.prepare(`INSERT OR IGNORE INTO jobs (slug, key, title, company, location, work_mode, source, url, apply_url, salary, posted_at, status, reason, details)

@@ -56,3 +56,15 @@ test("titles, seniority and excluded companies", () => {
   assert.strictEqual(s.length, 4);
   assert.deepStrictEqual(s[1].countries, ["US"]);
 });
+
+test("a license class named in a driving job's title is a must-have, checked without the AI", async () => {
+  const { licenseGap } = await import("../core/discover.js");
+  const b = { skills: [{ label: "Licenses & Certifications", items: "Class B CDL, Forklift certified" }] };
+  assert.match(licenseGap("CLASS A COMMERCIAL DELIVERY DRIVER - SACRAMENTO", b), /Class A CDL; you hold Class B/);
+  assert.match(licenseGap("CDL-A Regional Driver", b), /Class A/);
+  assert.strictEqual(licenseGap("Class B CDL Driver", b), "");
+  assert.strictEqual(licenseGap("Driver Class C", b), "", "a Class B holder can drive Class C");
+  assert.strictEqual(licenseGap("Class A Office Building Engineer", b), "", "a building class, not a license");
+  assert.strictEqual(licenseGap("Class B Driver", { skills: [{ label: "Licenses", items: "Class A CDL" }] }), "");
+  assert.match(licenseGap("Class B Driver", { skills: [{ label: "Skills", items: "Excel" }] }), /doesn't list one/);
+});

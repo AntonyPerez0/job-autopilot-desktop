@@ -217,3 +217,21 @@ test("no summary passed the checks: a plain one from their own titles, never 'So
     "Tow Truck Driver at Initech Towing, with Class B CDL. Before that, Sign Shop Worker at Globex.");
   assert.strictEqual(S.plainSummary({ education: [{ school: "Acme High School", earned: "Diploma" }] }), "Diploma at Acme High School.");
 });
+
+test("a line that says the same thing twice is caught, and the checklist says so", () => {
+  assert.strictEqual(S.repeatedPhrase("Handle dispatched off-road vehicle recoveries, including complex off-road vehicle recoveries"), "off-road vehicle");
+  assert.strictEqual(S.repeatedPhrase("Respond to dispatched breakdown and accident calls, handling about 8 to 12 calls per shift"), "");
+  const p = approvedExample(Profile);
+  p.experience[0].bullets[0].text = "Built the scheduling service and maintained the scheduling service";
+  const c = Object.fromEntries(S.checklist(p, exampleAnswers(), { overflow: false, slack: 40 }).map((x) => [x.id, x]));
+  assert.strictEqual(c.twice.level, "fix");
+  assert.match(c.twice.items[0].why, /scheduling service/);
+});
+
+test("a slow AI answer gets a second request, and the first answer to come back is used", async () => {
+  let n = 0;
+  reply = () => { n++; return { lines: [] }; };
+  // The mock answers at once, so only one request goes out.
+  await S.ask([{ role: "system", content: "x" }, { role: "user", content: "y" }]);
+  assert.strictEqual(n, 1);
+});

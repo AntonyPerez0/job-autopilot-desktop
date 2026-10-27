@@ -23,7 +23,8 @@ export const isLocal = (ai) => !!(PROVIDERS[providerOf(ai)] || {}).local || /^ht
 // Local models run on the user's own hardware and can be slow: they get far longer.
 export function timeoutMs(ai) {
   if (process.env.JA_AI_TIMEOUT_MS) return Number(process.env.JA_AI_TIMEOUT_MS);
-  return isLocal(ai) ? 15 * 60000 : 3 * 60000;
+  // A cloud model answers in seconds; one that hasn't answered in 100 seconds is stuck, and a retry is faster.
+  return isLocal(ai) ? 15 * 60000 : 100000;
 }
 
 // Ollama's OpenAI-style endpoint cannot set the context length, and its default is far too
@@ -59,4 +60,16 @@ export function aiFetch(url, opts = {}, ai = getSettings().ai) {
     }
     return res;
   });
+}
+
+// What went wrong with the AI, in words anyone can act on ("Model API 402: ..." means nothing to most people).
+export function plainAiError(message) {
+  const m = String(message || "");
+  if (/Model API 40[13]\b|invalid api key|no auth|unauthori[sz]ed/i.test(m)) return "The AI key didn't work. Open Settings > AI, paste your key again and press Test.";
+  if (/Model API 402\b|insufficient (credits|funds|balance)|out of credits?|credit limit/i.test(m)) return "Your AI account is out of credit. Add a few dollars at openrouter.ai (Settings, then Credits), then try again.";
+  if (/Model API 429\b|rate.?limit|too many requests/i.test(m)) return "The AI service is busy right now. Wait a minute and try again.";
+  if (/Model API 404\b|model.*(not found|does not exist|no endpoints)/i.test(m)) return "The AI model chosen in Settings > AI isn't available anymore. Pick another one there (the default works for most people).";
+  if (/Model API 5\d\d\b|took too long|timed? ?out|aborted|fetch failed|ENOTFOUND|ECONNREFUSED|ECONNRESET|EAI_AGAIN|network/i.test(m)) return "The app couldn't reach the AI service. Check your internet connection and try again in a minute.";
+  if (/Unexpected token|Unterminated string|in JSON at position|is not valid JSON/i.test(m)) return "The AI gave a garbled answer. Try again; it usually works the second time.";
+  return m;
 }

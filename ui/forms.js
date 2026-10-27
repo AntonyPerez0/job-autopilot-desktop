@@ -316,8 +316,15 @@
       const interview = { target: val(el, "c_target"), jobs, education, certifications: val(el, "c_certs"), languages: val(el, "c_langs"), skills: val(el, "c_skills"), summary: val(el, "c_summary") };
       const btn = el.querySelector("[data-cgo]");
       btn.disabled = true;
-      msg(m, "info", "Writing your resume from your answers, then checking every line against what you said. This usually takes 2 to 7 minutes; you can leave this window open and wait.");
-      const r = await api("/api/resume/create", { interview, merge: val(el, "c_merge") });
+      msg(m, "info", "Writing your resume from your answers. This usually takes 1 to 3 minutes (longer when the AI service is busy). You can leave this window open and wait.");
+      // The steps as they happen, so a long wait never looks stuck.
+      const started = Date.now();
+      const tick = setInterval(async () => {
+        const pr = await api("/api/resume/progress");
+        const secs = Math.round((Date.now() - started) / 1000);
+        if (pr && pr.of && pr.n) msg(m, "info", `Step ${pr.n} of ${pr.of}: ${pr.step}... (${secs < 60 ? secs + " seconds" : Math.floor(secs / 60) + " min " + (secs % 60) + " s"} so far)`);
+      }, 1500);
+      const r = await api("/api/resume/create", { interview, merge: val(el, "c_merge") }).finally(() => clearInterval(tick));
       btn.disabled = false;
       if (r.error) return msg(m, "err", r.error);
       cfg.profile = r.profile; cfg.answers = r.answers;
@@ -591,7 +598,7 @@
         <div class="form-row"><input type="text" data-edit="education.${i}.school" value="${esc(e.school)}" placeholder="School"><input type="text" data-edit="education.${i}.detail" value="${esc(e.detail || "")}" placeholder="Degree"><input type="text" data-edit="education.${i}.dates" value="${esc(e.dates || "")}" placeholder="Dates"></div>
         <button type="button" class="btn ghost sm" data-del="education.${i}">${icon("trash")}</button></div>`).join(""), "education");
       h += group("Lines under your name (optional)", "headers", arr(p.headers).map((s, i) => item(`headers.${i}.text`, s.text, s.approved, { input: true })).join(""), "header");
-      h += group("Base layouts", "bases", arr(p.bases).map((b, i) => item(`bases.${i}.description`, b.description || b.id, b.approved, { input: true, preview: b.id })).join(""));
+      h += group(`Resume layouts <small class="hint" style="font-weight:400">which pieces go on the page, in what order; the eye shows a preview</small>`, "bases", arr(p.bases).map((b, i) => item(`bases.${i}.description`, b.description || b.id, b.approved, { input: true, preview: b.id })).join(""));
       h += `<div class="fld" style="margin-top:6px"><span>A paragraph in your own voice (optional)</span><textarea data-edit="essaySample" rows="3" placeholder="Two or three sentences you wrote yourself. Written answers copy its tone.">${esc(p.essaySample || "")}</textarea></div>
         <div data-msg style="margin-top:12px"></div>`;
       el.innerHTML = h;
@@ -643,7 +650,7 @@
         const r = await api("/api/profile/save", { profile: p });
         if (r.error) return r.error;
         const c = counts();
-        if (!c.ok) return "Approve at least a summary, some bullets, a skills group and one base layout.";
+        if (!c.ok) return "Tick at least a summary, a few lines about your jobs, a skills group and one resume layout (at the bottom of this page).";
         if (r.problems && r.problems.length) {
           // Often the missing piece is one "approve all" held back because the second check doubted it.
           const held = [...arr(p.summaries), ...["experience", "projects"].flatMap((k) => arr(p[k]).flatMap((e) => arr(e.bullets)))].filter((x) => x.warning && !x.approved);

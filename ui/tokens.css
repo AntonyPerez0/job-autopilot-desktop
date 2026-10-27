@@ -11,7 +11,7 @@
   --color-paper: oklch(97% 0.006 55); --color-paper-2: oklch(94.5% 0.007 55); --color-paper-3: oklch(91.5% 0.009 55);
   --color-ink: oklch(21% 0.012 38); --color-ink-2: oklch(29% 0.013 40); --color-muted: oklch(47% 0.013 45);
   --color-rule: oklch(87% 0.009 55); --color-rule-2: oklch(81% 0.011 55);
-  --color-accent: oklch(74% 0.125 30); --color-accent-ink: oklch(21% 0.012 38); --color-accent-2: oklch(54% 0.165 29); --color-focus: oklch(54% 0.17 30);
+  --color-accent: oklch(74% 0.125 30); --color-accent-ink: oklch(21% 0.012 38); --color-accent-2: oklch(54% 0.165 29); --color-focus: oklch(50% 0.14 255);
   --color-cotton: oklch(98.8% 0.0045 80); --color-desk: oklch(94.3% 0.008 64); --color-print: oklch(23% 0.012 38);
   --color-board: oklch(22% 0.011 40); --color-board-type: oklch(96.5% 0.006 70); --color-paid: oklch(55.5% 0.15 33);
   --shade: 32% 0.03 50; --lit: 100% 0.005 80; --deep: 7% 0.01 40;
@@ -36,7 +36,7 @@
     --color-paper: oklch(16% 0.01 55); --color-paper-2: oklch(19% 0.011 55); --color-paper-3: oklch(22.5% 0.012 55);
     --color-ink: oklch(94% 0.008 70); --color-ink-2: oklch(86% 0.009 65); --color-muted: oklch(71% 0.012 55);
     --color-rule: oklch(29% 0.012 55); --color-rule-2: oklch(35% 0.013 55);
-    --color-accent: oklch(78% 0.1 30); --color-accent-ink: oklch(20% 0.012 38); --color-accent-2: oklch(72% 0.13 30); --color-focus: oklch(72% 0.14 30);
+    --color-accent: oklch(78% 0.1 30); --color-accent-ink: oklch(20% 0.012 38); --color-accent-2: oklch(72% 0.13 30); --color-focus: oklch(74% 0.11 255);
     --color-cotton: oklch(20.5% 0.011 60); --color-desk: oklch(14% 0.01 55); --color-print: var(--color-ink);
     --color-board: oklch(92% 0.008 70); --color-board-type: oklch(19% 0.012 38); --color-paid: oklch(74% 0.12 33);
     --color-error: oklch(72% 0.14 27); --color-error-bg: oklch(25% 0.045 27); --color-success: oklch(74% 0.1 150);

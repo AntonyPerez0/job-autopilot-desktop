@@ -135,7 +135,11 @@ document.getElementById("next").onclick = async () => {
   btn.disabled = true;
   try {
     if (STEPS[i].id === "welcome") {
-      if (!document.getElementById("terms").checked) return msg(err, "err", "Tick the box to continue.");
+      if (!document.getElementById("terms").checked) {
+        const box = document.getElementById("terms");
+        box.scrollIntoView({ block: "center", behavior: "smooth" }); box.focus();
+        return msg(err, "err", "Tick the box at the bottom (\"I understand, and I will check the applications it sends\") to continue.");
+      }
       await window.ja.api("/api/settings", { acceptedTerms: true });
       // The kind of work sets sensible defaults: where to look and which titles to suggest.
       const kind = (document.querySelector("[name=kind]:checked") || {}).value || "both";

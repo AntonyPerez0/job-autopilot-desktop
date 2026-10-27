@@ -740,6 +740,12 @@ OpenAI-compatible API" with their `http://localhost:.../v1` address and no key.
 
 ## Troubleshooting
 
+- **"Your AI account is out of credit."** Add a few dollars at
+  [openrouter.ai](https://openrouter.ai) (Settings, then Credits). The app
+  shows this on the Overview too when it can't check the jobs a search found.
+- **Writing my resume takes a while.** Usually 1 to 3 minutes; the screen shows
+  each step as it happens. When the AI service is busy it can take longer, and a
+  stuck request is retried on its own.
 - **"The key did not work."** Check you copied the whole key and that your
   OpenRouter account has credit. For other providers, check the API address
   ends in `/v1`.

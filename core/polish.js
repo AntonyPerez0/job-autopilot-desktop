@@ -8,7 +8,7 @@
 // Every rewritten line passes the same honesty checks as the rest of the app (vet, then factCheck).
 // The rules come from docs/resume-research.md.
 import { Profile, Tailor, approvedOnly } from "./engine.js";
-import { GUIDE, ask, casualBits, claimWords, factCheck, knownTerms, newWords, numbersIn, sameLine, specificTerms, vet as vet0 } from "./studio.js";
+import { GUIDE, ask, setProgress, repeatedPhrase, casualBits, claimWords, factCheck, knownTerms, newWords, numbersIn, sameLine, specificTerms, vet as vet0 } from "./studio.js";
 
 // The app's honesty check, plus: a rewording may use professional words for the same facts, but never a
 // word that makes a new claim ("using a ticketing system", "managed", "reduced"), and not many new words at all.
@@ -20,6 +20,8 @@ export function vet(text, sources, profile, allowed, original) {
   const claims = claimWords(text, sources);
   if (claims.length && !why.some((w) => /claim/.test(w))) why.push(`adds a claim your line doesn't make: ${claims.slice(0, 3).join(", ")}`);
   else if (extra.length > 4) why.push(`adds words your line doesn't say: ${extra.slice(0, 4).join(", ")}`);
+  const rep = repeatedPhrase(text);
+  if (rep) why.push(`says "${rep}" twice; say it once`);
   const casual = casualBits(text);
   if (casual.length) why.push(`reads casually ("${casual[0]}"); a resume says it more formally`);
   // A number they gave is the strongest part of a line: a rewording may not lose it.
@@ -114,9 +116,14 @@ For each job, choose at most "keep" lines, strongest first. Each chosen line is 
 Then write "headline" and "summary" (aimed at the job they want next, if given) from these facts only.
 Then sort their skills into groups, using only the exact items given (you may drop a duplicate like "Vinyl cutting" when "Vinyl cutter" is there): ${JSON.stringify(SKILL_GROUPS)}.
 Return JSON only: {"jobs": [{"i": 0, "lines": [{"text": "...", "from": [0, 3]}]}], "headline": "...", "summary": "...", "skills": [{"label": "Licenses & certifications", "items": ["..."]}]}`;
+  if (!linesOnly) setProgress(3, 4, "Choosing your strongest lines and wording them the way recruiters like");
   const r = await ask([{ role: "system", content: sys }, { role: "user", content: JSON.stringify(payload) }]);
   const known = knownTerms(p, answers);
   const notes = [], rejected = [], toCheck = [];
+  // The headline and summary (with their own retry) run while the lines are checked and retried.
+  const facts = ordered.map((e) => [e.title, e.org, e.dates, ...sourcesOf(e)].join(". ")).join("\n") + "\n" + skillItems.join(", ") + "\n" + target;
+  r.fallbackHeadline = plainHeadline(ordered[0], arr(p.skills).filter((x) => /certif|licen/i.test(x.label)));
+  const topP = linesOnly ? Promise.resolve({ headline: "", summary: "", rejected: [] }) : topOfPage(r, facts, p, known, target ? `aimed at ${target} jobs` : "aimed at the work their facts show");
   // First the choices and their wording; a line that fails a check gets one more try, with the reason.
   const picks = [];
   for (const [i, e] of ordered.entries()) {
@@ -177,9 +184,7 @@ Return JSON only: {"jobs": [{"i": 0, "lines": [{"text": "...", "from": [0, 3]}]}
     notes.push(`${e.title}: ${next.length} strongest lines first, ${rest.length} more kept for tailoring`);
   }
   // Headline and summary: their facts only, through the same checks; the old ones stay if these fail.
-  const facts = ordered.map((e) => [e.title, e.org, e.dates, ...sourcesOf(e)].join(". ")).join("\n") + "\n" + skillItems.join(", ") + "\n" + target;
-  r.fallbackHeadline = plainHeadline(ordered[0], arr(p.skills).filter((x) => /certif|licen/i.test(x.label)));
-  const top = linesOnly ? { headline: "", summary: "", rejected: [] } : await topOfPage(r, facts, p, known, target ? `aimed at ${target} jobs` : "aimed at the work their facts show");
+  const top = await topP;
   rejected.push(...top.rejected);
   const headline = top.headline, summary = top.summary;
   if (headline) {
@@ -231,6 +236,7 @@ Return JSON only: {"jobs": [{"i": 0, "lines": [{"text": "...", "from": [0, 3]}]}
     for (const b of arr(p.bases)) if (arr(b.skills).some((id) => oldIds.has(id))) b.skills = [...arr(b.skills).filter((id) => !oldIds.has(id)), ...fresh.map((s0) => s0.id)];
     notes.push(`skills in ${fresh.length} groups`);
   }
+  if (!linesOnly) setProgress(4, 4, "Double-checking the new wording");
   // The second, separate AI pass over everything reworded; it knows the tools and skills they listed too.
   const listed = skillItems.length ? `. Tools, skills and licenses they listed: ${skillItems.join(", ")}` : "";
   const verdict = await factCheck(toCheck.map((x) => ({ text: x.text, source: x.source + listed })));

@@ -149,3 +149,14 @@ test("a casual or failed line gets one more try with the reason; still casual me
   assert.strictEqual(sign.bullets[0].text, "Trained two new hires on the vinyl cutter");
   assert.ok(!sign.bullets.some((b) => /real quick/.test(b.text)), "a still-casual rewording is never used");
 });
+
+test("a rewording that repeats itself is sent back, and their own line stays if the retry repeats too", async () => {
+  reply = (sys) => {
+    if (/fact-check/.test(sys)) return { lines: [] };
+    if (/Rewrite each resume line in professional/.test(sys)) return { lines: [{ n: 0, text: "Set out cones and flares at accident scenes, and cones and flares at night" }] };
+    return { jobs: [{ i: 0, lines: [{ text: "Set out cones and flares at accident scenes and at other accident scenes", from: [3] }] }], headline: "Class B CDL tow truck driver", summary: "Tow truck driver with a Class B CDL" };
+  };
+  const r = await P.polishCreated(created(), { ids: ["tow"], skillIds: [] });
+  assert.ok(r.rejected.some((x) => /twice/.test(x.why.join())));
+  assert.strictEqual(r.profile.experience[0].bullets[0].text, "Set out cones and flares at accident scenes");
+});

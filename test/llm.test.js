@@ -50,3 +50,13 @@ test("a server that refuses JSON mode is asked again without it", async () => {
   assert.strictEqual(seen.length, 2);
   assert.ok(!seen[1].body.response_format);
 });
+
+test("AI errors are said in words anyone can act on", async () => {
+  const { plainAiError } = await import("../core/llm.js");
+  assert.match(plainAiError("Model API 402: Insufficient credits"), /out of credit/);
+  assert.match(plainAiError("Model API 401: No auth credentials found"), /key didn't work/);
+  assert.match(plainAiError("Model API 429: Rate limit exceeded"), /busy/);
+  assert.match(plainAiError("fetch failed"), /internet connection/);
+  assert.match(plainAiError("Unterminated string in JSON at position 566"), /garbled/);
+  assert.strictEqual(plainAiError("Add a resume file or paste its text."), "Add a resume file or paste its text.", "other messages stay as they are");
+});

@@ -16,17 +16,18 @@ import { windowModeOf } from "./apply.js";
 import { AGENCIES, lastSearch } from "./discover.js";
 import { suggestTitles } from "./suggest.js";
 import { makeVersion, polishCreated, recruiterReview } from "./polish.js";
+import { plainAiError } from "./llm.js";
 import { applyFill, fillQuestions } from "./fill.js";
 import { listAccounts, passwordProblems } from "./accounts.js";
 import { addJob } from "./addjob.js";
-import { addRecalled, applySuggestion, checklist, createFromInterview, recallFor, rewriteWithAnswer, suggestImprovements } from "./studio.js";
+import { addRecalled, applySuggestion, checklist, createFromInterview, progress as writing, recallFor, rewriteWithAnswer, setProgress, suggestImprovements } from "./studio.js";
 import { importProjects, listRepos, placeProjects, usernameOf } from "./github.js";
 import { asksFor, removeYourAnswer, saveYourAnswers } from "./asked.js";
 import { monthUse, testKey as testSerpKey } from "./sources/google.js";
 import { backupFile, collect, exportHistory, importHistory, peekBackup, writeBackup } from "./history.js";
 
 const EDITABLE = ["paused", "acceptedTerms", "windowMode", "historyBackup", "historyFolder", "dailyCap", "dayStartsAtHour", "minutesBetweenApplies", "postedWithinDays", "searchEveryMinutes", "headless", "browser", "maxAttempts"];
-const bad = (msg, code = 400) => ({ error: msg, code });
+const bad = (msg, code = 400) => ({ error: plainAiError(msg), code });
 // main.js plugs in the updater (it needs Electron); without it (tests, scripts) updates are off.
 let updater = null;
 export const setUpdater = (u) => { updater = u; };
@@ -235,11 +236,13 @@ const ROUTES = {
   "GET /api/your-answers": () => (getAnswers().yourAnswers || []),
   "POST /api/your-answers/remove": (b) => { removeYourAnswer(String(b.key || ""), b.scope); return getAnswers().yourAnswers || []; },
   // ---------- resume studio: create, check, improve ----------
+  "GET /api/resume/progress": () => ({ ...writing }),
   "POST /api/resume/create": async (b) => {
     if (!aiSettings().apiKey) return bad("Connect an AI first (Settings > AI).");
     const iv = b.interview || {};
     if (!(iv.jobs || []).some((j) => j.title || j.employer) && !(iv.education || []).some((e) => e.school)) return bad("Add at least one job or school.");
     try {
+      setProgress(0, 4, "Starting");
       const r = await createFromInterview(iv, b.merge ? getProfile() : null, getAnswers());
       // Then the recruiter's pass: the strongest lines first, a headline and summary, skills in groups.
       try {

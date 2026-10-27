@@ -248,7 +248,7 @@ function progressCard() {
     const searchShare = 35;
     const frac = p.n ? (p.i + 0.5) / p.n : 0;
     const pct = Math.round(p.phase === "search" ? frac * searchShare : searchShare + frac * (100 - searchShare));
-    const what = p.phase === "search" ? meta(`Search ${Math.min(p.i + 1, p.n)} of ${p.n}`, p.label ? `“${esc(p.label)}”` : "")
+    const what = p.phase === "search" ? (p.n ? meta(`Search ${Math.min(p.i + 1, p.n)} of ${p.n}`, p.label ? `“${esc(p.label)}”` : "") : meta("Getting ready to search", ""))
       : meta(`Reviewing new posting ${Math.min(p.i + 1, p.n)} of ${p.n}`, p.label ? esc(p.label) : "");
     return `<div class="card prog">
       <div class="prog-top"><span class="ico">${icon("search")}</span>
@@ -567,7 +567,11 @@ function banners() {
     <div class="right"><button class="btn sm primary" onclick="openJob('${esc(waiting.first.slug)}')">Answer now</button></div></div>`;
   // A search that found nothing because a site would not open, said plainly instead of "queue empty".
   const sr = st.search;
-  if (sr && sr.problems && sr.problems.length && view === "overview") {
+  if (sr && sr.aiProblem && view === "overview") {
+    h += `<div class="banner red">${icon("alert")}<div><b>The AI couldn't check the jobs the last search found</b>${esc(sr.aiProblem)} Those jobs are checked again on the next search.</div>
+      <div class="right"><button class="btn sm" onclick="go('settings')">Open Settings</button><button class="btn sm" onclick="searchNow()">Search now</button></div></div>`;
+  }
+  else if (sr && sr.problems && sr.problems.length && view === "overview") {
     const all = sr.found === 0;
     h += `<div class="banner ${all ? "red" : "amber"}">${icon("alert")}<div><b>${all ? "The last search found nothing: " : ""}${sr.problems.map((x) => esc(x.source)).join(" and ")} could not be searched</b>${esc(sr.problems[0].message)}.
       ${all && (sr.sources || []).length < 2 ? " It's the only place the app looks right now: turn on another in Settings > Jobs to look for, or press Search now to try again." : " The app tries again on the next search."}</div>
@@ -581,7 +585,7 @@ function banners() {
   else if (sr && sr.done && sr.skipped && sr.skipped.total && view === "overview" && !(st.counts || {}).queued && !(st.counts || {}).working && !st.state.job && st.state.now !== "searching" && !(st.counts || {}).filled && !(st.counts || {}).applied) {
     const next = sr.nextAt ? new Date(sr.nextAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
     const why = sr.skipped.top.map((x) => `${x.count} ${esc(x.why)}`).join(", ");
-    h += `<div class="banner amber">${icon("search")}<div><b>Nothing to apply to right now${next ? `. Next search around ${next}` : ""}</b>${sr.skipped.total} job${sr.skipped.total === 1 ? " was" : "s were"} found and left out${why ? `: ${why}` : ""}. More job titles, a wider distance, or <b>Suggest jobs from my resume</b> (Settings > Jobs to look for) find more.</div>
+    h += `<div class="banner amber">${icon("search")}<div><b>Nothing to apply to right now${next ? `. Next search around ${next}` : ""}</b>${sr.skipped.total} job${sr.skipped.total === 1 ? " was" : "s were"} found and left out${why ? `: ${why}` : ""}. More job titles, a wider distance, or "Suggest jobs from my resume" (Settings > Jobs to look for) find more.</div>
       <div class="right"><button class="btn sm" onclick="go('skipped')">See why</button><button class="btn sm" onclick="searchNow()">Search now</button></div></div>`;
   }
   const mine = (st.counts || {}).manual || 0;

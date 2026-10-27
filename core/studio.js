@@ -7,6 +7,7 @@
 // - where a number or result would make a line stronger, it asks the user instead of guessing;
 // - nothing it writes is used until the user approves it.
 import { Profile, Tailor, aiSettings, approvedOnly } from "./engine.js";
+import { isLocal } from "./llm.js";
 
 const arr = (x) => (Array.isArray(x) ? x : []);
 const words = (s) => String(s || "").trim().split(/\s+/).filter(Boolean);
@@ -54,6 +55,8 @@ export function checklist(profile, answers = {}, fit = null) {
   if (long.length) add("long", "fix", "Shorten long lines", "One or two lines each. Long lines get skipped.", long.map((b) => ({ ...b, why: `${b.text.length} characters` })));
   const short = bullets.filter((b) => words(b.text).length < 4);
   if (short.length) add("short", "tip", "Say a little more", "A line of two or three words doesn't show what you did or how well.", short.map((b) => ({ ...b, why: "very short" })));
+  const twice = bullets.filter((b) => repeatedPhrase(b.text));
+  if (twice.length) add("twice", "fix", "Say it once", "These lines repeat the same words. Recruiters skim; each line should say one thing once.", twice.map((b) => ({ ...b, why: `"${repeatedPhrase(b.text)}" twice` })));
   const casual = bullets.filter((b) => CASUAL.test(b.text));
   if (casual.length) add("casual", "fix", "Make these sound like a resume", "These read the way people talk (\"take calls\", \"like cars in ditches\", \"guys\"). Recruiters expect the trade's professional wording for the same facts.", casual.map((b) => ({ ...b, why: casualBits(b.text)[0] })));
   const cliche = [...bullets, ...arr(p.summaries).map((s) => ({ path: `summaries.${s.id}`, text: s.text }))].filter((b) => CLICHE.test(b.text));
@@ -178,6 +181,19 @@ export const casualBits = (t) => (String(t).match(new RegExp(CASUAL.source, "gi"
 
 // Accept a suggested line only if it adds nothing and breaks no rule; otherwise say why.
 // original: the line being reworded, whose limiting words must survive.
+// "off-road vehicle recoveries, including complex off-road vehicle recoveries": the same two-word phrase twice in a line.
+export function repeatedPhrase(text) {
+  // Only the words that carry meaning: "cones and flares ... cones and flares" is a repeat too.
+  const w = String(text).toLowerCase().split(/[^a-z0-9'-]+/).filter((x) => x.length > 3 && !/^(with|from|that|this|their|they|them|into|onto|over|each|every|about|other)$/.test(x));
+  const seen = new Map();
+  for (let i = 0; i + 1 < w.length; i++) {
+    const k = `${w[i]} ${w[i + 1]}`;
+    if (seen.has(k) && i - seen.get(k) > 1) return k;
+    if (!seen.has(k)) seen.set(k, i);
+  }
+  return "";
+}
+
 export function vet(text, sources, profile, allowed = [], original = null) {
   const t = String(text || "").trim();
   if (!t) return { ok: false, why: ["empty"] };
@@ -220,10 +236,32 @@ THE HONESTY RULE (most important): use only facts the person gave. Never add a n
 
 const settings = () => aiSettings();
 // The model sometimes answers with broken JSON; ask again (up to three times) before giving up.
+// What the resume writer is doing right now, for the "Write my resume" screen to show while it waits.
+export const progress = { step: "", n: 0, of: 0, at: 0 };
+export function setProgress(n, of, step) { Object.assign(progress, { n, of, step, at: Date.now() }); }
+
+// A cloud call that hasn't answered in a while gets a second, identical one; whichever answers first wins.
+// The slow one isn't cancelled (it may be about to finish), so nothing already done is thrown away.
+function hedged(call, after) {
+  if (!after) return call();
+  return new Promise((resolve, reject) => {
+    let done = false, failed = 0, timer;
+    const settle = (p) => p.then((v) => { if (!done) { done = true; clearTimeout(timer); resolve(v); } },
+      (e) => { if (++failed === (timer === null ? 2 : 1) && !done) { done = true; clearTimeout(timer); reject(e); } });
+    settle(call());
+    timer = setTimeout(() => { timer = null; if (!done) settle(call()); }, after);
+  });
+}
+
 export async function ask(messages) {
   let last;
   for (let i = 0; i < 3; i++) {
-    try { return await Tailor.chat(settings(), messages); } catch (e) { last = e; if (/Model API 4(0[0-3]|04)/.test(e.message)) break; }
+    const t0 = Date.now();
+    try {
+      const r = await hedged(() => Tailor.chat(settings(), messages), isLocal(settings()) ? 0 : 35000);
+      if (process.env.JA_TIME) console.error(`[ai ${((Date.now() - t0) / 1000).toFixed(1)}s] ${String(messages[0].content).split("\n")[0].slice(0, 70)}`);
+      return r;
+    } catch (e) { last = e; if (process.env.JA_TIME) console.error(`[ai fail ${((Date.now() - t0) / 1000).toFixed(1)}s] ${e.message.slice(0, 80)}`); if (/Model API 4(0[0-3]|04)/.test(e.message)) break; }
   }
   throw last;
 }
@@ -301,10 +339,13 @@ For every line, quote the part of their answers it comes from in "source".
 Return JSON only:
 {"summary": "...", "jobs": [{"index": 0, "bullets": [{"text": "...", "source": "their words this line is based on"}], "questions": ["a short question that would let a line show a number or result"]}],
  }`;
-  const r = await ask([{ role: "system", content: sys }, { role: "user", content: facts }]);
   const base = profile0 ? JSON.parse(JSON.stringify(profile0)) : { schema: Profile.SCHEMA, name: answers.firstName ? `${answers.firstName} ${answers.lastName || ""}`.trim() : "Your Name", contact: {}, rules: Profile.EXAMPLE.rules };
   for (const k of ["summaries", "experience", "projects", "skills", "education", "headers", "bases"]) base[k] = arr(base[k]);
   const p = base;
+  setProgress(1, 4, "Writing lines from your answers");
+  // The lines from their "Help me remember" yes answers don't depend on the rest: written at the same time.
+  const fromYes = arr(iv.jobs).map((j) => (arr(j.confirmed).length ? linesFromConfirmed(j, j.confirmed, p, answers).catch(() => ({ lines: [], rejected: [] })) : null));
+  const r = await ask([{ role: "system", content: sys }, { role: "user", content: facts }]);
   const known = knownTerms(p, answers);
   const rejected = [], questions = [];
   const expIds = new Set(p.experience.map((e) => e.id)), sumIds = new Set(p.summaries.map((s) => s.id)), skIds = new Set(p.skills.map((s) => s.id));
@@ -328,7 +369,7 @@ Return JSON only:
     }
     // The things they said yes to when the app jogged their memory.
     if (arr(j.confirmed).length) {
-      const extra = await linesFromConfirmed(j, j.confirmed, p, answers);
+      const extra = await fromYes[i];
       for (const l of extra.lines) {
         if (bullets.some((b) => sameLine(b.text, l.text))) continue;
         bullets.push({ id: slug(l.text.split(/\s+/).slice(0, 2).join(" "), bt), text: l.text, approved: false, source: l.source, ...(l.warning ? { warning: l.warning } : {}), recalled: true });
@@ -344,6 +385,7 @@ Return JSON only:
     newExp.push({ id: slug(j.employer || j.title, expIds), title: j.title || "", org: j.employer || "", location: j.location || "", dates, minBullets: Math.min(2, bullets.length), bullets });
   }
   // The second pass: anything the person's answers don't back up gets a visible note for them.
+  setProgress(2, 4, "Checking every line against what you said");
   const toCheck = [];
   newExp.forEach((e, k) => {
     const j = arr(iv.jobs).filter((x) => x.title || x.employer)[k] || {};

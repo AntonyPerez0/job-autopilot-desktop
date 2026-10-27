@@ -17,7 +17,7 @@ const searchBrowser = {
   },
   done: (page) => closeAppPage(page, windowModeOf(getSettings())),
 };
-import { isLocal } from "./llm.js";
+import { isLocal, plainAiError } from "./llm.js";
 import { call } from "./freehire.js";
 import { findConfirmation } from "./mail.js";
 import { dataDir, getSecret, getSettings } from "./store.js";
@@ -153,7 +153,7 @@ async function applyOneInner(job) {
       return false;
     }
     const retry = TRANSIENT.test(e.message) && job.attempts + 1 < CONFIG.maxAttempts;
-    setJob(job.slug, { status: retry ? "queued" : "failed", reason: "error: " + e.message.slice(0, 400) });
+    setJob(job.slug, { status: retry ? "queued" : "failed", reason: "error: " + plainAiError(e.message).slice(0, 400) });
     log(job.slug, `error${retry ? " (will retry)" : ""}: ${e.message}`, "error");
     return false;
   }
