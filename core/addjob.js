@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import { classify, KIND_TEXT } from "./ats.js";
 import { getDb, log } from "./db.js";
 import { cleanUrl, jobKey, roleKey, sameRoleAs } from "./dedupe.js";
-import { applyUrl } from "./discover.js";
+import { applyUrl, manualReason } from "./discover.js";
 import { employerLinkFor } from "./sources/simplify.js";
 
 const strip = (h) => String(h || "").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&#39;|&apos;/g, "'").replace(/&quot;/g, '"').replace(/\s+/g, " ").trim();
@@ -72,6 +72,13 @@ export async function resolveLink(raw, { browserPage } = {}) {
     finally { await browserPage.done(page); }
   }
   let info = null;
+  // GovernmentJobs.com's terms forbid automated access: its page is never fetched, the link names the job.
+  if (c.ats === "neogov") {
+    const parts = url.pathname.split("/").filter(Boolean);
+    const agency = parts[0] === "careers" && parts[1] ? parts[1].replace(/[-_]+/g, " ").replace(/\b\w/g, (x) => x.toUpperCase()) : "Government employer";
+    const hash = crypto.createHash("sha1").update(cleanUrl(url.href)).digest("hex").slice(0, 12);
+    return { title: titleFromPath(url) || "Government job", company: agency, location: "", description: "", slug: "link-" + hash, url: url.href, apply_url: url.href, ats: c.ats, kind: c.kind, board: "added by you" };
+  }
   try {
     const res = await fetch(url.href, { redirect: "follow", headers: { "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36" }, signal: AbortSignal.timeout(20000) });
     const html = await res.text();
@@ -99,7 +106,7 @@ export async function addJob(raw, opts = {}) {
   if (twin && j.title !== "Job") throw new Error(`You already applied to this role: ${twin.title} at ${twin.company}.`);
   const manual = !(j.kind === "auto" || j.kind === "unknown");
   const status = manual ? "manual" : "queued";
-  const reason = manual ? `Apply yourself: ${new URL(j.url).hostname.replace(/^www\./, "")} ${KIND_TEXT[j.kind]}` : "added by you; next in line";
+  const reason = manual ? manualReason(j) || `Apply yourself: ${new URL(j.url).hostname.replace(/^www\./, "")} ${KIND_TEXT[j.kind]}` : "added by you; next in line";
   const apply = manual ? j.url : await applyUrl(j.ats, j.url);
   db.prepare(`INSERT INTO jobs (slug, key, title, company, location, work_mode, source, url, apply_url, posted_at, status, reason, details)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(j.slug, jobKey(j.company, j.title), j.title, j.company, j.location || "", j.work_mode || "",

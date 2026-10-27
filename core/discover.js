@@ -105,6 +105,10 @@ export function locationOk(j, prefs) {
 // Why the user applies to this one themselves, or null when the app can.
 export function manualReason(j) {
   if (j.kind === "auto" || j.kind === "unknown") return null;
+  const closes = j.closes ? `; applications close ${new Date(j.closes).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : "";
+  if (j.ats === "usajobs") return `Apply yourself on USAJOBS: it needs a free Login.gov account and the agency's own questions${closes}`;
+  if (j.ats === "neogov") return `Apply yourself on GovernmentJobs.com: it needs a free account there, and the app doesn't open that site${closes}`;
+  if (j.ats === "calcareers") return `Apply yourself on CalCareers: it needs a CalCareers account and the State application${closes}`;
   let host = "";
   try { host = new URL(j.apply_url || j.url).hostname.replace(/^www\./, ""); } catch { /* no link */ }
   return `Apply yourself: ${host || j.ats || "this site"} ${KIND_TEXT[j.kind] || "needs you"}${j.ats === "workday" ? " (or turn on Settings > Job site accounts and the app does it)" : ""}`;

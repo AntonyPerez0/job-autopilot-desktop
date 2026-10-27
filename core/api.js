@@ -7,7 +7,7 @@ import { state, kick, forceSearch, searchBrowser } from "./worker.js";
 import {
   dataDir, getAnswers, getPrefs, getProfile, getSecret, getSettings, saveAnswers, savePrefs, saveProfile, saveSettings, setSecret,
 } from "./store.js";
-import { PROVIDERS, Profile, Tailor, aiSettings, approvedOnly, isLocal, listModels, loadProfile, providerOf, testAI } from "./engine.js";
+import { PROVIDERS, Profile, Tailor, aiSettings, approvedOnly, isLocal, listModels, loadProfile, plan as planFor, providerOf, testAI } from "./engine.js";
 import { importResumes } from "./importer.js";
 import { PRESETS, testMailbox } from "./mail.js";
 import { countries, searchCities } from "./geo.js";
@@ -24,6 +24,7 @@ import { addRecalled, applySuggestion, checklist, createFromInterview, progress 
 import { importProjects, listRepos, placeProjects, usernameOf } from "./github.js";
 import { asksFor, removeYourAnswer, saveYourAnswers } from "./asked.js";
 import { monthUse, testKey as testSerpKey } from "./sources/google.js";
+import { testKey as testUsajobsKey } from "./sources/usajobs.js";
 import { backupFile, collect, exportHistory, importHistory, peekBackup, writeBackup } from "./history.js";
 
 const EDITABLE = ["paused", "acceptedTerms", "windowMode", "historyBackup", "historyFolder", "dailyCap", "dayStartsAtHour", "minutesBetweenApplies", "postedWithinDays", "searchEveryMinutes", "headless", "browser", "maxAttempts"];
@@ -134,7 +135,7 @@ const ROUTES = {
   // ---------- configuration (onboarding and Settings) ----------
   "GET /api/config": () => ({
     settings: getSettings(), prefs: getPrefs(), answers: getAnswers(), profile: getProfile(),
-    hasKey: !!getSecret("apiKey"), hasMailPassword: !!getSecret("mailPassword"), hasSerpKey: !!getSecret("serpApiKey"), googleUse: monthUse(),
+    hasKey: !!getSecret("apiKey"), hasMailPassword: !!getSecret("mailPassword"), hasSerpKey: !!getSecret("serpApiKey"), hasUsajobsKey: !!(getSecret("usajobsKey") && getSettings().usajobsEmail), usajobsEmail: getSettings().usajobsEmail || "", googleUse: monthUse(),
     presets: PRESETS, agencies: AGENCIES, providers: PROVIDERS, version: VERSION, dataDir: dataDir(),
   }),
   "POST /api/ai/test": async (b) => {
@@ -371,6 +372,18 @@ const ROUTES = {
     try { const t = await testSerpKey(key); await setSecret("serpApiKey", key); savePrefs({ boards: { ...getPrefs().boards, google: true } }); return { ok: true, ...t }; }
     catch (e) { return bad("SerpApi refused that key: " + e.message); }
   },
+  // ---------- USAJOBS (federal jobs) through the user's own free key ----------
+  "POST /api/usajobs/save": async (b) => {
+    const key = String(b.key || "").trim() || getSecret("usajobsKey"), email = String(b.email || "").trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return bad("Type the email address you put on the USAJOBS request form.");
+    if (!key) return bad("Paste the key USAJOBS emailed you.");
+    try { await testUsajobsKey(key, email); } catch (e) { return bad(e.message); }
+    await setSecret("usajobsKey", key);
+    saveSettings({ usajobsEmail: email });
+    savePrefs({ boards: { ...getPrefs().boards, usajobs: true } });
+    return { ok: true };
+  },
+  "POST /api/usajobs/remove": async () => { await setSecret("usajobsKey", ""); saveSettings({ usajobsEmail: "" }); savePrefs({ boards: { ...getPrefs().boards, usajobs: false } }); return { ok: true }; },
   "POST /api/google/remove": async () => { await setSecret("serpApiKey", ""); savePrefs({ boards: { ...getPrefs().boards, google: false } }); return { ok: true }; },
   "POST /api/browser/show": async (b) => ({ ok: await showBrowser(!!b.show) }),
   "POST /api/browser/install": async () => {
@@ -448,10 +461,29 @@ export async function handle(route, body) {
   } catch (e) { return bad(e.message, 500); }
 }
 
-function jobRoute(slug, b) {
+// A resume for a job the person applies to themselves (a federal job on USAJOBS, a Workday site): the same
+// one-page tailoring the autopilot does, from approved pieces only, without filling any form.
+async function resumeFor(j) {
+  if (!aiSettings().apiKey) return bad("Connect an AI first (Settings > AI).");
+  const profile = loadProfile();
+  const d = JSON.parse(j.details || "{}");
+  const text = `${j.title} at ${j.company}${j.location ? " (" + j.location + ")" : ""}\n\nFROM THE JOB LISTING:\n${String(d.description || "").slice(0, 30000)}`;
+  const p = await planFor(profile, { url: j.url, text, fields: [] });
+  const { spec } = Tailor.checkPlan(profile, p);
+  const r = await Tailor.fit(profile, spec, []);
+  if (r.overflow) return bad("The resume runs past one page with what's approved. Shorten a line on the Resume page and try again.");
+  const file = `${String(j.slug).replace(/[^A-Za-z0-9._-]/g, "_")}.pdf`;
+  fs.writeFileSync(path.join(dataDir("resumes"), file), Buffer.from(r.pdf));
+  setJob(j.slug, { resume_file: file });
+  log(j.slug, "made a resume for this job, for you to upload yourself");
+  return null;
+}
+
+async function jobRoute(slug, b) {
   const j = getJob(slug);
   if (!j) return bad("not found", 404);
-  if (b && b.action) {
+  if (b && b.action === "resume") { try { const e = await resumeFor(j); if (e) return e; } catch (e) { return bad(e.message); } }
+  else if (b && b.action) {
     if (b.action === "retry") {
       if (j.status === "applied" || j.status === "submitting") return bad("Already applied; it will not be sent twice.", 409);
       setJob(slug, { status: "queued", attempts: 0, reason: "queued again from the dashboard" });

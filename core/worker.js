@@ -103,7 +103,17 @@ async function applyOne(job) {
   try { return await applyOneInner(job); } finally { state.job = null; state.progress = null; }
 }
 
+// Government job sites need the person's own account, and GovernmentJobs.com forbids automated access:
+// a job there is never opened by the app, even if it was queued by hand.
+const GOV = /(^|\.)(usajobs\.gov|governmentjobs\.com|schooljobs\.com|calcareers\.ca\.gov)$/i;
+const hostOf = (u) => { try { return new URL(u).hostname; } catch { return ""; } };
+
 async function applyOneInner(job) {
+  if (GOV.test(hostOf(job.apply_url || job.url))) {
+    setJob(job.slug, { status: "manual", reason: `Apply yourself on ${hostOf(job.apply_url || job.url).replace(/^www\./, "")}: it needs your own account there, so the app doesn't open it` });
+    log(job.slug, "government job site: left for you to apply to");
+    return false;
+  }
   state.now = "applying"; state.job = { slug: job.slug, title: job.title, company: job.company };
   setJob(job.slug, { status: "working", attempts: job.attempts + 1 });
   const twin = appliedSameRole(job);

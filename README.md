@@ -425,7 +425,22 @@ promise any employer will like it.
 | **freehire** | Office, tech and professional jobs | Off by default for hourly-only searches. |
 | **Simplify lists** | New-graduate jobs and internships, mostly tech | Read from Simplify's free lists on GitHub. Simplify's own website forbids automated use, so the app never visits it. |
 | **Google Jobs** | What Google's job search shows, from many sites | Google has no public jobs API and blocks automated searches, so this goes through [SerpApi](https://serpapi.com) with your own key. Its free plan has 250 searches a month; the app stays under 200 and spreads them over the month. |
+| **USAJOBS** | Federal government jobs near you and remote | Through the official USAJOBS listings, with your own free key: press **Get a free key** under USAJOBS, fill in the short form, and paste the key that arrives by email. Applying on USAJOBS needs a Login.gov account and the agency's own questions, so these jobs go to **Apply yourself** with the closing date and a **Make my resume for this job** button. |
 | **Add a job** | Anything you find yourself | Copy a job's link from Google, Simplify, HiringCafe, Indeed or a company's site, and paste it into **Add a job** on the Overview. The app applies to it next. |
+
+### Government jobs
+
+- **Federal:** turn on **USAJOBS** (above). Only jobs open to the public are
+  searched. Government forms often ask whether you're a U.S. citizen: answer it
+  once under About you (it's optional, and never filled in for you).
+- **State, county and city:** many come through **HiringCafe** (for example,
+  California state departments, cities, counties, school districts and the
+  University of California) and **Google Jobs**. Most of these employers take
+  applications on sites that need your own account: GovernmentJobs.com,
+  CalCareers, EdJoin, a university's job site. Those jobs go to **Apply yourself**
+  with **Make my resume for this job**. GovernmentJobs.com doesn't allow apps to
+  search or open its pages, so the app never does; paste a link from there into
+  **Add a job** and the app takes the job's name from the link.
 
 LinkUp isn't on the list: it closed its public job search in 2024 and now only
 sells data to companies.

@@ -33,6 +33,13 @@ const RULES = [
   ["paylocity", "auto", /(^|\.)recruiting\.paylocity\.com$/],
   ["gusto", "auto", /^jobs\.gusto\.com$/],
   ["hirebridge", "auto", /(^|\.)hirebridge\.com$/],
+  // Government job sites: each needs its own account (and GovernmentJobs.com's terms forbid automated
+  // access), so these jobs are always the person's to apply to; the app never opens these sites itself.
+  ["usajobs", "account", /(^|\.)usajobs\.gov$/],
+  ["neogov", "account", /(^|\.)(governmentjobs|schooljobs)\.com$/],
+  ["calcareers", "account", /(^|\.)calcareers\.ca\.gov$/],
+  ["edjoin", "account", /(^|\.)edjoin\.org$/],
+  ["oraclepeoplesoft", "account", /(^|\.)careerspub\.universityofcalifornia\.edu$/],
   // accounts first
   ["workday", "account", /(^|\.)(myworkdayjobs|myworkday|workday)\.com$/],
   ["icims", "account", /(^|\.)icims\.com$/],

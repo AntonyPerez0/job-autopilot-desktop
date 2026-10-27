@@ -700,6 +700,7 @@
       <div class="form-row">${fld(`Are you allowed to work in ${esc(/^united (states|kingdom)|netherlands|philippines/i.test(a.authCountry || "United States") ? "the " + (a.authCountry || "United States") : a.authCountry)}?`, radios("workAuthorized", a.workAuthorized, [["yes", "Yes"], ["no", "No"]]))}
         ${fld("Will you need a visa sponsor, now or later?", radios("needsSponsorship", a.needsSponsorship, [["no", "No"], ["yes", "Yes"]]))}
         ${fld("Are you 18 or older?", radios("over18", a.over18, [["yes", "Yes"], ["no", "No"]]))}</div>
+      <div class="form-row">${fld("Are you a U.S. citizen? (optional)", radios("citizen", a.citizen, [["yes", "Yes"], ["no", "No"]]), "Federal jobs and some state jobs ask. Leave it empty and those forms stop to ask you.")}</div>
       ${more("When you can work", "Days, shifts, hours, getting there", `
         ${fld("Days you can work", checks("days", DAYS, a.daysAvailable))}
         ${fld("Shifts you can work", checks("shifts", SHIFTS, a.shifts))}
@@ -750,7 +751,7 @@
       async save() {
         const out = {};
         for (const k of ["firstName", "lastName", "preferredName", "email", "phone", "linkedin", "github", "website", "otherLinks", "street", "city", "state", "zip", "country",
-          "authCountry", "workAuthorized", "needsSponsorship", "travel", "over18", "currentEmployer", "currentTitle", "noticePeriod", "startAvailability", "relocation", "heardAbout",
+          "authCountry", "workAuthorized", "needsSponsorship", "travel", "over18", "citizen", "currentEmployer", "currentTitle", "noticePeriod", "startAvailability", "relocation", "heardAbout",
           "salary", "arbitration", "screenings", "convictions", "hoursWanted", "transportation", "driversLicense", "canLift", "ownVehicle", "drivingRecord", "over21"]) out[k] = val(el, k);
         out.daysAvailable = [...el.querySelectorAll("[name=days]:checked")].map((x) => x.value);
         out.shifts = [...el.querySelectorAll("[name=shifts]:checked")].map((x) => x.value);
@@ -786,7 +787,8 @@
     ["hiringcafe", "HiringCafe", "Jobs of every kind, straight from employers' own sites. Best for most people."],
     ["freehire", "freehire", "Office, tech and professional jobs."],
     ["simplify", "Simplify lists", "New-graduate jobs and internships, mostly tech (Simplify's free lists on GitHub)."],
-    ["google", "Google Jobs", "What Google's job search shows. Needs a free SerpApi key (250 searches a month)."],
+    ["google", "Google Jobs", "What Google's job search shows, including many state, county and city jobs. Needs a free SerpApi key (250 searches a month)."],
+    ["usajobs", "USAJOBS (federal government)", "Federal jobs near you and remote, from the official USAJOBS listings. Needs a free USAJOBS key. You apply on USAJOBS yourself; the app finds them, checks the fit and makes your resume."],
   ];
   function prefs(el, cfg) {
     const p = cfg.prefs;
@@ -811,8 +813,12 @@
       ${fld("What level?", `<div class="radio-row">${LEVELS.map(([v, l]) => `<label><input type="checkbox" name="lvl" value="${v}" ${(v === "intern" ? p.internships : (p.seniority || []).includes(v)) ? "checked" : ""}>${l}</label>`).join("")}</div>`)}
       <div class="section-t">Where to look</div>
       <div class="board-list">${BOARDS.map(([id, name, desc]) => `<label class="board ${boards[id] ? "on" : ""}"><input type="checkbox" name="board" value="${id}" ${boards[id] ? "checked" : ""}>
-        <div><b>${name}</b><small>${desc}</small>${id === "google" ? `<div data-google></div>` : ""}</div></label>`).join("")}</div>
+        <div><b>${name}</b><small>${desc}</small>${id === "google" ? `<div data-google></div>` : ""}${id === "usajobs" ? `<div data-usajobs></div>` : ""}</div></label>`).join("")}</div>
       <small class="hint">Found a job somewhere else (Google, Simplify, Indeed, a company's website)? Use <b>Add a job</b> on the Overview and paste its link.</small>
+      ${more("Looking for government jobs?", "Federal, state, county and city", `<ul class="bul" style="margin:0">
+        <li><b>Federal jobs:</b> turn on <b>USAJOBS</b> above. The app finds them, checks the fit and makes a resume for each; you apply on USAJOBS with a free Login.gov account.</li>
+        <li><b>State, county and city jobs:</b> many come through <b>HiringCafe</b> and <b>Google Jobs</b>. Most state and local governments post on GovernmentJobs.com or their own state site (CalCareers in California), which need your own account and don't allow apps to search them. When you find one there, paste its link into <b>Add a job</b>: the app makes your resume for it, and you apply on the site.</li>
+        <li>Government forms often ask whether you're a U.S. citizen: answer it once under <b>About you</b>.</li></ul>`)}
       ${more("More options", "Exclusions, posting age, experience limits", `
         ${fld("What you want the work to involve (optional)", `<div data-keywords></div>`, "The AI favors jobs like these, e.g. healthcare, React, working outdoors.")}
         ${fld("Words that rule a job title out (optional)", `<div data-titleex></div>`)}
@@ -859,12 +865,27 @@
     const r = el.querySelector("[name=radius]");
     r.oninput = () => { el.querySelector("[data-radius-val]").textContent = `${r.value} ${unit()}`; };
     el.querySelector("[name=radiusUnit]").onchange = r.oninput;
-    el.querySelectorAll("[name=board]").forEach((b) => b.onchange = () => { b.closest(".board").classList.toggle("on", b.checked); boards[b.value] = b.checked; if (b.value === "google") drawGoogle(); });
+    el.querySelectorAll("[name=board]").forEach((b) => b.onchange = () => { b.closest(".board").classList.toggle("on", b.checked); boards[b.value] = b.checked; if (b.value === "google") drawGoogle(); if (b.value === "usajobs") drawUsajobs(); });
+    const drawUsajobs = () => {
+      const host = el.querySelector("[data-usajobs]");
+      if (!host) return;
+      if (!boards.usajobs) { host.innerHTML = ""; return; }
+      host.innerHTML = cfg.hasUsajobsKey ? `<small class="ok-line">USAJOBS key saved (${esc(cfg.usajobsEmail || "")}). <a href="#" data-uremove>Remove key</a></small>`
+        : `<div class="hint" style="margin-top:6px">Getting the free key takes two minutes: press <b>Get a free key</b>, fill in your name and email on the USAJOBS form, and the key arrives by email (usually within a day). Then paste it here with the same email.</div>
+           <div class="row-actions" style="margin-top:6px"><input class="inp" data-uemail type="email" placeholder="The email you used on the form" value="${esc(cfg.answers && cfg.answers.email || "")}" style="flex:1 1 220px;min-width:200px;max-width:300px">
+           <input class="inp" data-ukey type="password" placeholder="Paste your USAJOBS key" style="flex:1 1 220px;min-width:200px;max-width:300px">
+           <button type="button" class="btn sm" data-usave>Save key</button><button type="button" class="btn ghost sm" data-ulink>Get a free key</button></div><div data-umsg></div>`;
+      const s = host.querySelector("[data-usave]");
+      if (s) s.onclick = async (e) => { e.preventDefault(); const res = await api("/api/usajobs/save", { key: host.querySelector("[data-ukey]").value, email: host.querySelector("[data-uemail]").value });
+        if (res.error) return msg(host.querySelector("[data-umsg]"), "err", res.error); cfg.hasUsajobsKey = true; cfg.usajobsEmail = host.querySelector("[data-uemail]").value; drawUsajobs(); };
+      const l = host.querySelector("[data-ulink]"); if (l) l.onclick = (e) => { e.preventDefault(); openUrl("https://developer.usajobs.gov/apirequest/"); };
+      const rm = host.querySelector("[data-uremove]"); if (rm) rm.onclick = async (e) => { e.preventDefault(); await api("/api/usajobs/remove", {}); cfg.hasUsajobsKey = false; drawUsajobs(); };
+    };
     const drawGoogle = () => {
       const host = el.querySelector("[data-google]");
       if (!boards.google) { host.innerHTML = ""; return; }
       host.innerHTML = cfg.hasSerpKey ? `<small class="ok-line">Key saved. ${esc(cfg.googleUse || 0)} searches used this month. <a href="#" data-gremove>Remove key</a></small>`
-        : `<div class="row-actions" style="margin-top:6px"><input class="inp" data-gkey type="password" placeholder="Paste your SerpApi key" style="max-width:280px">
+        : `<div class="row-actions" style="margin-top:6px"><input class="inp" data-gkey type="password" placeholder="Paste your SerpApi key" style="flex:1 1 220px;min-width:200px;max-width:300px">
            <button type="button" class="btn sm" data-gsave>Save key</button><button type="button" class="btn ghost sm" data-glink>Get a free key</button></div><div data-gmsg></div>`;
       const s = host.querySelector("[data-gsave]");
       if (s) s.onclick = async (e) => { e.preventDefault(); const k = host.querySelector("[data-gkey]").value; const res = await api("/api/google/save", { key: k });
@@ -873,6 +894,7 @@
       const rm = host.querySelector("[data-gremove]"); if (rm) rm.onclick = async (e) => { e.preventDefault(); await api("/api/google/remove", {}); cfg.hasSerpKey = false; drawGoogle(); };
     };
     drawGoogle();
+    drawUsajobs();
     const drawCities = () => {
       const host = el.querySelector("[data-cities]");
       host.innerHTML = cities.length ? cities.map((c, i) => `<span class="tag">${icon("pin")}${esc(c.label || c.name)}<button type="button" data-i="${i}">&times;</button></span>`).join("") : `<span class="muted" style="padding:0 6px">No city yet</span>`;
@@ -907,6 +929,7 @@
         if (!lv.length) return "Pick at least one level.";
         if (!Object.values(boards).some(Boolean)) return "Pick at least one place to look for jobs.";
         if (boards.google && !cfg.hasSerpKey) return "Google Jobs needs a SerpApi key: paste it, or untick Google Jobs.";
+        if (boards.usajobs && !cfg.hasUsajobsKey) return "USAJOBS needs its free key: press Get a free key under USAJOBS, or untick it for now (you can add it later in Settings).";
         cfg.prefs = await api("/api/prefs/save", { prefs: out });
         return null;
       },

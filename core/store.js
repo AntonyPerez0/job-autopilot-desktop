@@ -98,6 +98,7 @@ export const ANSWERS_DEFAULTS = {
   convictions: "ask",        // ask | none: criminal-history questions         // ask | yes: background checks and drug tests if offered a job
   heardAbout: "Job board",
   over18: "",
+  citizen: "",               // U.S. citizen: yes | no | "" (federal jobs ask; never pre-filled)
   travel: "some",            // yes | some | no
   salary: "",
   demographics: { gender: "decline", race: "decline", hispanic: "decline", veteran: "decline", disability: "decline", lgbtq: "decline" },

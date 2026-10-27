@@ -5,15 +5,17 @@ import * as freehire from "./freehire.js";
 import * as hiringcafe from "./hiringcafe.js";
 import * as simplify from "./simplify.js";
 import * as google from "./google.js";
+import * as usajobs from "./usajobs.js";
 
 export const SOURCES = {
   freehire: { id: "freehire", name: "freehire", search: freehire.search },
   hiringcafe: { id: "hiringcafe", name: "HiringCafe", search: hiringcafe.search, needsBrowser: true },
   simplify: { id: "simplify", name: "Simplify lists", search: simplify.search },
   google: { id: "google", name: "Google Jobs", search: google.search },
+  usajobs: { id: "usajobs", name: "USAJOBS", search: usajobs.search },
 };
 
-// prefs.boards: { freehire: true, hiringcafe: true, simplify: false, google: false }
+// prefs.boards: { freehire: true, hiringcafe: true, simplify: false, google: false, usajobs: false }
 export function enabledSources(prefs) {
   const b = prefs.boards || {};
   return Object.values(SOURCES).filter((s) => b[s.id]);

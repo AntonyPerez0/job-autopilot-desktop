@@ -166,3 +166,9 @@ test("work authorization and sponsorship the person hasn't answered go to them, 
   assert.strictEqual(sp.k.kind, "decide");
   assert.strictEqual(check("Are you legally authorized to work in the US?", "No", ["Yes", "No"], { workAuthorized: "yes" }).k.value, "Yes", "an answer they gave still wins");
 });
+
+test("U.S. citizenship comes only from the person's answer; unanswered goes to them", () => {
+  assert.strictEqual(check("Are you a U.S. citizen?", "Yes", ["Yes", "No"], { citizen: "" }).k.kind, "decide");
+  assert.strictEqual(check("Are you a U.S. citizen?", "Yes", ["Yes", "No"], { citizen: "no" }).k.value, "No");
+  assert.strictEqual(check("Are you a United States citizen?", "No", ["Yes", "No"], { citizen: "yes" }).k.value, "Yes");
+});

@@ -94,6 +94,13 @@ export function rules(facts, a, ctx = {}) {
         : pick(o, (x) => no(x) || /not? (require|need)|do not/i.test(x)) || (o && o.length ? null : "No")),
     },
     {
+      name: "citizenship", label: /\b(u\.?s\.?|united states|american)\s+citizen|\bcitizenship\b|are you a citizen/i,
+      skip: /authori[sz]ed to work|eligible to work|right to work|sponsor/i,
+      why: facts.citizen === null ? "you haven't answered it under About you" : "",
+      bad: (v) => (facts.citizen === null ? true : facts.citizen ? !yes(v) : !no(v)),
+      fix: (o) => (facts.citizen === null ? null : facts.citizen ? pick(o, (x) => yes(x)) || (o && o.length ? null : "Yes") : pick(o, (x) => no(x)) || (o && o.length ? null : "No")),
+    },
+    {
       name: "years of experience", label: /how many years|years of (professional |relevant |work |industry |[a-z+#. -]{1,40})?experience|experience level|years (have you|of)|years.{0,20}experience/i,
       skip: /\b18\b|age|old enough|graduat/i,
       years: true,

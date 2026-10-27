@@ -116,6 +116,7 @@ export function standardAnswers(a) {
   add("Willing to relocate", { no: "No", anywhere: "Yes", radius: "Only within commuting distance" }[a.relocation]);
   add("How did you hear about us", a.heardAbout || "Job board");
   add("Are you 18 years of age or older?", yn(a.over18));
+  add("Are you a U.S. citizen?", yn(a.citizen));
   add("Are you 21 years of age or older?", yn(a.over21));
   add("Willing to travel for work", { yes: "Yes", no: "No", some: "Yes, occasionally" }[a.travel]);
   add("Desired salary", a.salary);
@@ -160,6 +161,7 @@ export function candidateFacts(a, profile, prefs) {
     authorizedToWork: a.workAuthorized === "yes" ? true : a.workAuthorized === "no" ? false : null,
     authCountry: a.authCountry || "United States",
     needsSponsorship: a.needsSponsorship === "yes" ? true : a.needsSponsorship === "no" ? false : null,
+    citizen: a.citizen === "yes" ? true : a.citizen === "no" ? false : null,
     cannotClaim: [...((profile && profile.cannotClaim) || []), ...(a.cannotClaim || [])].slice(0, 200),
     maxYearsRequired: prefs ? Number(prefs.maxYearsRequired) : null,
     wantsInternships: !!(prefs && prefs.internships),
@@ -195,7 +197,7 @@ export function autopilotRules(a, profile, prefs) {
     `  * Years of experience, by type (the candidate's own numbers): ${years.length ? years.map(([t, n]) => `${t}: ${n}`).join("; ") : "(none listed)"}; all professional work: ${f.totalYears}.`,
     "    A question asking how many years of a type gets that number, never more; with options, the option whose range contains it.",
     "    A question about a type not listed here is \"decide\", never a guess.",
-    `  * Work authorization in ${f.authCountry}: ${f.authorizedToWork === null ? "NOT ANSWERED (any question about it is \"decide\")" : f.authorizedToWork ? "Yes" : "No"}. Needs visa sponsorship now or in the future: ${f.needsSponsorship === null ? "NOT ANSWERED (any question about it is \"decide\")" : f.needsSponsorship ? "Yes" : "No"}.`,
+    `  * Work authorization in ${f.authCountry}: ${f.authorizedToWork === null ? "NOT ANSWERED (any question about it is \"decide\")" : f.authorizedToWork ? "Yes" : "No"}. Needs visa sponsorship now or in the future: ${f.needsSponsorship === null ? "NOT ANSWERED (any question about it is \"decide\")" : f.needsSponsorship ? "Yes" : "No"}. U.S. citizen: ${f.citizen === null ? "NOT ANSWERED (any question about it is \"decide\")" : f.citizen ? "Yes" : "No"}.`,
     `  * How they heard about the job: "${a.heardAbout || "Job board"}" (found through a job board). With options pick that one, or "Job board", "Job site", "Online", "Internet" or "Other", in that order. Never a referral, an employee, a recruiter, an event or a search engine.`,
     `  * Where they live: ${f.home || "(not given)"}. ${relocationRule(a, prefs)}`,
     `  * Start date / availability: "${a.startAvailability || "decide"}". Notice period: "${a.noticePeriod || "decide"}". Never a different date or number of weeks.`,

@@ -92,7 +92,7 @@ function avatar(name, cls = "") {
   return `<div class="avatar ${cls}" aria-hidden="true">${esc(ini)}</div>`;
 }
 const cleanTitle = (t) => String(t || "").trim();
-const SOURCE = { greenhouse: "Greenhouse", lever: "Lever", ashby: "Ashby" };
+const SOURCE = { greenhouse: "Greenhouse", lever: "Lever", ashby: "Ashby", usajobs: "USAJOBS", neogov: "GovernmentJobs.com", calcareers: "CalCareers" };
 
 // Turn a raw reason into a short category a person reads at a glance.
 function category(j) {
@@ -379,6 +379,7 @@ function renderDrawer() {
     j.resume_file ? `<a class="btn sm" href="ap-file://resumes/${esc(j.resume_file)}" target="_blank">${icon("file")}${j.status === "applied" ? "Resume sent" : "Resume"}</a>` : "",
     j.status === "filled" && !j.reviewed ? `<button class="btn sm primary" onclick="act('reviewed')">${icon("check")}I checked these answers</button>` : "",
     j.status === "filled" && j.reviewed ? `<span class="tag">${icon("check")}You checked this one</span>` : "",
+    j.status === "manual" && !j.resume_file ? `<button class="btn sm" onclick="makeResume(this)">${icon("file")}Make my resume for this job</button>` : "",
     j.status === "manual" ? `<button class="btn sm primary" onclick="window.ja.openExternal('${esc(j.apply_url || j.url)}')">${icon("ext")}Open the application</button>
       <button class="btn sm" onclick="act('applied-myself')">${icon("check")}I applied</button>` : "",
     ["queued", "manual"].includes(j.status) ? `<button class="btn sm danger" onclick="act('skip')">${icon("skip")}Skip</button>` : "",
@@ -438,7 +439,7 @@ function drawerTab(j, d) {
         <div class="a">${esc(k.value || "")}<span class="kind ${k.kind}">${names[k.kind] || k.kind}</span>${k.note && k.kind !== "text" ? `<span class="why">${esc(k.note)}</span>` : ""}</div></div>`).join("")}</div>`;
     }
     if ((p.notClaimed || []).length) h += `<div class="section-t">Deliberately not claimed</div><ul class="bul">${p.notClaimed.map((n) => `<li>${esc(n.what)} <span>${esc(n.why || "")}</span></li>`).join("")}</ul>`;
-    return ask + h || empty("list", "No answers recorded", j.status === "queued" ? "This job has not been attempted yet." : "This job stopped before the form was filled.");
+    return ask + h || empty("list", "No answers recorded", j.status === "queued" ? "This job has not been attempted yet." : j.status === "manual" ? "You apply to this one yourself: Make my resume for this job, then Open the application." : "This job stopped before the form was filled.");
   }
   if (dtab === "resume") {
     if (!j.resume_file) return empty("file", "No resume built", "A resume is tailored when the application starts.");
@@ -459,6 +460,15 @@ async function act(action) {
   if (r && r.error) { toast(r.error); return; }
   toast(action === "skip" ? "Skipped" : action === "reviewed" ? "Thanks. You can go live from the sidebar when you are ready." : action === "applied-myself" ? "Marked as applied. It won't be applied to again." : "Added back to the queue");
   await openJob(open.slug); refresh(true);
+}
+
+// A resume tailored to a job the person applies to themselves: takes about a minute.
+async function makeResume(btn) {
+  btn.disabled = true; btn.textContent = "Making your resume (about a minute)...";
+  const r = await api("/api/job/" + encodeURIComponent(open.slug), { action: "resume" });
+  if (r && r.error) { toast(r.error); btn.disabled = false; btn.textContent = "Make my resume for this job"; return; }
+  toast("Your resume for this job is ready: press Resume to open it, then upload it on the job's site.");
+  await openJob(open.slug);
 }
 
 // ---------- actions ----------
