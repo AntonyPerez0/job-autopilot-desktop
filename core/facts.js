@@ -13,6 +13,27 @@ const ymValue = (ym) => { const m = String(ym || "").match(/^(\d{4})-(\d{1,2})/)
 const nowYm = (d = new Date()) => d.getFullYear() * 12 + d.getMonth();
 
 export const DECLINE = "Decline to self-identify";
+// Years worked from job dates ("Jun 2023 – Present"), overlapping jobs counted once, rounded down to half years.
+const MON = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+function monthNum(s, now) {
+  const t = String(s || "").toLowerCase();
+  if (/present|now|current/.test(t)) return now.getFullYear() * 12 + now.getMonth();
+  const y = t.match(/\b(19|20)\d\d\b/);
+  if (!y) return null;
+  const m = t.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/);
+  return Number(y[0]) * 12 + (m ? MON[m[1]] : 6);
+}
+export function yearsFromDates(experience, now = new Date()) {
+  const months = new Set();
+  for (const e of experience || []) {
+    const [a, b = ""] = String(e.dates || "").split(/\s*(?:–|—|-|\bto\b)\s*/i);
+    const s = monthNum(a, now), f = monthNum(b || a, now);
+    if (s === null || f === null || f < s) continue;
+    for (let m = s; m <= f; m++) months.add(m);
+  }
+  return Math.floor((months.size / 12) * 2) / 2;
+}
+
 const yn = (v) => (v === "yes" ? "Yes" : v === "no" ? "No" : "");
 
 // "B.S." -> "Bachelor of Science (B.S.)", so a list that says "Bachelor's Degree" still matches.
@@ -133,7 +154,8 @@ export function candidateFacts(a, profile, prefs) {
     stillStudying: stillStudying(a),
     workHistory: ((profile && profile.experience) || []).map((e) => `${e.title}, ${e.org} (${e.dates})`),
     yearsByType: Object.fromEntries((a.years || []).filter((y) => y && y.type).map((y) => [y.type, Number(y.years) || 0])),
-    totalYears: Number(a.totalYears) || 0,
+    // Not given: worked out from the resume's job dates, never assumed to be zero.
+    totalYears: Number(a.totalYears) || yearsFromDates((profile && profile.experience) || []),
     // Legal facts are true, false, or null when the person hasn't answered (then forms ask them).
     authorizedToWork: a.workAuthorized === "yes" ? true : a.workAuthorized === "no" ? false : null,
     authCountry: a.authCountry || "United States",

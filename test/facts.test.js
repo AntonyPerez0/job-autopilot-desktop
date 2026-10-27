@@ -104,3 +104,15 @@ test("hourly-job answers", () => {
   assert.strictEqual(s["Do you have reliable transportation"], "Yes");
   assert.strictEqual(s["How much weight can you lift"], "40 pounds");
 });
+
+test("years of experience come from the resume's job dates when the person hasn't given them, never zero", async () => {
+  const { yearsFromDates, candidateFacts } = await import("../core/facts.js");
+  const exp = [{ dates: "Jun 2023 – Present" }, { dates: "Jan 2022 – May 2023" }, { dates: "Aug 2020 – Dec 2021" }];
+  assert.strictEqual(yearsFromDates(exp, new Date("2026-10-26")), 6, "overlaps and gaps counted once, rounded down");
+  assert.ok(candidateFacts({ totalYears: 0 }, { experience: exp }, null).totalYears >= 6);
+  assert.strictEqual(candidateFacts({ totalYears: 2 }, { experience: exp }, null).totalYears, 2, "a number they gave wins");
+  const { prefillAnswers } = await import("../core/api.js");
+  const a = prefillAnswers({ name: "Jordan Lee", contact: {}, experience: [{ title: "Software Engineer", dates: "Jun 2023 – Present" }] }, { years: [] });
+  assert.ok(a.totalYears >= 3);
+  assert.strictEqual(a.years[0].type, "Software Engineer");
+});

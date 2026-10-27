@@ -557,6 +557,7 @@
     const p = cfg.profile;
     if (!p) { el.innerHTML = `<div class="msg info">Upload a resume first.</div>`; return { save: async () => "Upload a resume first." }; }
     const arr = (x) => (Array.isArray(x) ? x : []);
+    let bulk = false;
     const newId = (list, base) => { let i = 1, id = base; const ids = new Set(arr(list).map((x) => x.id)); while (ids.has(id)) id = `${base}${++i}`; return id; };
     const counts = () => {
       let n = 0, ok = 0;
@@ -577,8 +578,10 @@
       <button type="button" class="btn sm" data-all="${key}">${icon("check")}Approve all</button></span></div>${body || `<div class="rv-item"><span></span><span class="muted">Nothing here.</span></div>`}</div>`;
     const draw = () => {
       const c = counts();
+      // After an "approve all", the lines it left for the person stay pointed out until each is ticked or deleted.
+      const heldNow = [...arr(p.summaries), ...["experience", "projects"].flatMap((k) => arr(p[k]).flatMap((e) => arr(e.bullets)))].filter((x) => x.warning && !x.approved).length;
       let h = `<div class="banner blue"><div style="flex:1"><b>${c.ok} of ${c.n} pieces approved</b>Your resume is only ever made from pieces you approve here. Read each line, fix anything that isn't exactly true, delete what you'd never send, and tick the rest.</div>
-        <div class="right"><button type="button" class="btn sm primary" data-approve-everything>${icon("check")}Everything is true: approve all</button></div></div><div data-held></div>`;
+        <div class="right"><button type="button" class="btn sm primary" data-approve-everything>${icon("check")}Everything is true: approve all</button></div></div><div data-held>${bulk && heldNow ? `<div class="msg info">${heldNow} line${heldNow === 1 ? " has" : "s have"} a "Check this" note, so ${heldNow === 1 ? "it was" : "they were"} left unticked. Read ${heldNow === 1 ? "it" : "each one"} (look for the orange note), fix or delete what isn't true, then tick ${heldNow === 1 ? "it" : "them"} yourself.</div>` : ""}</div>`;
       h += group("Summaries", "summaries", arr(p.summaries).map((s, i) => item(`summaries.${i}.text`, s.text, s.approved, { warning: s.warning })).join(""), "summary");
       for (const [k, title] of [["experience", "Experience"], ["projects", "Projects"]]) {
         arr(p[k]).forEach((e, ei) => {
@@ -613,10 +616,9 @@
       const everything = el.querySelector("[data-approve-everything]");
       // Approving in bulk never approves a line the second check doubted: those wait to be read one by one.
       const approveMany = (list) => {
-        let held = 0;
-        for (const x of list) { if (x.warning && !x.approved) { held++; continue; } x.approved = true; }
+        for (const x of list) if (!x.warning || x.approved) x.approved = true;
+        bulk = true;
         draw();
-        if (held) msg(el.querySelector("[data-held]"), "info", `${held} line${held === 1 ? " has" : "s have"} a "Check this" note, so ${held === 1 ? "it was" : "they were"} left unticked. Read ${held === 1 ? "it" : "each one"}, fix or delete what isn't true, then tick ${held === 1 ? "it" : "them"} yourself.`);
       };
       if (everything) everything.onclick = () => {
         if (!confirm("Approve every piece? Only do this if you've read them and every line is true.")) return;

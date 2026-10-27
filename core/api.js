@@ -80,6 +80,8 @@ export function prefillAnswers(p, a = getAnswers()) {
   if (loc[1]) set("state", loc[1]);
   const cur = (p.experience || []).find((e) => /present|current|now/i.test(e.dates || ""));
   if (cur) { set("currentEmployer", cur.org); set("currentTitle", cur.title); }
+  // Years of experience from the resume's own job dates, when the person hasn't given them (forms ask a lot).
+  if (!Number(out.totalYears) && (p.experience || []).some((e) => e.dates)) Object.assign(out, yearsFromInterview({ jobs: jobsFromDates(p.experience) }, out));
   if (!(out.education || []).length && (p.education || []).length) {
     out.education = p.education.map((e) => {
       const years = String(e.dates || "").match(/\b(19|20)\d\d\b/g) || [];
@@ -407,6 +409,13 @@ function monthOf(s, now = new Date()) {
   if (!y) return null;
   const m = t.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/);
   return Number(y[0]) * 12 + (m ? MONTH[m[1]] : 6);
+}
+// "Jun 2023 – Present" -> { start: "Jun 2023", end: "", current: true }, for the years count above.
+export function jobsFromDates(experience) {
+  return (experience || []).map((e) => {
+    const [start, end = ""] = String(e.dates || "").split(/\s*(?:–|—|-|\bto\b)\s*/i);
+    return { title: e.title, start, end, current: /present|now|current/i.test(end) };
+  });
 }
 export function yearsFromInterview(iv, a, now = new Date()) {
   const years = [...(a.years || [])];
