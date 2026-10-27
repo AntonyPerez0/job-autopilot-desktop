@@ -263,6 +263,17 @@ try {
   assert.deepStrictEqual(yours.map((x) => [x.value, x.scope]), [["3", "all"], ["No", "all"]], "answers saved for the next applications too");
   await win.click("#drawer .dr-close");
 
+  // Simple (the default) hides statistics, activity and the extra pages; Advanced shows everything.
+  await win.click('.nav:has-text("Overview")');
+  assert.ok(!(await win.isVisible('.nav:has-text("Skipped")')), "Simple: no Skipped page in the sidebar");
+  assert.ok(!(await win.isVisible('.card:has-text("Applications per day")')), "Simple: no charts on the Overview");
+  assert.ok(await win.isVisible('.card:has-text("Recent applications")'));
+  await shot("8e-simple");
+  await win.click('[data-mode="advanced"]');
+  await win.waitForSelector('.nav:has-text("Skipped")', { state: "visible" });
+  assert.ok(await win.isVisible('.card:has-text("Applications per day")'), "Advanced: the charts are back");
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(data, "settings.json"), "utf8")).uiMode, "advanced", "the choice is kept");
+
   // Settings and profile pages render.
   await win.click('.nav:has-text("Settings")');
   await win.waitForSelector("#sec-prefs .tags");

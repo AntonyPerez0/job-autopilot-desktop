@@ -308,6 +308,32 @@ export const SHOWS_VALUE_JS = `(label) => {
   return shown.some((t) => !/^(select|choose|please|start typing|search)/i.test(t) && !/required|error|invalid|must|cannot be blank/i.test(t) && norm(t) !== want);
 }`;
 
+// The choices of a question the app stopped on, read from the page, so the person picks one of the
+// form's own answers instead of guessing its wording: a native list is read; a custom one is opened,
+// read and closed again without choosing anything.
+export async function choicesOn(page, label) {
+  const name = String(label).replace(/\*\s*$/, "").trim().slice(0, 60).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  if (!name) return [];
+  const clean = (list) => [...new Set(list.map((t) => String(t).replace(/\s+/g, " ").trim()).filter((t) => t && t.length < 200 && !/^(select|choose|please select|--|—)/i.test(t)))].slice(0, 60);
+  for (const f of page.frames()) {
+    const rx = new RegExp("^\\s*" + name, "i");
+    for (const box of [f.getByLabel(rx).first(), f.getByRole("combobox", { name: rx }).first(), f.getByRole("button", { name: rx }).first()]) {
+      if (!(await box.count().catch(() => 0))) continue;
+      try {
+        const tag = await box.evaluate((el) => el.tagName);
+        if (tag === "SELECT") return clean(await box.locator("option").allInnerTexts());
+        if (tag === "INPUT" && /radio|checkbox/i.test(await box.getAttribute("type") || "")) continue;
+        await box.click({ timeout: 4000 });
+        await sleep(900);
+        const texts = clean(await f.locator("[role=option]:visible, [data-automation-id=promptOption]:visible").allInnerTexts());
+        await page.keyboard.press("Escape").catch(() => {});
+        if (texts.length > 1) return texts;
+      } catch { /* not this one */ }
+    }
+  }
+  return [];
+}
+
 async function showsValue(page, label) {
   for (const f of page.frames()) if (await f.evaluate(`(${SHOWS_VALUE_JS})(${JSON.stringify(label)})`).catch(() => false)) return true;
   return false;
@@ -686,7 +712,19 @@ export async function applyTo(job, hooks = {}, opts = {}) {
       step("verify");
       if (hooks.onFilled) await hooks.onFilled(page);
       result.screenshot = await shot(page, job.slug, n > 1 ? `filled-p${n}` : "filled");
-      if (filled.blocking.length) return { ...result, status: "failed", reason: `could not fill every required field${n > 1 ? ` (page ${n})` : ""}: ` + filled.blocking.slice(0, 6).join("; ") };
+      if (filled.blocking.length) {
+        // The choices of each question it stopped on, so the person can pick the form's own answer.
+        const askOptions = {};
+        for (const item of filled.blocking.slice(0, 6)) {
+          const label = item.replace(/^(required, no answer|needs you|still empty): /, "").replace(/ \(.*\)$/, "");
+          const f = allFields.find((x) => nk(x.label) === nk(label));
+          if (f && (f.options || []).length > 1) continue;
+          const opts = await choicesOn(page, label).catch(() => []);
+          if (opts.length > 1) askOptions[nk(label)] = opts;
+        }
+        result.details.askOptions = askOptions;
+        return { ...result, status: "failed", reason: `could not fill every required field${n > 1 ? ` (page ${n})` : ""}: ` + filled.blocking.slice(0, 6).join("; ") };
+      }
 
       // A form on several pages: "Next" until the page with the real Submit button.
       let nextFrame = null, nextLabel = null;

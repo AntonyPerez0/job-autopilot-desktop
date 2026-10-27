@@ -28,7 +28,7 @@ import { monthUse, testKey as testSerpKey } from "./sources/google.js";
 import { testKey as testUsajobsKey } from "./sources/usajobs.js";
 import { backupFile, collect, exportHistory, importHistory, peekBackup, writeBackup } from "./history.js";
 
-const EDITABLE = ["paused", "acceptedTerms", "windowMode", "historyBackup", "historyFolder", "dailyCap", "dayStartsAtHour", "minutesBetweenApplies", "postedWithinDays", "searchEveryMinutes", "headless", "browser", "maxAttempts"];
+const EDITABLE = ["paused", "acceptedTerms", "windowMode", "historyBackup", "historyFolder", "dailyCap", "dayStartsAtHour", "minutesBetweenApplies", "postedWithinDays", "searchEveryMinutes", "headless", "browser", "maxAttempts", "uiMode"];
 const bad = (msg, code = 400) => ({ error: plainAiError(msg), code });
 // main.js plugs in the updater (it needs Electron); without it (tests, scripts) updates are off.
 let updater = null;

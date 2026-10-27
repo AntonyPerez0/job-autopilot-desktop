@@ -76,3 +76,16 @@ test("answering in the app saves the answers and puts the job first in the queue
   assert.strictEqual(again.status, "queued");
   assert.strictEqual((await handle("/api/your-answers")).filter((x) => x.key === A.labelKey(j.asks[1].label)).length, 1, "answering again replaces the old answer");
 });
+
+test("the choices of a stopped question: read from the page, matched despite small wording differences; a file is not a question", () => {
+  const reason = "could not fill every required field: still empty: Work authorization status; required, no answer: How did you hear about us; required, no answer: Resume";
+  const details = { fields: [{ label: "Work authorization status *", type: "listbox" }, { label: "How did you hear about us?", type: "select", options: ["Select...", "LinkedIn", "Job board", "Referral"] }, { label: "Resume", type: "file" }],
+    askOptions: { "work authorization status": ["U.S. citizen", "Permanent resident", "Visa holder"] } };
+  const asks = A.asksFor({ status: "failed", reason }, details);
+  assert.deepStrictEqual(asks[0].options, ["U.S. citizen", "Permanent resident", "Visa holder"], "read from the page when it stopped");
+  assert.deepStrictEqual(asks[1].options, ["LinkedIn", "Job board", "Referral"], "the field's own list, matched despite the question mark");
+  assert.strictEqual(asks[2].file, true, "a resume upload is not a question to type into");
+  const noList = A.asksFor({ status: "failed", reason: "could not fill every required field: still empty: Preferred shift" }, { fields: [{ label: "Preferred shift", type: "combo" }] });
+  assert.strictEqual(noList[0].choice, true, "a list whose choices couldn't be read says so");
+  assert.deepStrictEqual(noList[0].options, []);
+});

@@ -410,7 +410,7 @@
         <button type="button" class="btn ghost" data-preview>${icon("eye")}Preview</button>
       </div>
       <div data-smsg></div>
-      <div class="section-t">A recruiter's read</div>
+      <div class="adv"><div class="section-t">A recruiter's read</div>
       <p class="hint" style="margin:-4px 0 0">The AI reads your resume the way a recruiter skims one, and says what stands out and what is weak, line by line. It never adds facts.</p>
       <div class="row-actions"><select class="inp" data-rv-base style="max-width:18rem"></select><button type="button" class="btn" data-review>${icon("eye")}Read it like a recruiter</button></div>
       <div data-rv-out></div>
@@ -418,16 +418,16 @@
       <p class="hint" style="margin:-4px 0 0">Applying to different kinds of jobs (driving and IT support, say)? Make a version for each: your true lines, chosen and worded for that field, with a headline and summary for it. New wording waits for your approval.</p>
       <div class="row-actions"><input class="inp" data-vt placeholder="e.g. CDL driving, IT support, Warehouse" style="max-width:18rem" list="vt-list"><datalist id="vt-list">${((cfg.prefs && cfg.prefs.titles) || []).map((t) => `<option value="${esc(t)}">`).join("")}</datalist>
         <button type="button" class="btn" data-version>${icon("plus")}Make this version</button></div>
-      <div data-vt-out></div>
+      <div data-vt-out></div></div>
       <div class="section-t">What recruiters will notice</div>
       <div data-checks><div class="muted">Checking...</div></div>
       <div class="section-t">Fill out my page</div>
       <p class="hint" style="margin:-4px 0 0">A short resume looks thin to a recruiter. A few questions about what people usually leave out: other work, training with its year, records and recognition, volunteering, school, and the numbers behind your lines.</p>
       <div class="row-actions"><button type="button" class="btn" data-fill-open>${icon("plus")}Fill out my page</button></div>
       <div data-fill></div>
-      <div class="section-t">Remember more</div>
+      <div class="adv"><div class="section-t">Remember more</div>
       <p class="hint" style="margin:-4px 0 0">Most people forget things they did. Pick a job and answer a few yes/no questions about what people in that job usually do.</p>
-      <div class="sub-list" data-remember></div>
+      <div class="sub-list" data-remember></div></div>
       <div data-sugg-wrap hidden><div class="section-t">Suggested improvements</div>
         <p class="hint" style="margin:-4px 0 8px">Every suggestion says the same facts you gave, worded the way recruiters like. Anything that added a number or claim you didn't give was left out; you'll see a question instead.</p>
         <div class="sub-list" data-sugg></div></div></div>`;
@@ -823,7 +823,7 @@
         <li><b>Federal jobs:</b> turn on <b>USAJOBS</b> above. The app finds them, checks the fit and makes a resume for each; you apply on USAJOBS with a free Login.gov account.</li>
         <li><b>State, county and city jobs:</b> many come through <b>HiringCafe</b> and <b>Google Jobs</b>. Most state and local governments post on GovernmentJobs.com or their own state site (CalCareers in California), which need your own account and don't allow apps to search them. When you find one there, paste its link into <b>Add a job</b>: the app makes your resume for it, and you apply on the site.</li>
         <li>Government forms often ask whether you're a U.S. citizen: answer it once under <b>About you</b>.</li></ul>`)}
-      ${more("More options", "Exclusions, posting age, experience limits", `
+      <div class="adv">${more("More options", "Exclusions, posting age, experience limits", `
         ${fld("What you want the work to involve (optional)", `<div data-keywords></div>`, "The AI favors jobs like these, e.g. healthcare, React, working outdoors.")}
         ${fld("Words that rule a job title out (optional)", `<div data-titleex></div>`)}
         ${fld("Companies to never apply to", `<div data-exclude></div>`, "Your current employer, and anywhere you would not go.")}
@@ -832,7 +832,7 @@
           ${fld("Only jobs posted in the last", sel("postedWithinDays", p.postedWithinDays, [[3, "3 days"], [7, "7 days"], [14, "14 days"], [30, "30 days"], [60, "60 days"]]))}
           ${fld("Distance in", sel("radiusUnit", p.radiusUnit, [["mi", "miles"], ["km", "kilometers"]]))}
           ${fld("Remote jobs open to people in", `<select name="remoteCountry" data-countries></select>`)}</div>
-        ${fld("Jobs you already applied to elsewhere", `<textarea name="alreadyApplied" rows="3" placeholder="One per line: a job link, or Company - Job title">${esc(p.alreadyApplied || "")}</textarea>`, "The app never applies to these.")}`)}
+        ${fld("Jobs you already applied to elsewhere", `<textarea name="alreadyApplied" rows="3" placeholder="One per line: a job link, or Company - Job title">${esc(p.alreadyApplied || "")}</textarea>`, "The app never applies to these.")}`)}</div>
     </div>`;
     const titles = tagInput(el.querySelector("[data-titles]"), p.titles, kind === "office" ? "e.g. Software Engineer" : "e.g. Cashier");
     el.querySelectorAll(".chip-add").forEach((b) => b.onclick = () => {

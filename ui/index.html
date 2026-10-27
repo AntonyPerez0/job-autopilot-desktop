@@ -9,7 +9,7 @@
 <title>Job Autopilot</title>
 <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="simple">
 <script src="icons.js"></script>
 <script>document.documentElement.dataset.platform = (window.ja && window.ja.platform) || "";</script>
 <div class="app-top" aria-hidden="true"></div>
@@ -22,9 +22,10 @@
       <div class="row"><span style="display:flex;align-items:center;gap:8px"><span id="mode-dot" class="dot"></span><b id="mode-txt">…</b></span>
         <button class="btn sm" id="pause"></button></div>
       <div class="row"><span>Go live <span class="muted">(submit for real)</span></span><button class="switch" id="live" aria-label="Go live"></button></div>
-      <div class="row"><span>Day starts</span><span class="muted" id="daystart"></span></div>
-      <div class="row"><span>Daily limit</span><div class="stepper"><button id="cap-dn" aria-label="Lower">&minus;</button><span id="cap">0</span><button id="cap-up" aria-label="Raise">+</button></div></div>
-      <div class="muted" id="model"></div>
+      <div class="row adv"><span>Day starts</span><span class="muted" id="daystart"></span></div>
+      <div class="row adv"><span>Daily limit</span><div class="stepper"><button id="cap-dn" aria-label="Lower">&minus;</button><span id="cap">0</span><button id="cap-up" aria-label="Raise">+</button></div></div>
+      <div class="muted adv" id="model"></div>
+      <div class="row"><span>Show</span><span class="mode-switch" role="group" aria-label="How much to show"><button type="button" data-mode="simple">Simple</button><button type="button" data-mode="advanced">Advanced</button></span></div>
       <div id="update-side"></div>
     </div>
   </aside>
@@ -46,9 +47,9 @@ const VIEWS = [
   { id: "failed", label: "Needs attention", icon: "alert", status: "failed" },
   { id: "manual", label: "Apply yourself", icon: "ext", status: "manual" },
   { id: "filled", label: "Filled (dry run)", icon: "eye", status: "filled" },
-  { id: "skipped", label: "Skipped", icon: "skip", status: "skipped" },
-  { id: "all", label: "All jobs", icon: "list" },
-  { id: "log", label: "Activity", icon: "act" },
+  { id: "skipped", label: "Skipped", icon: "skip", status: "skipped", adv: true },
+  { id: "all", label: "All jobs", icon: "list", adv: true },
+  { id: "log", label: "Activity", icon: "act", adv: true },
   { id: "profile", label: "Resume", icon: "file" },
   { id: "settings", label: "Settings", icon: "gear" },
 ];
@@ -135,8 +136,8 @@ function renderNav() {
   const c = (st && st.counts) || {};
   const total = Object.values(c).reduce((a, b) => a + b, 0);
   const count = (v) => v.id === "all" ? total : v.status ? (c[v.status] || 0) + (v.id === "queued" ? (c.working || 0) : 0) : null;
-  const html = (mobile) => VIEWS.map((v, i) => `${!mobile && v.id === "applied" ? '<div class="nav-label">Applications</div>' : ""}${!mobile && v.id === "all" ? '<div class="nav-label">More</div>' : ""}
-    <div class="nav ${view === v.id ? "on" : ""}" onclick="go('${v.id}')">${icon(v.icon)}<span>${v.label}</span>${count(v) !== null && !mobile ? `<span class="count ${count(v) > 0 ? NAV_TONE[v.id] || "" : ""}">${count(v)}</span>` : ""}</div>`).join("");
+  const html = (mobile) => VIEWS.map((v, i) => `${!mobile && v.id === "applied" ? '<div class="nav-label">Applications</div>' : ""}${!mobile && v.id === "all" ? '<div class="nav-label adv">More</div>' : ""}
+    <div class="nav ${view === v.id ? "on" : ""} ${v.adv ? "adv" : ""}" onclick="go('${v.id}')">${icon(v.icon)}<span>${v.label}</span>${count(v) !== null && !mobile ? `<span class="count ${count(v) > 0 ? NAV_TONE[v.id] || "" : ""}">${count(v)}</span>` : ""}</div>`).join("");
   $("nav").innerHTML = html(false);
   $("mnav").innerHTML = html(true);
 }
@@ -152,6 +153,7 @@ function renderControls() {
   $("cap").textContent = s.dailyCap;
   $("daystart").textContent = new Date(2000, 0, 1, s.dayStartsAtHour || 0).toLocaleTimeString([], { hour: "numeric" });
   $("model").textContent = "Model: " + st.model;
+  applyMode(s.uiMode);
   $("update-side").innerHTML = updateSide();
   const card = $("update-card"); if (card) card.innerHTML = updateCard();
 }
@@ -286,7 +288,7 @@ async function renderOverview() {
   const seen = Object.values(c).reduce((a, b) => a + b, 0);
   const pipe = [["Found", seen], ["Screened in", (c.applied || 0) + (c.queued || 0) + (c.failed || 0) + (c.working || 0) + (c.filled || 0) + (c.manual || 0)], ["Attempted", done + stopped], ["Applied", done]];
   $("main").innerHTML = header() + `
-  <div class="grid-kpi">
+  <div class="grid-kpi adv">
     ${kpi("applied", "Applications sent", done, `${ago(applied[0] && applied[0].applied_at) ? "Last " + ago(applied[0].applied_at) : "None yet"}`)}
     <div class="kpi done" onclick="go('applied')"><div class="lbl">Today</div>
       <div class="val">${st.appliedToday}<small>/ ${s.dailyCap}</small></div><div class="bar"><i style="width:${Math.min(100, (100 * st.appliedToday) / Math.max(1, s.dailyCap))}%"></i></div></div>
@@ -298,16 +300,16 @@ async function renderOverview() {
     <div class="stack">
       <div class="card"><div class="card-h"><h2>Recent applications</h2><span class="right"><button class="btn ghost sm" onclick="go('applied')">View all</button></span></div>
         ${applied.length ? applied.slice(0, 6).map(item).join("") : empty("send", "No applications yet", "The first ones will appear here as soon as an employer confirms.")}</div>
-      <div class="card"><div class="card-h"><h2>Applications per day</h2><span class="sub">Last 14 days</span></div>
+      <div class="card adv"><div class="card-h"><h2>Applications per day</h2><span class="sub">Last 14 days</span></div>
         <div class="card-b"><div class="chart">${per.map((n, i) => `<div class="col"><div class="b ${n ? "" : "zero"}" data-n="${n} applied" style="height:${n ? Math.max(8, (100 * n) / max) : 2}%"></div>
           <div class="d">${i % 2 === 1 || per.length < 8 ? days[i].toLocaleDateString([], { month: "numeric", day: "numeric" }) : ""}</div></div>`).join("")}</div></div></div>
     </div>
     <div class="stack">
       <div class="card"><div class="card-h"><h2>Up next</h2><span class="right"><button class="btn ghost sm" onclick="go('queued')">Queue</button></span></div>
         ${queue.length ? queue.slice(0, 4).map(item).join("") : empty("clock", "Queue is empty", "New roles are screened in on the next search.")}</div>
-      <div class="card"><div class="card-h"><h2>Pipeline</h2></div><div class="card-b pipeline">
+      <div class="card adv"><div class="card-h"><h2>Pipeline</h2></div><div class="card-b pipeline">
         ${pipe.map(([l, n]) => `<div class="pipe-row"><span>${l}</span><div class="bar"><i style="width:${seen ? Math.max(2, (100 * n) / seen) : 0}%"></i></div><b>${n}</b></div>`).join("")}</div></div>
-      <div class="card"><div class="card-h"><h2>Activity</h2><span class="right"><button class="btn ghost sm" onclick="go('log')">All activity</button></span></div>
+      <div class="card adv"><div class="card-h"><h2>Activity</h2><span class="right"><button class="btn ghost sm" onclick="go('log')">All activity</button></span></div>
         <div>${ev.filter(important).slice(0, 7).map(feedItem).join("") || empty("act", "Nothing yet", "")}</div></div>
     </div>
   </div>`;
@@ -403,20 +405,23 @@ function askForm(j) {
   const asks = j.asks || [];
   if (!asks.length) return "";
   const company = String(j.company || "").toLowerCase();
-  const control = (q, i) => q.options.length
+  const control = (q, i) => q.file
+    ? `<div class="msg info">The app couldn't attach your resume to this form. Press <b>Try again</b> above; if it happens again, open the application form and upload it yourself (the Resume button above has the file).</div>`
+    : q.options.length
     ? `<select name="ask-${i}" class="inp"><option value="">Pick an answer</option>${q.options.map((o) => `<option>${esc(o)}</option>`).join("")}</select>`
     : q.long ? `<textarea name="ask-${i}" rows="4" class="inp" placeholder="Your answer, in your own words"></textarea>`
-    : `<input name="ask-${i}" class="inp" placeholder="Your answer">`;
+    : `<input name="ask-${i}" class="inp" placeholder="Your answer">${q.choice ? `<small class="hint">This is a list on the form, and the app couldn't read its choices. Type your answer the way the form words it; press <b>Application form</b> above or the <b>Screenshots</b> tab to see the choices.</small>` : ""}`;
   const everywhere = (q) => !q.long && !(company && q.label.toLowerCase().includes(company));
   return `<div class="ask" id="ask-form"><h3>Answer to continue</h3>
     <p class="hint">The app stopped here instead of guessing: these required questions have no answer in your facts. Answer them, and the app fills them in exactly as you wrote and tries again. Only say what's true.</p>
     ${asks.map((q, i) => `<div class="fld ask-q"><span>${esc(q.label)}</span>${q.note ? `<small>${esc(q.note)}</small>` : ""}${control(q, i)}
-      <label class="check"><input type="checkbox" name="ask-all-${i}" ${everywhere(q) ? "checked" : ""}>Use this answer for other applications that ask the same question</label></div>`).join("")}
+      ${q.file ? "" : `<label class="check"><input type="checkbox" name="ask-all-${i}" ${everywhere(q) ? "checked" : ""}>Use this answer for other applications that ask the same question</label>`}</div>`).join("")}
     <div class="row-actions"><button class="btn primary" id="ask-go" onclick="answerAsks()">${icon("check")}Save my answers and try again</button></div><div id="ask-msg"></div></div>`;
 }
 async function answerAsks() {
   const f = $("ask-form"), asks = open.asks || [];
-  const answers = asks.map((q, i) => ({ label: q.label, value: f.querySelector(`[name="ask-${i}"]`).value.trim(), remember: f.querySelector(`[name="ask-all-${i}"]`).checked }));
+  const answers = asks.map((q, i) => q.file ? null : ({ label: q.label, value: f.querySelector(`[name="ask-${i}"]`).value.trim(), remember: f.querySelector(`[name="ask-all-${i}"]`).checked })).filter(Boolean);
+  if (!answers.length) { await act("retry"); return; }
   const left = answers.filter((x) => !x.value);
   if (left.length) return Forms.msg($("ask-msg"), "err", `Answer every question first (${left.length} left). The application can't go out with a required question empty.`);
   $("ask-go").disabled = true;
@@ -431,14 +436,14 @@ function drawerTab(j, d) {
     const kit = (d.kit || []).filter((k) => k.kind !== "blank");
     const p = d.plan || {};
     let h = "";
-    if ((d.audit || []).length) h += `<div class="section-t">Truth checks applied before submitting</div><ul class="bul">${d.audit.map((a) => `<li>${esc(a)}</li>`).join("")}</ul>`;
+    if ((d.audit || []).length) h += `<div class="section-t adv">Truth checks applied before submitting</div><ul class="bul adv">${d.audit.map((a) => `<li>${esc(a)}</li>`).join("")}</ul>`;
     if ((d.hardFails || []).length) h += `<div class="section-t">Must-haves not met</div><ul class="bul">${d.hardFails.map((f) => `<li>${esc(f.requirement)} <span>${esc(f.why || "")}</span></li>`).join("")}</ul>`;
     if (kit.length) {
       const names = { text: "From profile", suggest: "AI choice", draft: "AI written", file: "Upload", decide: "Left for you" };
       h += `<div class="section-t">Answers given (${kit.length})</div><div class="qa">${kit.map((k) => `<div class="qa-row"><div class="q">${esc(k.label.replace(/:\s*(yes\s*no|no\s*yes)\s*$/i, "").replace(/\*\s*$/, ""))}</div>
         <div class="a">${esc(k.value || "")}<span class="kind ${k.kind}">${names[k.kind] || k.kind}</span>${k.note && k.kind !== "text" ? `<span class="why">${esc(k.note)}</span>` : ""}</div></div>`).join("")}</div>`;
     }
-    if ((p.notClaimed || []).length) h += `<div class="section-t">Deliberately not claimed</div><ul class="bul">${p.notClaimed.map((n) => `<li>${esc(n.what)} <span>${esc(n.why || "")}</span></li>`).join("")}</ul>`;
+    if ((p.notClaimed || []).length) h += `<div class="section-t adv">Deliberately not claimed</div><ul class="bul adv">${p.notClaimed.map((n) => `<li>${esc(n.what)} <span>${esc(n.why || "")}</span></li>`).join("")}</ul>`;
     return ask + h || empty("list", "No answers recorded", j.status === "queued" ? "This job has not been attempted yet." : j.status === "manual" ? "You apply to this one yourself: Make my resume for this job, then Open the application." : "This job stopped before the form was filled.");
   }
   if (dtab === "resume") {
@@ -470,6 +475,23 @@ async function makeResume(btn) {
   toast("Your resume for this job is ready: press Resume to open it, then upload it on the job's site.");
   await openJob(open.slug);
 }
+
+// Simple or Advanced: Simple hides what most people never need (statistics, activity, extra tools).
+function applyMode(mode) {
+  const m = mode === "advanced" ? "advanced" : "simple";
+  document.body.classList.toggle("simple", m === "simple");
+  document.querySelectorAll("[data-mode]").forEach((b) => { b.classList.toggle("on", b.dataset.mode === m); b.setAttribute("aria-pressed", String(b.dataset.mode === m)); });
+  // A page that Simple hides isn't left open behind it.
+  if (m === "simple" && ["skipped", "all", "log"].includes(view)) go("overview");
+}
+async function setMode(mode) {
+  await api("/api/settings", { uiMode: mode });
+  if (st) st.settings.uiMode = mode;
+  applyMode(mode);
+  toast(mode === "advanced" ? "Advanced: every option and statistic is shown" : "Simple: just what you need. Switch to Advanced any time at the bottom of the sidebar.");
+  document.querySelectorAll("#sec-theme [name=uiMode]").forEach((r) => { r.checked = r.value === mode; });
+}
+document.querySelectorAll("[data-mode]").forEach((b) => b.onclick = () => setMode(b.dataset.mode));
 
 // ---------- actions ----------
 function go(v) { closeDrawer(); view = v; location.hash = v; q = ""; refresh(true); window.scrollTo(0, 0); }
@@ -648,7 +670,7 @@ let cfg = null;
 async function renderConfig() {
   cfg = await api("/api/config");
   // Each section folds away; the ones people change most start open.
-  const card = (id, title, sub, open) => `<details class="card card-fold" ${open ? "open" : ""}><summary><div class="card-h"><h2>${title}</h2><span class="sub">${sub || ""}</span></div></summary>
+  const card = (id, title, sub, open, adv) => `<details class="card card-fold ${adv ? "adv" : ""}" ${open ? "open" : ""}><summary><div class="card-h"><h2>${title}</h2><span class="sub">${sub || ""}</span></div></summary>
     <div class="sec" id="sec-${id}"></div><div class="save-bar"><button class="btn primary" data-save="${id}">${icon("check")}Save changes</button><div id="msg-${id}" style="flex:1"></div></div></details>`;
   if (view === "profile") {
     const fold = (id, title, sub, open) => `<details class="card card-fold" ${open ? "open" : ""}><summary><div class="card-h"><h2>${title}</h2><span class="sub">${sub}</span></div></summary><div class="sec" id="sec-${id}"></div></details>`;
@@ -656,7 +678,7 @@ async function renderConfig() {
       ${cfg.profile ? fold("studio", "Check &amp; improve", "What a recruiter will notice, and better wording for your lines", true) : ""}
       ${fold("create", "Make a resume with me", "Answer a few questions; the app writes the lines, you approve them", !cfg.profile)}
       ${card("review", "All your resume pieces", "Edit, approve or delete each line; only approved ones are ever used")}
-      ${fold("github", "Projects from GitHub", "Pick your public projects; the app writes lines about them for you to approve")}
+      <div class="adv">${fold("github", "Projects from GitHub", "Pick your public projects; the app writes lines about them for you to approve")}</div>
       ${fold("upload", "Add another resume", "Upload a PDF or Word file; its pieces are added unapproved")}</div>`;
     const forms = { review: Forms.review($("sec-review"), cfg) };
     const studio = cfg.profile ? Forms.studio($("sec-studio"), cfg, () => { forms.review = Forms.review($("sec-review"), cfg); }) : null;
@@ -668,24 +690,27 @@ async function renderConfig() {
   } else {
     $("main").innerHTML = header() + `<div id="cfg-host">
       <div class="card" style="margin-bottom:12px"><div class="card-h"><h2>Updates</h2></div><div class="sec" id="update-card">${updateCard()}</div></div>
-      <div class="card" style="margin-bottom:12px"><div class="card-h"><h2>Appearance</h2><span class="sub">Light or dark</span></div><div class="sec" id="sec-theme">
+      <div class="card" style="margin-bottom:12px"><div class="card-h"><h2>Appearance</h2><span class="sub">Light or dark, and how much to show</span></div><div class="sec" id="sec-theme">
         <div class="radio-row" role="radiogroup" aria-label="Appearance">${[["system", "Match my computer"], ["light", "Light"], ["dark", "Dark"]].map(([v, l]) =>
-          `<label><input type="radio" name="theme" value="${v}" ${(cfg.settings.theme || "system") === v ? "checked" : ""}>${l}</label>`).join("")}</div></div></div>
+          `<label><input type="radio" name="theme" value="${v}" ${(cfg.settings.theme || "system") === v ? "checked" : ""}>${l}</label>`).join("")}</div>
+        <div class="fld" style="margin-top:12px"><span>How much to show</span><div class="radio-row" role="radiogroup" aria-label="How much to show">${[["simple", "Simple: just what you need"], ["advanced", "Advanced: every option and statistic"]].map(([v, l]) =>
+          `<label><input type="radio" name="uiMode" value="${v}" ${(cfg.settings.uiMode || "simple") === v ? "checked" : ""}>${l}</label>`).join("")}</div></div></div></div>
       ${card("prefs", "Jobs to look for", "Job titles, where, and which sites to search", true)}
       ${card("questions", "About you", "The answers application forms ask for")}
       ${card("ai", "AI", "The AI service the app uses")}
       ${card("mailbox", "Mailbox", "Optional: email codes and spotting jobs you already applied to")}
-      ${card("accounts", "Job site accounts", "Optional: let the app make accounts on Workday sites and apply there too")}
-      ${card("running", "Pace and browser", "How many a day, and the browser window")}
-      <div class="card" style="margin-bottom:12px"><div class="card-h"><h2>Application history</h2><span class="sub">So you never apply twice, even after a reinstall</span></div><div class="sec" id="sec-history"></div></div>
+      ${card("accounts", "Job site accounts", "Optional: let the app make accounts on Workday sites and apply there too", false, true)}
+      ${card("running", "Pace and browser", "How many a day, and the browser window", false, true)}
+      <div class="card adv" style="margin-bottom:12px"><div class="card-h"><h2>Application history</h2><span class="sub">So you never apply twice, even after a reinstall</span></div><div class="sec" id="sec-history"></div></div>
       <div class="card" style="margin-bottom:12px"><div class="card-h"><h2>Your answers to form questions</h2><span class="sub">Questions you answered when an application stopped; the app uses them again</span></div><div class="sec" id="sec-yours"></div></div>
-      <div class="card sec"><h2>Your data</h2><p>Everything lives in one folder on this computer: <span class="mono">${esc(cfg.dataDir)}</span>. Version ${esc(cfg.version)}.</p>
+      <div class="card sec adv"><h2>Your data</h2><p>Everything lives in one folder on this computer: <span class="mono">${esc(cfg.dataDir)}</span>. Version ${esc(cfg.version)}.</p>
         <div class="row-actions"><button class="btn sm" onclick="window.ja.showDataFolder()">${icon("ext")}Open the folder</button>
         <button class="btn sm" onclick="window.ja.go('onboarding.html')">${icon("retry")}Run the setup again</button></div></div></div>`;
     const forms = { prefs: Forms.prefs($("sec-prefs"), cfg), questions: Forms.questions($("sec-questions"), cfg), ai: Forms.ai($("sec-ai"), cfg),
       mailbox: Forms.mailbox($("sec-mailbox"), cfg), running: Forms.running($("sec-running"), cfg), accounts: Forms.accounts($("sec-accounts")) };
     Forms.history($("sec-history"), cfg, () => refreshStatusOnly());
     drawYours();
+    document.querySelectorAll("#sec-theme [name=uiMode]").forEach((r) => r.onchange = () => setMode(r.value));
     document.querySelectorAll("#sec-theme [name=theme]").forEach((r) => r.onchange = async () => {
       cfg.settings.theme = window.ja.setTheme ? await window.ja.setTheme(r.value) : r.value;
     });

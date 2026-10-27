@@ -36,6 +36,7 @@ export const SETTINGS_DEFAULTS = {
   wentLiveAt: null,
   paused: false,
   dailyCap: 10,
+  uiMode: "simple",          // simple: only what most people need; advanced: everything
   dayStartsAtHour: 9,        // the daily limit resets at this local hour
   minutesBetweenApplies: 6,
   maxAttempts: 2,

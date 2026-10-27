@@ -517,6 +517,17 @@ If a site turns out to want a sign-in after all, the job moves to Apply
 yourself instead of stopping. For everyday jobs, expect roughly a third to a
 half of good matches to be ones the app can do by itself.
 
+### Simple or Advanced
+
+The app starts in **Simple**: the sidebar shows only the pages most people use
+(Overview, the application lists, Resume, Settings), the Overview shows what
+needs you and what's next, and extra tools stay out of the way. Switch to
+**Advanced** at the bottom of the sidebar (or Settings > Appearance) to see
+everything: statistics and activity, Skipped and All jobs, the recruiter's
+score, a version of your resume for each kind of job, job site accounts, pace
+and browser settings, and your data folder. Nothing changes in how the app
+works; only how much it shows.
+
 ## What happens next
 
 - Every two hours it searches the sources you picked for your titles and
@@ -569,8 +580,10 @@ Some questions only you can answer: years of a particular kind of experience,
 whether you're a student, a company's own privacy acknowledgement. The app
 stops on those instead of guessing, and a banner on the Overview says how many
 are **waiting for your answer**. Open one: **Answer to continue** lists each
-question, with the form's own choices when it has them. Type or pick your
-answer and press **Save my answers and try again**. The app fills those
+question. When it's a list on the form, the app shows the form's own choices to
+pick from (it reads them from the page when it stops). Type or pick your answer and press **Save my
+answers and try again**. If the app couldn't attach your resume, it says so
+instead of asking you a question. The app fills those
 questions in exactly as you wrote them and tries that application next.
 
 Short answers are kept for every application that asks the same question,

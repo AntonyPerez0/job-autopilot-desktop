@@ -414,6 +414,11 @@ details.more > .fld { margin: 0 var(--space-md) var(--space-md); }
 .steps-list li::marker { font-family: var(--font-outlier); color: var(--color-muted); }
 .steps-list .btn { margin-left: var(--space-xs); vertical-align: middle; }
 .board-list { display: grid; gap: var(--space-xs); }
+/* Simple view: the parts most people never need are hidden until they switch to Advanced. */
+body.simple .adv { display: none !important; }
+.mode-switch { display: inline-flex; box-shadow: var(--edge-stock); overflow: hidden; border-radius: var(--radius-input); }
+.mode-switch button { border: 0; background: transparent; padding: var(--space-2xs) var(--space-xs); font: inherit; font-size: var(--text-sm); color: var(--color-muted); cursor: pointer; }
+.mode-switch button.on { background: var(--color-ink); color: var(--color-paper); }
 .board { display: flex; gap: var(--space-sm); align-items: flex-start; padding: var(--space-sm) var(--space-md); border-radius: var(--radius-card); cursor: pointer; background: var(--color-cotton); box-shadow: var(--edge-stock); transition: box-shadow var(--dur-micro) var(--ease-out); }
 .board:hover { box-shadow: var(--edge-stock), var(--cast-stock); }
 .board.on { box-shadow: inset 0 0 0 1.5px var(--color-ink); }

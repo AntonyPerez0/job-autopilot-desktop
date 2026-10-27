@@ -8,6 +8,7 @@ const arr = (x) => (Array.isArray(x) ? x : []);
 export const labelKey = (s) => String(s || "").toLowerCase().replace(/\(optional\)|\*/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
 
 const KINDS = "required, no answer|needs you|still empty";
+const nkey = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 const ITEM = new RegExp(`(${KINDS}): ([\\s\\S]*?)(?=; (?:${KINDS}): |$)`, "g");
 
 // What the job is waiting on, from why it stopped and what the app saw on the form:
@@ -29,10 +30,20 @@ export function asksFor(job, details = {}) {
     const key = labelKey(label);
     if (!key || seen.has(key)) continue;
     seen.add(key);
-    const f = fields.find((x) => labelKey(x.label) === key);
-    const options = arr(f && f.options).map(String).filter((o) => o && !/^(select|choose|please select)\b/i.test(o));
-    out.push({ label, note, options: options.length > 1 ? options : [], required: true,
-      long: !options.length && (f ? f.type === "textarea" : /describe|explain|tell us|why do you|cover letter/i.test(label)) });
+    // The field it is, even when the wording differs a little ("Work authorization *" / "Work authorization").
+    const f = fields.find((x) => labelKey(x.label) === key) ||
+      (key.length >= 8 ? fields.find((x) => { const k = labelKey(x.label); return k.length >= 8 && (k.startsWith(key) || key.startsWith(k)); }) : null);
+    // A file the app couldn't attach is not a question to type an answer to.
+    if ((f && f.type === "file") || (!f && /^(resume|cv|cover letter|attach|upload)\b/i.test(label) && fields.some((x) => x.type === "file"))) {
+      out.push({ label, note: "", options: [], required: true, long: false, file: true });
+      continue;
+    }
+    // The choices read from the page when it stopped, else the ones read when the form was opened.
+    const seenOpts = arr((details.askOptions || {})[nkey(label)]);
+    const options = (seenOpts.length > 1 ? seenOpts : arr(f && f.options)).map(String).filter((o) => o && !/^(select|choose|please select)\b/i.test(o));
+    const choice = options.length > 1 || !!(f && /select|combo|listbox|radio/.test(f.type || ""));
+    out.push({ label, note, options: options.length > 1 ? options : [], required: true, choice,
+      long: !options.length && !choice && (f ? f.type === "textarea" : /describe|explain|tell us|why do you|cover letter/i.test(label)) });
   }
   return out;
 }
