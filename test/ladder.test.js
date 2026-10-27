@@ -40,14 +40,15 @@ test("ready now or one step away, from their facts only: invented reasons droppe
   const p = { schema: 1, name: "Sam Rivera", experience: [{ id: "tow", title: "Tow Truck Driver", org: "Initech Towing", dates: "Mar 2021 – Present",
     bullets: [{ id: "a", text: "Respond to dispatched breakdown and accident calls", approved: true }] }],
     skills: [{ id: "l", label: "Licenses & Certifications", items: "Class B CDL", approved: true }], education: [], projects: [], summaries: [], bases: [] };
-  reply = (sys) => {
-    if (/Which official occupation/.test(sys)) return { i: 1 }; // Light Truck Drivers
+  reply = (sys, user) => {
+    if (/what work they could go for next/.test(sys)) return { jobs: [1], ideas: [] }; // Light Truck Drivers
     if (/fact-check/.test(sys)) return { lines: [{ i: 1, unsupported: "hazmat endorsement" }] };
+    const id = (name) => (user.match(new RegExp("^(j\\d+) \\| " + name, "m")) || [])[1];
     return { jobs: [
-      { code: "53-3032.00", status: "ready", search: "Class A CDL Driver", why: "You drive a tow truck with a Class B CDL" },
-      { code: "43-5052.00", status: "ready", search: "Mail Carrier", why: "You hold a hazmat endorsement" },
-      { code: "53-3052.00", status: "step", search: "Transit Bus Driver", why: "", need: "Passenger (P) endorsement", how: "A DMV test, usually a few weeks" },
-      { code: "99-9999.00", status: "ready", search: "Astronaut", why: "x" }] };
+      { id: id("Heavy and Tractor-Trailer"), status: "ready", search: "Class A CDL Driver", why: "You drive a tow truck with a Class B CDL" },
+      { id: id("Postal Service Mail Carriers"), status: "ready", search: "Mail Carrier", why: "You hold a hazmat endorsement" },
+      { id: id("Bus Drivers, Transit"), status: "step", search: "Transit Bus Driver", why: "", need: "Passenger (P) endorsement", how: "A DMV test, usually a few weeks" },
+      { id: "j99", status: "ready", search: "Astronaut", why: "x" }] };
   };
   const r = await L.moveUp(p, { state: "CA" }, { titles: [] });
   assert.strictEqual(r.state, "CA");
@@ -58,4 +59,43 @@ test("ready now or one step away, from their facts only: invented reasons droppe
   assert.match(r.step.find((x) => x.title === "Class A CDL Driver").need, /Class A/);
   assert.ok(!JSON.stringify(r).includes("Astronaut"), "only occupations from the list");
   assert.ok(r.step.every((x) => x.gain > 0 && /California/.test(x.pay.area)));
+});
+
+test("not only the next rung: every job they had, ideas from their skills and projects, about the same pay counts, and what isn't for them is left out", async () => {
+  const p = { schema: 1, name: "Jordan Lee", experience: [
+    { id: "tw", title: "Technical Writer", org: "Globex", dates: "Jan 2022 – Present", bullets: [{ id: "a", text: "Write API reference docs and tutorials for developers", approved: true }] },
+    { id: "sup", title: "Customer Support Specialist", org: "Initech", dates: "2019 – 2021", bullets: [{ id: "b", text: "Answered customer tickets about billing and accounts", approved: true }] }],
+    projects: [{ id: "pr", title: "Trail app", bullets: [{ id: "c", text: "Built a React web app with a Node.js API and a Postgres database", approved: true }] }],
+    skills: [{ id: "s", label: "Programming", items: "JavaScript, React, Node.js, SQL", approved: true }], education: [], summaries: [], bases: [] };
+  const seen = [];
+  reply = (sys, user) => {
+    if (/what work they could go for next/.test(sys)) {
+      seen.push(user);
+      return { jobs: [0, 0], ideas: ["Web Developer", "Software Developer", "Technical Writer"] };
+    }
+    if (/fact-check/.test(sys)) return { lines: [] };
+    // which official occupation each idea is: the first listed match
+    if (/pick the official occupation that is the same work/.test(sys)) { seen.push(user); return { map: [...user.matchAll(/^TITLE/gm)].map(() => 0) }; }
+    seen.push(user);
+    const lines = [...user.matchAll(/^(j\d+) \| ([^|]+) \|/gm)];
+    return { jobs: lines.map((m) => ({ id: m[1], status: "ready", search: m[2].replace(/ \(official.*$/, "").trim(), why: "You built a React web app with a Node.js API" })) };
+  };
+  const r = await L.moveUp(p, { state: "CA" }, { titles: ["Software Engineer"], moveToward: "more coding", notForMe: [{ code: "27-3041.00", title: "Editor" }] });
+  assert.match(seen[0], /JOB 1: Customer Support Specialist/, "every job, not just the latest");
+  assert.match(seen[0], /more coding/, "what they'd like to move toward");
+  assert.match(seen[0], /Trail app/, "their projects count");
+  assert.doesNotMatch(seen[1], /Technical Writer\n/, "their own job title isn't an idea");
+  const list = seen[2];
+  assert.match(list, /^j0 \| Web Developer \(official occupation: Web Developers\)/m, "an idea from their skills, listed first, with its official occupation for the pay");
+  assert.match(list, /Software Developer \(official occupation: Software Developers\)/, "an idea is a job title of its own");
+  assert.doesNotMatch(list, /\| Technical Writers \|/, "not their own job again");
+  assert.doesNotMatch(list, /\| Editors \|/, "what they said isn't for them");
+  const codes = [...r.ready, ...r.step].map((x) => x.code);
+  assert.ok(!codes.includes("27-3041.00"));
+  assert.deepStrictEqual(r.based, ["Technical Writer", "Customer Support Specialist"]);
+  const web = r.ready.find((x) => x.code === "15-1254.00");
+  assert.ok(web && web.gain > 0, "web developer: from their skills, and it pays more");
+  assert.ok(r.ready.some((x) => x.same), "work at about the same pay is kept too, and marked");
+  assert.ok(r.ready.filter((x) => x.same).every((x) => x.gain >= -10 && x.gain < 10));
+  assert.ok(r.ready.every((x) => x.gain >= -10));
 });

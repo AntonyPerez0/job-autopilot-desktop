@@ -274,18 +274,27 @@ change all of it later under **Settings** and **Profile**.
    jobs whose posted top rate is lower are skipped (jobs that don't post pay are
    kept), and every job you're shown lists its posted pay. The app tells you if
    the number looks like a yearly salary with "an hour" picked, or the reverse.
-   **Want a better job, not the same one?** Press **Move up: better-paying jobs I
-   could go for**. The app finds the jobs that people in your line of work
-   usually move up to (from the U.S. Department of Labor's O*NET), keeps the ones
-   that pay at least 10% more where you live (typical pay from the U.S. Bureau of
-   Labor Statistics) and need at most one more step of preparation, and checks
-   each one against your resume:
+   **Want a better job, or a different one?** Press **Move up: what I could do
+   next**. The app looks at all your jobs, not just the latest, and at your
+   skills, projects and education. It suggests work they point to, even in a
+   different field, along with the jobs people in your lines of work usually go
+   on to (from the U.S. Department of Labor's O*NET). It keeps the ones that pay
+   about the same as yours or more where you live (typical pay from the U.S.
+   Bureau of Labor Statistics); the ones at about the same pay are marked, so
+   you can change direction without a pay cut. If you know what you'd like to
+   move toward ("more coding", "being outdoors"), type it in the box first.
+   Each suggestion is checked against your resume:
    - **You could apply for these now**: your resume already shows what most ads
      ask for. One click adds it to your job titles.
    - **One step away**: exactly what's missing (a Class A CDL, a passenger
      endorsement, a certification, the postal exam) and how people usually get
      it, roughly how long and what it costs. That's advice only; nothing goes
      on your resume until you have it.
+   - **Not for me** hides a suggestion, and the app leaves it out from then on
+     (for example, the kind of work you're trying to leave). **Show the ones you
+     hid again** brings them back.
+   - When a job title isn't an official group of its own (a "QA Engineer"), the
+     app says which official group its pay comes from.
 7. **Mailbox (optional).** See [Mailbox](#mailbox).
 
 Then press **Start in dry run**.

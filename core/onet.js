@@ -26,7 +26,8 @@ export function findOccupations(jobTitle, limit = 5) {
   const t = norm(jobTitle);
   if (!t) return [];
   // Exact title, then the title without its leading words ("front end cashier" -> "cashier").
-  for (const key of [raw, t]) for (const i of d.titles[key] || []) add(i, 100);
+  // The occupations' own names are plural ("Technical Writers"): a singular title matches them too.
+  for (const key of [raw, t, raw + "s", t + "s"]) for (const i of d.titles[key] || []) add(i, 100);
   const parts = t.split(" ");
   for (let k = 1; k < parts.length && !out.size; k++) for (const i of d.titles[parts.slice(k).join(" ")] || []) add(i, 80 - k);
   // Otherwise: titles sharing the most words.

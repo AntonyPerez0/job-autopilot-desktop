@@ -804,8 +804,9 @@
           <small class="hint">Jobs your experience, licenses and certificates qualify you for, the ones that tend to pay more first.</small></div>
         <div data-ailist></div></div>
       <div class="ai-sugg" data-moveup>
-        <div class="row-actions"><button type="button" class="btn sm" data-mugo>${icon("bolt")}Move up: better-paying jobs I could go for</button>
-          <small class="hint">Jobs that usually pay more than yours and grow from your experience: ones you could apply for now, and ones that are one step away.</small></div>
+        <div class="row-actions"><button type="button" class="btn sm" data-mugo>${icon("bolt")}Move up: what I could do next</button>
+          <small class="hint">Work that grows from everything you've done and can do: jobs that pay more, and other directions at about the same pay. Ones you could apply for now, and ones that are one step away.</small></div>
+        <div class="fld" style="margin-top:8px"><span>Work you'd like to move toward (optional)</span><input class="inp" data-mutoward maxlength="300" value="${esc(p.moveToward || "")}" placeholder="e.g. more coding, working with data, being outdoors, helping people"></div>
         <div data-mulist></div></div>
       <div class="form-row">${fld("Lowest pay you'd take (optional)", `<div class="row-actions" style="flex-wrap:nowrap"><input class="inp" name="minPay" type="number" min="0" step="0.5" value="${esc(p.minPay || "")}" placeholder="e.g. 25" style="max-width:9rem">
           ${sel("minPayPer", p.minPayPer || "hour", [["hour", "an hour"], ["year", "a year"]])}</div>`, "Jobs that post a lower top rate are skipped. Jobs that don't post pay are kept.")}</div>
@@ -862,28 +863,55 @@
     };
     // Someone with a resume but no titles yet sees ideas from their own resume first, not a generic list.
     if (!titles.get().length && cfg.profile && (cfg.profile.experience || []).some((e) => (e.bullets || []).some((b) => b.approved))) el.querySelector("[data-aigo]").click();
-    // Move up: better-paying work, from the official lists of which jobs lead to which and what they pay.
+    // Move up: what they could do next, from the official lists of which jobs lead to which and what they pay.
     el.querySelector("[data-mugo]").onclick = async (e) => {
       const btn = e.currentTarget, host = el.querySelector("[data-mulist]");
       btn.disabled = true;
-      msg(host, "info", "Looking at where people with your experience move up to, and what those jobs pay where you live. This takes a minute or two...");
-      const r = await api("/api/prefs/moveup", {});
+      msg(host, "info", "Looking at what people with your jobs, skills and projects go on to do, and what that work pays where you live. This takes a minute or two...");
+      const r = await api("/api/prefs/moveup", { toward: el.querySelector("[data-mutoward]").value });
       btn.disabled = false;
       if (r.error) return msg(host, "err", r.error);
+      drawMoveUp(r);
+    };
+    // Each suggestion can be hidden for good ("Not for me"); the hidden ones can be shown again.
+    const drawMoveUp = (r) => {
+      const host = el.querySelector("[data-mulist]");
+      const hidden = (cfg.prefs && cfg.prefs.notForMe) || [];
       const money = (n) => "$" + Number(n).toFixed(2);
       const yearly = (h) => "$" + (Math.round((h * 2080) / 1000) * 1000).toLocaleString();
-      const payLine = (x) => `<span class="pill ok">${money(x.pay.hourly)}/hr typical${x.gain ? `, about ${x.gain}% more` : ""}</span>`;
+      const nt = (t) => String(t || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+      // The pay is for an official group of jobs; when its name differs from the title, it's named.
+      const group = (x) => x.occupation && !nt(x.occupation).includes(nt(x.title).replace(/s$/, "")) ? `<div class="muted"><small>Pay is for the official group "${esc(x.occupation)}"</small></div>` : "";
+      const payLine = (x) => (x.gain !== null && x.gain < 10
+        ? `<span class="pill">${money(x.pay.hourly)}/hr typical, about the same pay</span>`
+        : `<span class="pill ok">${money(x.pay.hourly)}/hr typical${x.gain ? `, about ${x.gain}% more` : ""}</span>`) + group(x);
       const now = r.now ? `${r.now.from === "your pay" ? "You make" : `Typical pay for ${esc(r.from.title.toLowerCase())}${r.from.pay ? ` in ${esc(r.from.pay.area)}` : ""}:`} ${money(r.now.hourly)}/hr (about ${yearly(r.now.hourly)} a year).` : "";
-      if (!r.ready.length && !r.step.length) return msg(host, "info", `${now} The app didn't find other kinds of work that pay more and are within one step of your experience. Moving up in your own line of work may be the better route: tick Senior or Manager or team lead under What level, when your experience fits.`);
-      host.innerHTML = `<p class="hint" style="margin:6px 0">${now} Moving up in your own line of work counts too: tick <b>Senior</b> or <b>Manager or team lead</b> under What level, when your experience fits.</p>
-        ${r.ready.length ? `<div class="section-t" style="margin-top:4px">You could apply for these now</div><div class="sugg-list">${r.ready.map((x, i) => `<div class="sugg-item"><div><b>${esc(x.title)}</b> ${payLine(x)}
-            <div class="muted">${esc(x.why)}</div></div><button type="button" class="btn sm" data-mu-add="${i}">${icon("plus")}Add</button></div>`).join("")}</div>` : ""}
-        ${r.step.length ? `<div class="section-t">One step away</div><div class="sugg-list">${r.step.map((x) => `<div class="sugg-item"><div><b>${esc(x.title)}</b> ${payLine(x)}
-            <div><b>What you'd need:</b> ${esc(x.need)}</div>${x.how ? `<div class="muted">${esc(x.how)}</div>` : ""}${x.why ? `<div class="muted">${esc(x.why)}</div>` : ""}</div></div>`).join("")}</div>` : ""}
+      const based = (r.based || []).length ? ` Based on all your jobs (${esc(r.based.join(", "))}), your skills and your projects.` : "";
+      const showHidden = hidden.length ? ` <a href="#" data-mu-unhide>Show the ${hidden.length} you hid again</a>` : "";
+      // A job title hidden is gone; related work (not an idea from their skills) also goes by its occupation.
+      const goneTitle = new Set(hidden.map((x) => nt(x.title))), goneCode = new Set(hidden.map((x) => x.code));
+      const keep = (x) => !goneTitle.has(nt(x.title)) && (x.fromSkills || !goneCode.has(x.code));
+      const ready = r.ready.filter(keep), step = r.step.filter(keep);
+      const notMe = (x) => `<button type="button" class="btn ghost sm" data-mu-hide="${esc(x.code)}" data-mu-title="${esc(x.title)}">Not for me</button>`;
+      if (!ready.length && !step.length) host.innerHTML = `<div class="msg info">${now}${based} The app didn't find other kinds of work within one step of what you've done that pay about the same or more. Try telling it what you'd like to move toward above, and press the button again.${showHidden}</div>`;
+      else host.innerHTML = `<p class="hint" style="margin:6px 0">${now}${based} Moving up in your own line of work counts too: tick <b>Senior</b> or <b>Manager or team lead</b> under What level, when your experience fits.</p>
+        ${ready.length ? `<div class="section-t" style="margin-top:4px">You could apply for these now</div><div class="sugg-list">${ready.map((x) => `<div class="sugg-item"><div><b>${esc(x.title)}</b> ${payLine(x)}
+            <div class="muted">${esc(x.why)}</div></div><div class="row-actions" style="flex-wrap:nowrap">${notMe(x)}<button type="button" class="btn sm" data-mu-add="${esc(x.title)}">${icon("plus")}Add</button></div></div>`).join("")}</div>` : ""}
+        ${step.length ? `<div class="section-t">One step away</div><div class="sugg-list">${step.map((x) => `<div class="sugg-item"><div><b>${esc(x.title)}</b> ${payLine(x)}
+            <div><b>What you'd need:</b> ${esc(x.need)}</div>${x.how ? `<div class="muted">${esc(x.how)}</div>` : ""}${x.why ? `<div class="muted">${esc(x.why)}</div>` : ""}</div>${notMe(x)}</div>`).join("")}</div>` : ""}
+        ${showHidden ? `<small class="hint">${showHidden.trim()}</small>` : ""}
         <small class="hint">Typical pay is the middle (median) hourly pay for this kind of work in ${esc((r.ready[0] || r.step[0]).pay.area)}, from the U.S. Bureau of Labor Statistics (May 2025); actual offers vary. Which jobs lead to which comes from the U.S. Department of Labor's O*NET. How long a step takes and what it costs are the AI's general estimates: check with the school, the DMV or the employer. "One step away" is advice: nothing goes on your resume until you have it and add it yourself.</small>`;
+      host.querySelectorAll("[data-mu-hide]").forEach((b) => b.onclick = async () => {
+        const res = await api("/api/prefs/notforme", { code: b.dataset.muHide, title: b.dataset.muTitle });
+        if (res.error) return;
+        cfg.prefs = { ...(cfg.prefs || {}), notForMe: res.notForMe };
+        drawMoveUp(r);
+      });
+      const un = host.querySelector("[data-mu-unhide]");
+      if (un) un.onclick = async (e) => { e.preventDefault(); const res = await api("/api/prefs/notforme", { clear: true }); cfg.prefs = { ...(cfg.prefs || {}), notForMe: res.notForMe || [] }; drawMoveUp(r); };
       host.querySelectorAll("[data-mu-add]").forEach((b) => b.onclick = () => {
         const input = el.querySelector("[data-titles] input");
-        input.value = r.ready[Number(b.dataset.muAdd)].title;
+        input.value = b.dataset.muAdd;
         input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
         b.disabled = true; b.innerHTML = `${icon("check")}Added`;
       });

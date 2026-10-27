@@ -237,9 +237,18 @@ const ROUTES = {
     try { return { titles: await suggestTitles() }; } catch (e) { return bad(e.message); }
   },
   // Better-paying jobs they could move up to, with typical pay where they live.
-  "POST /api/prefs/moveup": async () => {
+  "POST /api/prefs/moveup": async (b) => {
     if (!aiSettings().apiKey) return bad("Connect an AI first (Settings > AI).");
+    if (typeof b.toward === "string") savePrefs({ moveToward: b.toward.trim().slice(0, 300) });
     try { return await moveUp(getProfile(), getAnswers(), getPrefs()); } catch (e) { return bad(e.message); }
+  },
+  // Kinds of work the person said aren't for them: Move up leaves them out from then on. {code, title} hides one; {clear: true} shows them all again.
+  "POST /api/prefs/notforme": (b) => {
+    const cur = (getPrefs().notForMe || []).filter((x) => x && x.code);
+    const code = String(b.code || "").trim();
+    const next = b.clear ? [] : code && !cur.some((x) => x.code === code) ? [...cur, { code, title: String(b.title || code).slice(0, 80) }] : cur;
+    savePrefs({ notForMe: next });
+    return { notForMe: next };
   },
   // Answers the user gave to questions the app stopped on.
   "GET /api/your-answers": () => (getAnswers().yourAnswers || []),

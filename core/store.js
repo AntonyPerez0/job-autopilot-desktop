@@ -52,6 +52,8 @@ export const SETTINGS_DEFAULTS = {
 
 export const PREFS_DEFAULTS = {
   titles: [],                // target job titles, searched one by one
+  moveToward: "",            // Move up: work they'd like to move toward, in their words (a wish, not a fact)
+  notForMe: [],              // Move up: [{code, title}] kinds of work they said aren't for them
   keywords: [],              // what the user wants the work to involve; given to the screening step
   titleExclude: [],          // extra words that rule a title out
   cities: [],                // [{ name, admin1, country, lat, lon }]
