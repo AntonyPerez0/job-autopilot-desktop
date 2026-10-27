@@ -57,6 +57,10 @@ Return JSON only: {"titles": [{"title": "...", "why": "...", "pay": "more|simila
     seen.add(k);
     out.push({ title, why: String(x.why || "").trim().slice(0, 200), pay: PAY[x.pay] !== undefined ? x.pay : "unsure", payText: PAY[x.pay] || "" });
   }
+  // The job they do now (or did last) is usually the most common search there is: always offered.
+  const cur = arr(p.experience)[0];
+  const curTitle = cur ? String(cur.title || "").replace(/\s*\(.*?\)\s*/g, " ").replace(/\s+/g, " ").trim() : "";
+  if (curTitle && !seen.has(norm(curTitle)) && !have.has(norm(curTitle))) out.push({ title: curTitle, why: /present|now|current/i.test(cur.dates || "") ? "It's the job you do now, so ads for it match you most closely." : "It's the job you did most recently, so ads for it match you closely.", pay: "similar", payText: "" });
   // The ones that tend to pay more first, as the person asked.
   const rank = { more: 0, similar: 1, unsure: 2, less: 3 };
   return out.sort((a, b) => rank[a.pay] - rank[b.pay]).slice(0, 10);

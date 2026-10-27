@@ -577,8 +577,8 @@ function banners() {
       ${all && (sr.sources || []).length < 2 ? " It's the only place the app looks right now: turn on another in Settings > Jobs to look for, or press Search now to try again." : " The app tries again on the next search."}</div>
       <div class="right"><button class="btn sm" onclick="searchNow()">Search now</button></div></div>`;
   }
-  else if (sr && sr.at && sr.done && sr.found === 0 && view === "overview" && !Object.values(st.counts || {}).some(Boolean)) {
-    h += `<div class="banner amber">${icon("search")}<div><b>The last search found no jobs</b>Job sites had nothing new for these titles near you. Shorter, more common job titles, a wider distance, or older postings (Settings > Jobs to look for > More options) find more.</div>
+  else if (sr && sr.at && sr.done && !sr.queued && !sr.toYou && !(sr.skipped && sr.skipped.total) && view === "overview" && !(st.counts || {}).queued && !(st.counts || {}).working && !(st.counts || {}).filled && !st.state.job && st.state.now !== "searching") {
+    h += `<div class="banner amber">${icon("search")}<div><b>The last search found nothing to apply to${sr.nextAt ? `. Next search around ${new Date(sr.nextAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""}</b>Job sites had nothing new for these titles near you. Shorter, more common job titles, a wider distance, or older postings (Settings > Jobs to look for > More options) find more.</div>
       <div class="right"><button class="btn sm" onclick="go('settings')">Change what to look for</button></div></div>`;
   }
   // Searched, nothing to apply to: when the next search is, and why the jobs it found were left out.
@@ -593,7 +593,7 @@ function banners() {
     <div class="right"><button class="btn sm" onclick="go('manual')">Show them</button></div></div>`;
   if (s.dryRun && !s.reviewedDryRun) {
     h += st.firstFilled
-      ? `<div class="banner violet">${icon("eye")}<div><b>Your first application is filled in, not sent</b>Check every answer, the resume and the screenshot for ${esc(st.firstFilled.company)}. The autopilot waits until you do.</div>
+      ? `<div class="banner violet">${icon("eye")}<div><b>Your first application is filled in, not sent</b>Check every answer, the resume and the screenshot for ${esc(String(st.firstFilled.company).replace(/\.$/, ""))}. The autopilot waits until you do.</div>
           <div class="right"><button class="btn sm primary" onclick="openJob('${esc(st.firstFilled.slug)}')">Review it</button></div></div>`
       : `<div class="banner violet">${icon("eye")}<div><b>Dry run</b>The first good match will be filled in but not submitted, so you can check it before anything goes out.</div></div>`;
   } else if (s.dryRun) {
