@@ -21,8 +21,12 @@ jobs:
         run: npm test
       - name: First-run setup, end to end (from source)
         run: xvfb-run -a npm run e2e
+      - name: Accessibility (WCAG 2.2 AA with axe-core, colour contrast, keyboard)
+        run: xvfb-run -a npm run a11y
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: e2e-screenshots-linux
-          path: test/out/e2e/*
+          path: |
+            test/out/e2e/*
+            test/out/a11y/*

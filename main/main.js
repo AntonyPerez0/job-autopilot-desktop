@@ -27,10 +27,12 @@ function page(name) { return path.join(UI, name); }
 // Light, dark, or whatever the computer uses ("system"). Pages follow it through prefers-color-scheme.
 const THEMES = ["system", "light", "dark"];
 const applyTheme = (t) => { nativeTheme.themeSource = THEMES.includes(t) ? t : "system"; };
+const TEXT_SIZES = [1, 1.15, 1.3];
+const textSize = (f) => (TEXT_SIZES.includes(Number(f)) ? Number(f) : 1);
 // The window's own title bar is replaced by the app's: the page draws the background, and on Windows
 // the minimize/maximize/close buttons sit on top in the app's paper and ink colours.
 const MAC = process.platform === "darwin", WIN = process.platform === "win32";
-const overlay = () => (nativeTheme.shouldUseDarkColors ? { color: "#161210", symbolColor: "#ede7e2", height: 36 } : { color: "#f8f5f2", symbolColor: "#251d19", height: 36 });
+const overlay = () => (nativeTheme.shouldUseDarkColors ? { color: "#0d0f15", symbolColor: "#eceff1", height: 36 } : { color: "#f7f9fa", symbolColor: "#13161d", height: 36 });
 nativeTheme.on("updated", () => { if (WIN) for (const w of BrowserWindow.getAllWindows()) try { w.setTitleBarOverlay(overlay()); } catch { /* a window without an overlay */ } });
 
 function createWindow() {
@@ -41,10 +43,22 @@ function createWindow() {
     autoHideMenuBar: true,
     // (Linux keeps its own title bar: the overlay crashes some Linux window systems.)
     ...(MAC ? { titleBarStyle: "hiddenInset", titleBarOverlay: true } : WIN ? { titleBarStyle: "hidden", titleBarOverlay: overlay() } : {}),
-    backgroundColor: nativeTheme.shouldUseDarkColors ? "#161210" : "#f8f5f2",
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#0d0f15" : "#f7f9fa",
     webPreferences: { preload: path.join(HERE, "preload.cjs"), contextIsolation: true, sandbox: true, nodeIntegration: false, plugins: true },
   });
   win.once("ready-to-show", () => win.show());
+  // The person's text size (Settings > Appearance) zooms every page the window loads.
+  win.webContents.on("did-finish-load", () => { if (win) win.webContents.setZoomFactor(textSize(core.store.getSettings().textSize)); });
+  // Ctrl (Cmd on a Mac) with + or - zooms, and 0 goes back to the chosen text size, whatever the keyboard layout's menu does.
+  win.webContents.on("before-input-event", (e, input) => {
+    if (input.type !== "keyDown" || !(input.control || input.meta) || input.alt) return;
+    const wc = win.webContents, z = wc.getZoomFactor();
+    if (input.key === "=" || input.key === "+") wc.setZoomFactor(Math.min(2, Math.round((z + 0.1) * 10) / 10));
+    else if (input.key === "-") wc.setZoomFactor(Math.max(0.8, Math.round((z - 0.1) * 10) / 10));
+    else if (input.key === "0") wc.setZoomFactor(textSize(core.store.getSettings().textSize));
+    else return;
+    e.preventDefault();
+  });
   const s = core.store.getSettings();
   win.loadFile(page(s.onboarded ? "index.html" : "onboarding.html"));
   // Links to postings and help pages open in the user's own browser; the app window never leaves its own pages.
@@ -121,6 +135,12 @@ app.whenReady().then(async () => {
   ipcMain.handle("open-external", (_e, url) => { if (/^https:\/\//.test(String(url))) shell.openExternal(String(url)); });
   ipcMain.handle("show-data-folder", () => shell.openPath(DATA));
   ipcMain.handle("set-theme", (_e, t) => { applyTheme(t); store.saveSettings({ theme: nativeTheme.themeSource }); return nativeTheme.themeSource; });
+  ipcMain.handle("set-text-size", (_e, f) => {
+    const z = textSize(f);
+    store.saveSettings({ textSize: z });
+    for (const w of BrowserWindow.getAllWindows()) w.webContents.setZoomFactor(z);
+    return z;
+  });
   ipcMain.handle("go", (_e, name) => {
     if (!win || !["index.html", "onboarding.html"].includes(name)) return;
     if (name === "index.html" && store.getSettings().onboarded) worker.run();

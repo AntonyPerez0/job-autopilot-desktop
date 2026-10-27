@@ -1,6 +1,6 @@
 /* Hallmark · shape: app screen · genre: modern-minimal · theme: Coral (deal 1/3, seed desktop-tool-finds-jobs-75ba·6d91cba7·2026-10-25·r0) · redesign: full
  * nav: kept (sidebar, 11 destinations; the autopilot's controls at its foot) · signature: the application in progress, a sheet of cotton stock with its steps ruled off · states: loading, empty, error, full
- * axes: light/grotesk-sans/warm · posture: full palette (signal roles: work teal for running and queued, done green for applied, attention ochre for what needs you, error red; coral stays the brand mark: the current page and focus) · modes: light+dark · contrast: pass · v2.0.0 */
+ * axes: light/grotesk-sans/cool (slate neutrals, at the owner's request: no browns) · posture: full palette (signal roles: work teal for running and queued, done green for applied, attention ochre for what needs you, error red; coral stays the brand mark: the current page and focus) · modes: light+dark · contrast: pass · v2.0.0 */
 /* Hallmark · pre-emit critique: P4 H3 E4 S4 R4 V4 · weakest: H (an app has no hero), the run in progress leads the Overview instead, as the one stock object on the page */
 /* Hallmark · waive 37 · the app's CSP allows no remote fonts and General Sans may not be bundled · the system face stands in; Geist Mono (OFL, bundled in ui/fonts) carries figures */
 /* Hallmark · waive 39b · the 14px buttons are the remove marks inside a tag, the tag is the control · a full-size button would break the tag row */
@@ -16,12 +16,12 @@
   --surface: var(--color-cotton); --surface-2: var(--color-paper-2); --border: var(--color-rule); --border-strong: var(--color-rule-2);
   --brand: var(--color-board); --brand-text: var(--color-ink);
   --side-w: 15.5rem; --bar-h: 36px;
-  --color-field-edge: oklch(60% 0.012 50);
+  --color-field-edge: oklch(57% 0.014 258);
 }
 
 body { font-size: var(--text-md); line-height: 1.5; }
 b, strong { font-weight: 600; }
-@media (prefers-color-scheme: dark) { :root { --color-field-edge: oklch(54% 0.012 55); } }
+@media (prefers-color-scheme: dark) { :root { --color-field-edge: oklch(55% 0.016 258); } }
 .hint a, small a { white-space: nowrap; }
 button, input, select, textarea { color: inherit; }
 a { text-decoration: none; }
@@ -36,6 +36,15 @@ svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none;
 .meta > span + span { color: var(--color-muted); }
 
 /* ---------- the shell ---------- */
+/* For the keyboard: the first Tab offers a jump past the sidebar to the page itself. */
+.skip { position: fixed; top: calc(var(--tb-h) + var(--space-xs)); left: var(--space-xs); z-index: var(--z-tooltip); padding: var(--space-xs) var(--space-md); border-radius: var(--radius-input); background: var(--color-board); color: var(--color-board-type); font-weight: 600; transform: translateY(-200%); }
+.skip:focus { transform: none; }
+.main:focus { outline: none; }
+#dr-title:focus { outline: none; }
+/* A job's title: plain text to the eye, a link to the keyboard. */
+.job-link { color: inherit; }
+.job-link:hover { text-decoration: underline; text-underline-offset: 0.18em; }
+a.kpi { color: inherit; display: block; }
 /* The app's own title bar: an empty strip you can drag the window by. The window buttons sit over its
    right end on Windows (titlebar-area-* is set by Electron), the traffic lights over its left end on a Mac. */
 :root { --tb-h: env(titlebar-area-height, 0px); }
@@ -69,7 +78,12 @@ body { padding-top: var(--tb-h); }
 .side-foot #model { overflow-wrap: anywhere; }
 .side-foot .stepper span { font-family: var(--font-outlier); }
 
-.main { min-width: 0; width: 100%; max-width: 76rem; padding: var(--space-lg) var(--space-xl) var(--space-2xl); }
+/* Text grows a little with the window (16px at a laptop size, about 19px on a big screen), so a full screen
+   isn't small print in a corner; the person's own zoom and text size still scale it further. */
+html { font-size: clamp(100%, 0.8rem + 0.25vw, 118.75%); }
+/* Lists and the Overview use the whole width; forms keep a readable width, centred. */
+.main { min-width: 0; width: 100%; max-width: 132rem; padding: var(--space-lg) clamp(var(--space-lg), 3vw, var(--space-2xl)) var(--space-2xl); }
+.main[data-view="settings"], .main[data-view="profile"] { max-width: 76rem; margin-inline: auto; }
 .top { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-sm) var(--space-lg); padding-bottom: var(--space-md); margin-bottom: var(--space-lg); border-bottom: 1px solid var(--color-rule); }
 .top > div:first-child { flex: 1 1 28rem; min-width: 0; }
 .top h1 { font-size: var(--text-2xl); line-height: 1.15; max-width: none; }
@@ -238,10 +252,10 @@ tbody tr:hover { background: var(--color-paper-2); }
 .callout.red { background: var(--color-error-bg); } .callout.red b { color: var(--color-error); }
 .callout.amber { background: var(--color-attn-bg); } .callout.amber b { color: var(--color-attn); }
 .dr-actions { display: flex; gap: var(--space-xs); flex-wrap: wrap; margin-top: var(--space-md); }
-.tabs { display: flex; gap: var(--space-lg); border-bottom: 1px solid var(--color-rule); margin-top: var(--space-lg); padding: 0 var(--space-lg); overflow-x: auto; }
-.tabs div { padding: var(--space-xs) 0; color: var(--color-muted); font-size: var(--text-sm); font-weight: 500; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }
-.tabs div:hover { color: var(--color-ink); }
-.tabs div.on { color: var(--color-ink); border-color: var(--color-ink); }
+.tabs { display: flex; gap: var(--space-lg); box-shadow: inset 0 -1px 0 var(--color-rule); margin-top: var(--space-lg); padding: 0 var(--space-lg); overflow-x: auto; overflow-y: hidden; }
+.tabs button { padding: var(--space-xs) 0; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--color-muted); font-size: var(--text-sm); font-weight: 500; cursor: pointer; white-space: nowrap; }
+.tabs button:hover { color: var(--color-ink); }
+.tabs button.on { color: var(--color-ink); border-color: var(--color-ink); }
 .dr-body { padding: var(--space-lg) var(--space-lg) var(--space-xl); overflow: auto; flex: 1; }
 .qa { display: grid; border-top: 1px solid var(--color-rule-2); }
 .qa-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: var(--space-md); padding: var(--space-sm) 0; border-bottom: 1px solid var(--color-rule); font-size: var(--text-sm); }
@@ -391,9 +405,11 @@ tbody tr:hover { background: var(--color-paper-2); }
 /* Notices above a page: a tinted well, the icon carrying the tone. */
 .banner { display: flex; gap: var(--space-md); align-items: center; padding: var(--space-sm) var(--space-md); border-radius: var(--radius-card); margin-bottom: var(--space-sm); background: var(--color-paper-2); color: var(--color-ink-2); font-size: var(--text-sm); }
 .banner > svg.i { color: var(--color-ink); }
-.banner.amber, .banner.violet { background: var(--color-attn-bg); }
+/* Each kind of banner has its colour on its left edge and its icon, so it reads the same in light and dark. */
+.banner.amber, .banner.violet { background: var(--color-attn-bg); box-shadow: inset 4px 0 0 var(--color-attn-strong); }
 .banner.amber > svg.i, .banner.violet > svg.i { color: var(--color-attn); }
-.banner.blue { background: var(--color-work-bg); } .banner.blue > svg.i { color: var(--color-work); }
+.banner.blue { background: var(--color-work-bg); box-shadow: inset 4px 0 0 var(--color-work); } .banner.blue > svg.i { color: var(--color-work); }
+.banner.red { background: var(--color-error-bg); box-shadow: inset 4px 0 0 var(--color-error); } .banner.red > svg.i { color: var(--color-error); }
 .banner b { display: block; color: var(--color-ink); font-weight: 600; font-size: var(--text-md); }
 .banner .right { margin-left: auto; display: flex; gap: var(--space-xs); flex: none; }
 #banner-host:not(:empty) { margin-bottom: var(--space-lg); }
@@ -520,7 +536,6 @@ details.card-fold[open] > summary h2::before, details.card-fold[open] > summary 
 .sugg-list { display: grid; gap: var(--space-xs); }
 .sugg-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-sm); align-items: center; padding: var(--space-xs) var(--space-sm); border-radius: var(--radius-card); background: var(--color-paper-2); }
 .sugg-item .muted { margin-top: var(--space-3xs); }
-.banner.red { background: var(--color-error-bg); } .banner.red > svg.i { color: var(--color-error); }
 
 /* The recruiter's read: a score and what to fix. */
 .review { display: flex; gap: var(--space-md); align-items: flex-start; padding: var(--space-sm) var(--space-md); border-radius: var(--radius-card); background: var(--color-paper-2); margin-bottom: var(--space-xs); }

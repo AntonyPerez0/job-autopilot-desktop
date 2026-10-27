@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body class="simple">
+<a class="skip" href="#main" onclick="event.preventDefault();$('main').focus()">Skip to the page</a>
 <script src="icons.js"></script>
 <script>document.documentElement.dataset.platform = (window.ja && window.ja.platform) || "";</script>
 <div class="app-top" aria-hidden="true"></div>
@@ -17,11 +18,11 @@
 <div class="app">
   <aside class="side">
     <div class="brand"><div class="logo"><svg class="i" aria-hidden="true"><use href="#i-bolt"/></svg></div>Job Autopilot</div>
-    <div id="nav"></div>
+    <nav id="nav" aria-label="Pages"></nav>
     <div class="side-foot">
       <div class="row"><span style="display:flex;align-items:center;gap:8px"><span id="mode-dot" class="dot"></span><b id="mode-txt">…</b></span>
         <button class="btn sm" id="pause"></button></div>
-      <div class="row"><span>Go live <span class="muted">(submit for real)</span></span><button class="switch" id="live" aria-label="Go live"></button></div>
+      <div class="row"><span>Go live <span class="muted">(submit for real)</span></span><button class="switch" id="live" role="switch" aria-checked="false" aria-label="Go live: submit applications for real"></button></div>
       <div class="row adv"><span>Day starts</span><span class="muted" id="daystart"></span></div>
       <div class="row adv"><span>Daily limit</span><div class="stepper"><button id="cap-dn" aria-label="Lower">&minus;</button><span id="cap">0</span><button id="cap-up" aria-label="Raise">+</button></div></div>
       <div class="muted adv" id="model"></div>
@@ -30,13 +31,13 @@
     </div>
   </aside>
   <div>
-    <div class="mobile-bar" id="mnav"></div>
-    <main class="main" id="main"></main>
+    <nav class="mobile-bar" id="mnav" aria-label="Pages"></nav>
+    <main class="main" id="main" tabindex="-1"></main>
   </div>
 </div>
 <div class="scrim" id="scrim"></div>
-<aside class="drawer" id="drawer" aria-hidden="true"></aside>
-<div class="toast" id="toast"></div>
+<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="dr-title" aria-hidden="true"></aside>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="forms.js"></script>
 <script>
@@ -137,7 +138,7 @@ function renderNav() {
   const total = Object.values(c).reduce((a, b) => a + b, 0);
   const count = (v) => v.id === "all" ? total : v.status ? (c[v.status] || 0) + (v.id === "queued" ? (c.working || 0) : 0) : null;
   const html = (mobile) => VIEWS.map((v, i) => `${!mobile && v.id === "applied" ? '<div class="nav-label">Applications</div>' : ""}${!mobile && v.id === "all" ? '<div class="nav-label adv">More</div>' : ""}
-    <div class="nav ${view === v.id ? "on" : ""} ${v.adv ? "adv" : ""}" onclick="go('${v.id}')">${icon(v.icon)}<span>${v.label}</span>${count(v) !== null && !mobile ? `<span class="count ${count(v) > 0 ? NAV_TONE[v.id] || "" : ""}">${count(v)}</span>` : ""}</div>`).join("");
+    <a class="nav ${view === v.id ? "on" : ""} ${v.adv ? "adv" : ""}" href="#${v.id}" ${view === v.id ? 'aria-current="page"' : ""} onclick="go('${v.id}');return false">${icon(v.icon)}<span>${v.label}</span>${count(v) !== null && !mobile ? `<span class="count ${count(v) > 0 ? NAV_TONE[v.id] || "" : ""}">${count(v)}</span>` : ""}</a>`).join("");
   $("nav").innerHTML = html(false);
   $("mnav").innerHTML = html(true);
 }
@@ -150,6 +151,7 @@ function renderControls() {
   $("pause").innerHTML = s.paused ? `${icon("play")}Resume` : `${icon("pause")}Pause`;
   $("pause").classList.toggle("primary", s.paused);
   $("live").classList.toggle("on", !s.dryRun);
+  $("live").setAttribute("aria-checked", String(!s.dryRun));
   $("cap").textContent = s.dailyCap;
   $("daystart").textContent = new Date(2000, 0, 1, s.dayStartsAtHour || 0).toLocaleTimeString([], { hour: "numeric" });
   $("model").textContent = "Model: " + st.model;
@@ -290,8 +292,8 @@ async function renderOverview() {
   $("main").innerHTML = header() + `
   <div class="grid-kpi adv">
     ${kpi("applied", "Applications sent", done, `${ago(applied[0] && applied[0].applied_at) ? "Last " + ago(applied[0].applied_at) : "None yet"}`)}
-    <div class="kpi done" onclick="go('applied')"><div class="lbl">Today</div>
-      <div class="val">${st.appliedToday}<small>/ ${s.dailyCap}</small></div><div class="bar"><i style="width:${Math.min(100, (100 * st.appliedToday) / Math.max(1, s.dailyCap))}%"></i></div></div>
+    <a class="kpi done" href="#applied" onclick="go('applied');return false"><div class="lbl">Today</div>
+      <div class="val">${st.appliedToday}<small>/ ${s.dailyCap}</small></div><div class="bar"><i style="width:${Math.min(100, (100 * st.appliedToday) / Math.max(1, s.dailyCap))}%"></i></div></a>
     ${kpi("queued", "In queue", (c.queued || 0) + (c.working || 0), "Screened as a fit")}
     ${kpi("failed", "Needs attention", stopped, Object.entries(cats).sort((a, b) => b[1] - a[1]).slice(0, 1).map(([k, n]) => `${n}: ${k}`)[0] || "All clear")}
     ${kpi("all", "Success rate", rate + "%", `${done} of ${done + stopped} attempts`)}
@@ -315,8 +317,10 @@ async function renderOverview() {
   </div>`;
 }
 const KPI_TONE = { applied: "done", queued: "work", failed: "attn" };
-const kpi = (to, label, val, foot) => `<div class="kpi ${KPI_TONE[to] || ""}" onclick="go('${to}')"><div class="lbl">${label}</div><div class="val">${val}</div><div class="foot">${esc(foot)}</div></div>`;
-const item = (j) => `<div class="list-item" onclick="openJob('${esc(j.slug)}')">${avatar(j.company)}<div class="li-main"><div class="t">${esc(cleanTitle(j.title))}</div><div class="s">${meta(esc(j.company), esc(j.location))}</div></div>
+const kpi = (to, label, val, foot) => `<a class="kpi ${KPI_TONE[to] || ""}" href="#${to}" onclick="go('${to}');return false"><div class="lbl">${label}</div><div class="val">${val}</div><div class="foot">${esc(foot)}</div></a>`;
+// A job's title is a link, so the keyboard reaches it; the whole row still opens it with a click.
+const jobLink = (j) => `<a href="#" class="job-link" data-job="${esc(j.slug)}" onclick="event.stopPropagation();openJob('${esc(j.slug)}');return false">${esc(cleanTitle(j.title))}</a>`;
+const item = (j) => `<div class="list-item" onclick="openJob('${esc(j.slug)}')">${avatar(j.company)}<div class="li-main"><div class="t">${jobLink(j)}</div><div class="s">${meta(esc(j.company), esc(j.location))}</div></div>
   ${badge(category(j))}<span class="time hide-md">${ago(j.applied_at || j.updated_at)}</span></div>`;
 const empty = (ic, t, s) => `<div class="empty"><div class="ico">${icon(ic)}</div><h3>${t}</h3><div>${s}</div></div>`;
 const important = (e) => !/^(queued|skipped): /.test(e.message) || /^queued/.test(e.message);
@@ -347,7 +351,7 @@ function renderList() {
   const whenLabel = view === "applied" ? "Applied" : "Updated";
   host.innerHTML = `<table><thead><tr><th>Role</th><th class="hide-md">Location</th><th class="hide-md">Board</th><th>Status</th><th class="hide-md">${whenLabel}</th></tr></thead><tbody>
     ${rows.map((j) => `<tr onclick="openJob('${esc(j.slug)}')">
-      <td><div class="co-cell">${avatar(j.company)}<div><div class="t">${esc(cleanTitle(j.title))}</div><div class="s">${meta(esc(j.company), j.salary ? esc(j.salary.replace(/^USD /, "$").replace(/\/year$/, "")) : "")}</div></div></div></td>
+      <td><div class="co-cell">${avatar(j.company)}<div><div class="t">${jobLink(j)}</div><div class="s">${meta(esc(j.company), j.salary ? esc(j.salary.replace(/^USD /, "$").replace(/\/year$/, "")) : "")}</div></div></div></td>
       <td class="hide-md muted">${esc(j.location)}${j.work_mode ? `<div class="reason">${esc(j.work_mode)}</div>` : ""}</td>
       <td class="hide-md"><span class="tag">${esc(SOURCE[j.source] || j.source)}</span></td>
       <td>${badge(category(j))}${j.status !== "applied" ? `<div class="reason">${esc(humanReason(j))}</div>` : ""}</td>
@@ -367,10 +371,34 @@ async function openJob(slug) {
   open = await api("/api/job/" + encodeURIComponent(slug));
   if (!open || open.error) return;
   if (!["answers", "resume", "shots", "posting"].includes(dtab) || (open.asks || []).length) dtab = "answers";
+  const wasOpen = $("drawer").classList.contains("open");
+  if (!wasOpen) opener = document.activeElement;
   renderDrawer();
   $("drawer").classList.add("open"); $("scrim").classList.add("open"); $("drawer").setAttribute("aria-hidden", "false");
+  // A dialog: the page behind can't be reached until it closes, and the focus starts on its title.
+  document.querySelector(".app").inert = true;
+  if (!wasOpen) focusSoon(() => $("dr-title"));
 }
-function closeDrawer() { $("drawer").classList.remove("open"); $("scrim").classList.remove("open"); $("drawer").setAttribute("aria-hidden", "true"); open = null; }
+// Focus once the element can take it: a panel that is still becoming visible (even for a frame, as with
+// "reduce motion") refuses focus without a word, so it is tried again on the next few frames.
+function focusSoon(get, tries = 10) {
+  const el = get();
+  if (!el) return;
+  el.focus();
+  if (document.activeElement !== el && tries > 0) requestAnimationFrame(() => focusSoon(get, tries - 1));
+}
+let opener = null;
+function closeDrawer() {
+  const was = $("drawer").classList.contains("open");
+  $("drawer").classList.remove("open"); $("scrim").classList.remove("open"); $("drawer").setAttribute("aria-hidden", "true"); open = null;
+  document.querySelector(".app").inert = false;
+  if (!was) return;
+  // Back where the person was: the job they opened (found again by its slug if the list was redrawn), else the page.
+  const slug = opener && opener.dataset && opener.dataset.job;
+  const back = opener && opener.isConnected ? opener : slug ? document.querySelector(`[data-job="${CSS.escape(slug)}"]`) : null;
+  focusSoon(() => back || $("main"));
+  opener = null;
+}
 function renderDrawer() {
   const j = open, d = j.details || {}, c = category(j);
   const tabs = [["answers", "Answers"], ["resume", "Resume"], ["shots", "Screenshots"], ["posting", "Posting"]];
@@ -389,16 +417,16 @@ function renderDrawer() {
   ].join("");
   $("drawer").innerHTML = `
     <div class="dr-head">
-      <div class="dr-title">${avatar(j.company, "lg")}<div style="min-width:0"><h2>${esc(cleanTitle(j.title))}</h2><div class="s">${esc(j.company)}</div></div>
+      <div class="dr-title">${avatar(j.company, "lg")}<div style="min-width:0"><h2 id="dr-title" tabindex="-1">${esc(cleanTitle(j.title))}</h2><div class="s">${esc(j.company)}</div></div>
         <button class="btn ghost sm dr-close" onclick="closeDrawer()" aria-label="Close">${icon("x")}</button></div>
       <div class="chips">${badge(c)}${j.location ? `<span class="tag">${icon("pin", 'style="width:13px;height:13px"')}${esc(j.location)}</span>` : ""}
         ${j.salary ? `<span class="tag">${icon("dollar", 'style="width:13px;height:13px"')}${esc(j.salary.replace(/^USD /, "$"))}</span>` : ""}
-        <span class="tag">${esc(SOURCE[j.source] || j.source)}</span>${j.posted_at ? `<span class="tag">Posted ${ago(j.posted_at)}</span>` : ""}</div>
+        ${j.source ? `<span class="tag">${esc(SOURCE[j.source] || j.source)}</span>` : ""}${j.posted_at ? `<span class="tag">Posted ${ago(j.posted_at)}</span>` : ""}</div>
       <div class="callout ${toneCallout}"><div><b>${esc(c.label)}${j.applied_at ? ", " + fmtTime(j.applied_at) : ""}</b>${esc(humanReason(j))}</div></div>
       <div class="dr-actions">${actions}</div>
     </div>
-    <div class="tabs">${tabs.map(([k, l]) => `<div class="${dtab === k ? "on" : ""}" onclick="dtab='${k}';renderDrawer()">${l}</div>`).join("")}</div>
-    <div class="dr-body">${drawerTab(j, d)}</div>`;
+    <div class="tabs" role="tablist" aria-label="About this application">${tabs.map(([k, l]) => `<button type="button" role="tab" id="tab-${k}" aria-selected="${dtab === k}" class="${dtab === k ? "on" : ""}" onclick="dtab='${k}';renderDrawer();$('tab-${k}').focus()">${l}</button>`).join("")}</div>
+    <div class="dr-body" role="tabpanel" aria-labelledby="tab-${dtab}">${drawerTab(j, d)}</div>`;
 }
 // Questions the app stopped on: the user answers them here and the job goes back in the queue.
 function askForm(j) {
@@ -512,6 +540,8 @@ async function refresh(full) {
   st = await api("/api/status");
   if (st.serverNow) skew = st.serverNow - Date.now();
   renderNav(); renderControls();
+  $("main").dataset.view = view;
+  document.title = `${TITLES[view] ? TITLES[view][0] + " - " : ""}Job Autopilot`;
   if (view === "overview") await renderOverview();
   else if (view === "log") await renderLog();
   else if (view === "profile" || view === "settings") { if (full || !$("cfg-host")) await renderConfig(); else { const c = $("main").querySelector(".top .live"); if (c) c.outerHTML = liveChip(); const bh = $("banner-host"); if (bh) bh.innerHTML = banners(); } }
@@ -634,12 +664,28 @@ function banners() {
   }
   return h;
 }
+// A dialog: announced as one, named by its heading, the page behind locked while it's open,
+// Escape closes it, and the focus goes back to where it was.
 function modal(html) {
+  const back = document.activeElement;
   const bg = document.createElement("div");
   bg.className = "modal-bg";
-  bg.innerHTML = `<div class="modal">${html}</div>`;
+  bg.innerHTML = `<div class="modal" role="dialog" aria-modal="true">${html}</div>`;
+  const box = bg.firstElementChild, h = box.querySelector("h2, h3");
+  if (h) { h.id = h.id || "modal-title"; box.setAttribute("aria-labelledby", h.id); }
+  const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); bg.remove(); } };
+  const remove = bg.remove.bind(bg);
+  bg.remove = () => {
+    remove();
+    document.removeEventListener("keydown", onKey, true);
+    document.querySelector(".app").inert = $("drawer").classList.contains("open");
+    if (back && back.isConnected) focusSoon(() => back);
+  };
+  document.addEventListener("keydown", onKey, true);
   bg.onclick = (e) => { if (e.target === bg) bg.remove(); };
   document.body.append(bg);
+  document.querySelector(".app").inert = true;
+  focusSoon(() => box.contains(document.activeElement) ? document.activeElement : box.querySelector("input, select, textarea, button"));
   return bg;
 }
 function goLive() {
@@ -690,9 +736,12 @@ async function renderConfig() {
   } else {
     $("main").innerHTML = header() + `<div id="cfg-host">
       <div class="card" style="margin-bottom:12px"><div class="card-h"><h2>Updates</h2></div><div class="sec" id="update-card">${updateCard()}</div></div>
-      <div class="card" style="margin-bottom:12px"><div class="card-h"><h2>Appearance</h2><span class="sub">Light or dark, and how much to show</span></div><div class="sec" id="sec-theme">
+      <div class="card" style="margin-bottom:12px"><div class="card-h"><h2>Appearance</h2><span class="sub">Light or dark, text size, and how much to show</span></div><div class="sec" id="sec-theme">
         <div class="radio-row" role="radiogroup" aria-label="Appearance">${[["system", "Match my computer"], ["light", "Light"], ["dark", "Dark"]].map(([v, l]) =>
           `<label><input type="radio" name="theme" value="${v}" ${(cfg.settings.theme || "system") === v ? "checked" : ""}>${l}</label>`).join("")}</div>
+        <div class="fld" style="margin-top:12px"><span>Text size</span><div class="radio-row" role="radiogroup" aria-label="Text size">${[[1, "Normal"], [1.15, "Larger"], [1.3, "Largest"]].map(([v, l]) =>
+          `<label><input type="radio" name="textSize" value="${v}" ${Number(cfg.settings.textSize || 1) === v ? "checked" : ""}>${l}</label>`).join("")}</div>
+          <small>Makes everything in the window bigger. Ctrl and + or - (Cmd on a Mac) zooms too.</small></div>
         <div class="fld" style="margin-top:12px"><span>How much to show</span><div class="radio-row" role="radiogroup" aria-label="How much to show">${[["simple", "Simple: just what you need"], ["advanced", "Advanced: every option and statistic"]].map(([v, l]) =>
           `<label><input type="radio" name="uiMode" value="${v}" ${(cfg.settings.uiMode || "simple") === v ? "checked" : ""}>${l}</label>`).join("")}</div></div></div></div>
       ${card("prefs", "Jobs to look for", "Job titles, where, and which sites to search", true)}
@@ -711,6 +760,9 @@ async function renderConfig() {
     Forms.history($("sec-history"), cfg, () => refreshStatusOnly());
     drawYours();
     document.querySelectorAll("#sec-theme [name=uiMode]").forEach((r) => r.onchange = () => setMode(r.value));
+    document.querySelectorAll("#sec-theme [name=textSize]").forEach((r) => r.onchange = async () => {
+      cfg.settings.textSize = window.ja.setTextSize ? await window.ja.setTextSize(Number(r.value)) : Number(r.value);
+    });
     document.querySelectorAll("#sec-theme [name=theme]").forEach((r) => r.onchange = async () => {
       cfg.settings.theme = window.ja.setTheme ? await window.ja.setTheme(r.value) : r.value;
     });

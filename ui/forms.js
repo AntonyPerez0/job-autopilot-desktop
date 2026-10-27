@@ -412,7 +412,7 @@
       <div data-smsg></div>
       <div class="adv"><div class="section-t">A recruiter's read</div>
       <p class="hint" style="margin:-4px 0 0">The AI reads your resume the way a recruiter skims one, and says what stands out and what is weak, line by line. It never adds facts.</p>
-      <div class="row-actions"><select class="inp" data-rv-base style="max-width:18rem"></select><button type="button" class="btn" data-review>${icon("eye")}Read it like a recruiter</button></div>
+      <div class="row-actions"><select class="inp" data-rv-base style="max-width:18rem" aria-label="Which resume layout to read"></select><button type="button" class="btn" data-review>${icon("eye")}Read it like a recruiter</button></div>
       <div data-rv-out></div>
       <div class="section-t">A version for each kind of job</div>
       <p class="hint" style="margin:-4px 0 0">Applying to different kinds of jobs (driving and IT support, say)? Make a version for each: your true lines, chosen and worded for that field, with a headline and summary for it. New wording waits for your approval.</p>
@@ -605,6 +605,23 @@
       h += `<div class="fld" style="margin-top:6px"><span>A paragraph in your own voice (optional)</span><textarea data-edit="essaySample" rows="3" placeholder="Two or three sentences you wrote yourself. Written answers copy its tone.">${esc(p.essaySample || "")}</textarea></div>
         <div data-msg style="margin-top:12px"></div>`;
       el.innerHTML = h;
+      // Every box, tick and delete button says what it belongs to, for screen readers ("Software Engineer, Globex: line 3").
+      const nameOf = (path) => {
+        const [k, i, f, j] = path.split("."), n = Number(i) + 1, e = arr(p[k])[Number(i)] || {};
+        const entry = `${e.title || (k === "projects" ? "Project" : "Job")}${e.org ? ", " + e.org : ""}`;
+        if (k === "summaries") return `Summary ${n}`;
+        if (k === "headers") return `Line under your name ${n}`;
+        if (k === "bases") return `Resume layout ${n}`;
+        if (k === "essaySample") return "A paragraph in your own voice";
+        if (k === "skills") return f === "label" ? `Skills group ${n}: name` : f === "items" ? `Skills group ${n}: skills` : `Skills group ${n}`;
+        if (k === "education") return f === "school" ? `Education ${n}: school` : f === "detail" ? `Education ${n}: degree` : f ? `Education ${n}: ${f}` : `Education ${n}`;
+        if (f === "bullets") return `${entry}: line ${Number(j) + 1}`;
+        return { title: k === "projects" ? "Project name" : "Job title", org: "Employer", link: "Project link", dates: "Dates" }[f] ? `${entry}: ${{ title: k === "projects" ? "project name" : "job title", org: "employer", link: "link", dates: "dates" }[f]}` : entry;
+      };
+      el.querySelectorAll("[data-edit]").forEach((x) => { if (!x.closest("label") && !x.closest(".fld")) x.setAttribute("aria-label", nameOf(x.dataset.edit)); });
+      el.querySelectorAll("[data-approve]").forEach((x) => x.setAttribute("aria-label", "Approve: " + nameOf(x.dataset.approve)));
+      el.querySelectorAll("[data-del]").forEach((x) => x.setAttribute("aria-label", "Delete: " + nameOf(x.dataset.del)));
+      el.querySelectorAll("[data-preview]").forEach((x) => x.setAttribute("aria-label", "Preview this layout"));
       bind();
     };
     const at = (path) => { const parts = path.split("."); let o = p; for (let i = 0; i < parts.length - 1; i++) o = o[parts[i]]; return [o, parts[parts.length - 1]]; };
@@ -688,9 +705,9 @@
       <div class="form-row">${fld("Started", inp("start", e.start, 'type="month"'))}${fld("Finished (or expect to)", inp("end", e.end, 'type="month"'))}
       <div style="align-self:end"><button type="button" class="btn ghost sm" data-rm-row>${icon("trash")}Remove</button></div></div></div>`;
     const yearsRow = (y = {}) => `<div class="form-row" data-years style="grid-template-columns:1fr 120px auto">
-      <input class="inp" name="ytype" value="${esc(y.type || "")}" placeholder="${office ? "e.g. Software engineering, Customer service, Python" : "e.g. Customer service, Retail, Food service, Driving"}">
-      <input class="inp" name="yyears" type="number" min="0" step="0.5" value="${esc(y.years ?? "")}" placeholder="Years">
-      <button type="button" class="btn ghost sm" data-rm-row>${icon("trash")}</button></div>`;
+      <input class="inp" name="ytype" aria-label="Kind of experience" value="${esc(y.type || "")}" placeholder="${office ? "e.g. Software engineering, Customer service, Python" : "e.g. Customer service, Retail, Food service, Driving"}">
+      <input class="inp" name="yyears" aria-label="Years of it" type="number" min="0" step="0.5" value="${esc(y.years ?? "")}" placeholder="Years">
+      <button type="button" class="btn ghost sm" data-rm-row aria-label="Remove this row">${icon("trash")}</button></div>`;
     el.innerHTML = `<div class="form">
       <div class="callout blue" style="margin:0"><div>Only the first part is required. Everything below it is optional: the more you answer, the fewer forms stop to ask you.</div></div>
       <div class="section-t">Required</div>
@@ -1137,5 +1154,39 @@
   }
   const importedText = (r) => `Imported ${r.total} application${r.total === 1 ? "" : "s"}: ${r.added} added, ${r.updated} marked as applied, ${r.already} already here. None of them will be applied to again.`;
 
-  window.Forms = { ai, resumes, creator, github, accounts, studio, review, fillPage, questions, prefs, mailbox, running, history, importedText, esc, icon, msg };
+  // Names for screen readers, applied to whatever was just drawn: a field gets the question above it
+  // (and its hint as a description), an icon-only button gets its tooltip. Names already given are kept.
+  let nid = 0;
+  const named = (x) => x.getAttribute("aria-label") || x.getAttribute("aria-labelledby") || (x.labels && x.labels.length) || x.closest("label");
+  function nameControls(root = document) {
+    root.querySelectorAll(".fld").forEach((f) => {
+      const head = f.querySelector(":scope > span");
+      if (!head || !head.textContent.trim()) return;
+      if (!head.id) head.id = "fq-" + ++nid;
+      const hint = f.querySelector(":scope > small");
+      if (hint && !hint.id) hint.id = "fh-" + ++nid;
+      f.querySelectorAll("input:not([type=hidden]):not([type=radio]):not([type=checkbox]), select, textarea").forEach((x) => {
+        if (named(x)) return;
+        x.setAttribute("aria-labelledby", head.id);
+        if (hint && !x.getAttribute("aria-describedby")) x.setAttribute("aria-describedby", hint.id);
+      });
+      f.querySelectorAll("[role=radiogroup]").forEach((g) => { if (!g.getAttribute("aria-label") && !g.getAttribute("aria-labelledby")) g.setAttribute("aria-labelledby", head.id); });
+    });
+    root.querySelectorAll("input:not([type=hidden]), select, textarea").forEach((x) => {
+      if (named(x)) return;
+      const t = x.getAttribute("title") || x.getAttribute("placeholder");
+      if (t) x.setAttribute("aria-label", t);
+    });
+    root.querySelectorAll("button").forEach((b) => {
+      if (b.textContent.trim() || b.getAttribute("aria-label") || b.getAttribute("aria-labelledby")) return;
+      const t = b.getAttribute("title");
+      if (t) b.setAttribute("aria-label", t);
+    });
+  }
+  // Run after every change to the page, once per frame.
+  let queued = false;
+  new MutationObserver(() => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; nameControls(); }); })
+    .observe(document.documentElement, { childList: true, subtree: true });
+
+  window.Forms = { ai, resumes, creator, github, accounts, studio, review, fillPage, questions, prefs, mailbox, running, history, importedText, esc, icon, msg, nameControls };
 })();

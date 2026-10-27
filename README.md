@@ -526,6 +526,24 @@ If a site turns out to want a sign-in after all, the job moves to Apply
 yourself instead of stopping. For everyday jobs, expect roughly a third to a
 half of good matches to be ones the app can do by itself.
 
+### Easy to see and use
+
+- **Text size:** Settings > Appearance has Normal, Larger and Largest, and
+  makes everything in the window bigger. Ctrl and + or - (Cmd on a Mac) zooms
+  too; Ctrl 0 goes back to your chosen size. On a big screen the text and the
+  pages grow to use the space.
+- **Light or dark:** Settings > Appearance, or match your computer.
+- **Keyboard:** everything works without a mouse. Tab moves through the
+  sidebar, the buttons and each job (its title); Enter opens a job; Escape
+  closes it and takes you back to where you were. The first Tab offers
+  **Skip to the page**.
+- **Screen readers:** every button, box and choice has a name, a job opens as
+  a dialog, and messages are read out.
+- **Checked automatically:** every change is tested against the WCAG 2.2 AA
+  accessibility rules (with axe-core) on every page, in light and dark, at a
+  small and a large window size, along with the colour contrast of every text
+  and background the app uses.
+
 ### Simple or Advanced
 
 The app starts in **Simple**: the sidebar shows only the pages most people use

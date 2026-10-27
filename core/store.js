@@ -36,6 +36,7 @@ export const SETTINGS_DEFAULTS = {
   wentLiveAt: null,
   paused: false,
   dailyCap: 10,
+  textSize: 1,               // the window's zoom: 1, 1.15 or 1.3 (Settings > Appearance)
   uiMode: "simple",          // simple: only what most people need; advanced: everything
   dayStartsAtHour: 9,        // the daily limit resets at this local hour
   minutesBetweenApplies: 6,
