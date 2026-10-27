@@ -15,6 +15,7 @@ import { browserOpen, detectBrowsers, installChromium, chromiumPath, showBrowser
 import { windowModeOf } from "./apply.js";
 import { AGENCIES, lastSearch } from "./discover.js";
 import { suggestTitles } from "./suggest.js";
+import { moveUp } from "./ladder.js";
 import { makeVersion, polishCreated, recruiterReview } from "./polish.js";
 import { plainAiError } from "./llm.js";
 import { applyFill, fillQuestions } from "./fill.js";
@@ -234,6 +235,11 @@ const ROUTES = {
   "POST /api/prefs/suggest": async () => {
     if (!aiSettings().apiKey) return bad("Connect an AI first (Settings > AI).");
     try { return { titles: await suggestTitles() }; } catch (e) { return bad(e.message); }
+  },
+  // Better-paying jobs they could move up to, with typical pay where they live.
+  "POST /api/prefs/moveup": async () => {
+    if (!aiSettings().apiKey) return bad("Connect an AI first (Settings > AI).");
+    try { return await moveUp(getProfile(), getAnswers(), getPrefs()); } catch (e) { return bad(e.message); }
   },
   // Answers the user gave to questions the app stopped on.
   "GET /api/your-answers": () => (getAnswers().yourAnswers || []),

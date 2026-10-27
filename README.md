@@ -274,6 +274,18 @@ change all of it later under **Settings** and **Profile**.
    jobs whose posted top rate is lower are skipped (jobs that don't post pay are
    kept), and every job you're shown lists its posted pay. The app tells you if
    the number looks like a yearly salary with "an hour" picked, or the reverse.
+   **Want a better job, not the same one?** Press **Move up: better-paying jobs I
+   could go for**. The app finds the jobs that people in your line of work
+   usually move up to (from the U.S. Department of Labor's O*NET), keeps the ones
+   that pay at least 10% more where you live (typical pay from the U.S. Bureau of
+   Labor Statistics) and need at most one more step of preparation, and checks
+   each one against your resume:
+   - **You could apply for these now**: your resume already shows what most ads
+     ask for. One click adds it to your job titles.
+   - **One step away**: exactly what's missing (a Class A CDL, a passenger
+     endorsement, a certification, the postal exam) and how people usually get
+     it, roughly how long and what it costs. That's advice only; nothing goes
+     on your resume until you have it.
 7. **Mailbox (optional).** See [Mailbox](#mailbox).
 
 Then press **Start in dry run**.
@@ -905,7 +917,9 @@ macOS and Windows runners. The workflow installs each one, launches it and
 runs the setup end to end. Pushing a `v*` tag attaches the installers to a
 GitHub Release. Signing is described in [docs/SIGNING.md](docs/SIGNING.md).
 
-Place data © [GeoNames](https://www.geonames.org), CC BY 4.0. Job task lists
+Place data © [GeoNames](https://www.geonames.org), CC BY 4.0. Typical pay: U.S. Bureau of Labor Statistics,
+Occupational Employment and Wage Statistics, May 2025 (public domain). Job task lists, related
+occupations and job zones
 from the [O*NET 31.0 Database](https://www.onetcenter.org/database.html) by the
 U.S. Department of Labor, Employment and Training Administration (USDOL/ETA),
 used under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); the app
