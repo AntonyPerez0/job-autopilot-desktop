@@ -15,7 +15,7 @@ const words = (s) => String(s || "").trim().split(/\s+/).filter(Boolean);
 // ---------- the recruiter checklist (no AI: plain rules, same answer every time) ----------
 
 const WEAK_START = /^(responsible for|duties (included|include)|helped( to)?|worked (on|with|as)|assisted( with)?|tasked with|in charge of|involved in|participated in|was |were |did |handled various|various)\b/i;
-const PRONOUN = /\b(I|me|my|mine|we|our)\b/;
+const PRONOUN = /\b(I|me|my|mine|myself|we|our|ourselves)\b/;
 const HAS_NUMBER = /\d|\b(one|two|three|four|five|six|seven|eight|nine|ten|dozens?|hundreds?|thousands?)\b/i;
 const CLICHE = /\b(hard[- ]working|team player|detail[- ]oriented|go[- ]getter|self[- ]starter|results[- ]driven|think outside the box|synergy|dynamic|passionate|rock ?star|ninja|guru|best of breed|proven track record)\b/i;
 // The phrasing AI tools put on every resume: recruiters spot it, and it makes every applicant sound the same.
@@ -145,6 +145,8 @@ export function specificTerms(text) {
 export function addedFacts(suggestion, sources, allowed = []) {
   const src = sources.join("\n");
   const srcNums = numbersIn(src), srcLower = src.toLowerCase();
+  // "both teams" is two teams, and "a couple" or "a pair" is two as well.
+  if (/\b(both|a pair of|a couple of)\b/i.test(src)) srcNums.add("2");
   const ok = new Set(allowed.map((x) => String(x).toLowerCase()));
   const problems = [];
   for (const n of numbersIn(suggestion)) if (!srcNums.has(n)) problems.push(`the number ${n}`);
@@ -272,7 +274,8 @@ export function knownTerms(profile, answers = {}) {
 
 export const GUIDE = `How recruiters want resume lines written:
 - Start with a strong action verb (Served, Trained, Built, Organized, Resolved, Cut, Opened, Stocked, Led). Past tense for anything already done or finished, even at a current job; present tense only for ongoing daily duties at a current job. Never change the tense of a line that already uses the past tense for something finished.
-- Never describe the person with praise they didn't use themselves (proven, expert, experienced, seasoned, high-performing, exceptional). Keep every word that limits a claim (about, helped, part-time, assisted, leaning, shared).
+- Never describe the person with praise they didn't use themselves (proven, expert, experienced, skilled, seasoned, high-performing, exceptional).
+- "Manage", "oversee", "lead", "supervise" and "improve" are claims of being in charge or of a result: use them only when they said so. Say the task itself instead: "Manage customer inquiries" -> "Answer customer inquiries"; "Managed closing" -> "Closed the store"; "Managed returns" -> "Processed returns". Keep every word that limits a claim (about, helped, part-time, assisted, leaning, shared).
 - Professional, specific wording: the terms people in that trade use on a resume, never the casual way someone talks about their day. "Take calls and drive to breakdowns" -> "Respond to dispatched breakdown and accident calls"; "cars in ditches" -> "off-road vehicle recoveries"; "talk with police" -> "coordinate with law enforcement on scene"; "ran the vinyl cutter" -> "operated the vinyl cutter"; "went out with the crew" -> "installed ... as part of a field crew"; "fast" -> "on short notice"; "guys" -> "hires"; "like X" -> "including X". The same facts, better words; never a bigger claim.
 - Avoid empty corporate phrases ("service delivery", "stakeholders", "various tasks", "synergy").
 - Write it the way they would explain it in an interview: plain and specific. Never the phrasing AI tools put on every resume: spearheaded, cross-functional initiatives, operational excellence, results-driven, proven track record, leveraged, utilized, robust, seamless, cutting-edge, fostered, dynamic, passionate about, adept at, fast-paced environment, instrumental in.
@@ -387,6 +390,7 @@ export async function createFromInterview(iv, profile0 = null, answers = {}) {
 ${GUIDE}
 Never ask a question about something they already answered (their dates, how long they worked there, or a number they gave).
 Write 2 to 4 lines per job from what they said (not from the "They also confirmed" items: those get their own lines separately), and a 2 to 3 sentence summary aimed at the job they want next (only from their facts).
+Every result or accomplishment they describe under "What went well" gets a line of its own (up to 5 lines for that job if needed): those are the lines recruiters read first, so never drop or merge one away.
 For every line, quote the part of their answers it comes from in "source".
 Return JSON only:
 {"summary": "...", "jobs": [{"index": 0, "bullets": [{"text": "...", "source": "their words this line is based on"}], "questions": ["a short question that would let a line show a number or result"]}],
@@ -408,12 +412,29 @@ Return JSON only:
     const sources = [j.title, j.employer, j.location, j.daily, j.proud, j.numbers, j.tools, ...arr(j.confirmed).map(yesSource)].filter(Boolean);
     const bt = new Set();
     const bullets = [];
+    const allowedHere = [...known, ...specificTerms(j.title), ...specificTerms(j.employer)];
+    const failed = [];
     for (const b of arr(out.bullets)) {
       const text = Profile.stripDashes(String(b.text || "")).trim().replace(/\.$/, "");
       if (bullets.some((x) => sameLine(x.text, text))) continue;
-      const v = vet(text, sources, p, [...known, ...specificTerms(j.title), ...specificTerms(j.employer)]);
+      const v = vet(text, sources, p, allowedHere);
       if (v.ok) bullets.push({ id: slug(text.split(/\s+/).slice(0, 2).join(" "), bt), text, approved: false, source: String(b.source || "").slice(0, 300) });
-      else rejected.push({ job: j.title, text, why: v.why });
+      else failed.push({ text, source: String(b.source || ""), why: v.why });
+    }
+    // A line refused for a word ("Manage", "Skilled") still carries a fact of theirs: one more try with the
+    // reason, so a number or a result isn't lost over wording.
+    if (failed.length) {
+      let r2 = {};
+      try {
+        r2 = await ask([{ role: "system", content: `Rewrite each resume line using only the person's facts.\n${GUIDE}\nEach item says why the last try was rejected; fix exactly that and keep every number.${j.current ? " This is their current job: present tense for ongoing duties." : " This is a past job: past tense."}\nReturn JSON only: {"lines": [{"n": 0, "text": "..."}]}` },
+          { role: "user", content: `JOB: ${j.title} at ${j.employer}\nTHEIR WORDS: ${sources.join(". ")}\n\n` + failed.map((x, n) => `${n}. LAST TRY: ${x.text} -> rejected: ${x.why.join("; ")}`).join("\n") }]);
+      } catch { r2 = {}; }
+      failed.forEach((x, n) => {
+        const t2 = Profile.stripDashes(String((arr(r2.lines).find((l) => Number(l.n) === n) || {}).text || "")).trim().replace(/\.$/, "");
+        const v2 = t2 ? vet(t2, sources, p, allowedHere) : { ok: false };
+        if (v2.ok && !bullets.some((y) => sameLine(y.text, t2))) bullets.push({ id: slug(t2.split(/\s+/).slice(0, 2).join(" "), bt), text: t2, approved: false, source: x.source.slice(0, 300) });
+        else rejected.push({ job: j.title, text: x.text, why: x.why });
+      });
     }
     // Nothing the AI wrote survived the check: the person's own words, as they gave them.
     if (!bullets.length && j.daily) for (const part of String(j.daily).split(/[.;\n]+/).map((x) => x.trim()).filter((x) => words(x).length >= 2).slice(0, 3)) {

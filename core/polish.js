@@ -181,7 +181,12 @@ Return JSON only: {"jobs": [{"i": 0, "lines": [{"text": "...", "from": [0, 3]}]}
         toCheck.push({ b, text, source: src.join(". ") });
       } else {
         rejected.push({ job: e.title, text, why: v.why });
-        if (!next.some((y) => sameLine(y.text, base.text))) next.push({ ...base, approved: false, id: slug(base.text.split(/\s+/).slice(0, 2).join(" "), taken), ...(casualBits(base.text).length ? { warning: "This line still reads casually. Reword it, or use Improve on the Resume page." } : {}) });
+        // A merge that failed keeps every line it was made from, not just the first: each holds a fact of theirs.
+        for (const k of from) {
+          const o = old[k];
+          if (next.some((y) => sameLine(y.text, o.text))) continue;
+          next.push({ ...o, approved: false, id: slug(o.text.split(/\s+/).slice(0, 2).join(" "), taken), ...(casualBits(o.text).length ? { warning: "This line still reads casually. Reword it, or use Improve on the Resume page." } : {}) });
+        }
       }
       from.forEach((k) => used.add(k));
     }

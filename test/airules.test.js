@@ -75,6 +75,8 @@ test("result, measure, method: a change they stated with its size may take the p
   assert.ok(!S.vet("Increased sales by 50%", ["I like the product"], { rules: {} }, []).ok);
   assert.ok(!S.vet("Reduced complaints by building a guide", ["built a guide"], { rules: {} }, []).ok, "no change stated: no result verb");
   assert.deepStrictEqual(S.addedFacts("Cut complaints 31% with a ChatGPT-drafted email sequence", ["used ChatGPT to draft an email sequence; complaints went down 31%"]), [], "a compound of their own words");
+  assert.deepStrictEqual(S.addedFacts("Wrote one refund guide for the two teams", ["a refund guide both teams use"]), [], "both teams is two teams");
+  assert.deepStrictEqual(S.addedFacts("Trained two new hires", ["trained new hires"]), ["the number 2"]);
   assert.deepStrictEqual(S.addedFacts("A Kubernetes-based pipeline", ["built a pipeline"]), ['"kubernetes-based"'], "a compound with a new tool in it");
   const c = S.checklist(Object.assign(example(), {})).find((x) => x.id === "how");
   assert.ok(!c, "lines that open with what was done already say how");
@@ -143,4 +145,32 @@ test("AI use from Fill out my page: at work it's the job's first line, on their 
   reply = (sys) => (/fact-check/.test(sys) ? { lines: [] } : /using an AI tool/.test(sys) ? { lines: [{ n: 0, text: "Grouped recurring issues in weekly feedback reports" }] } : {});
   const r3 = await F.applyFill(p, { ai: [input.ai[0]] }, {});
   assert.match(r3.rejected[0].why.join(), /leaves out Claude/);
+});
+
+test("a line refused for its wording gets one more try with the reason, so the fact in it isn't lost", async () => {
+  reply = (sys) => {
+    if (/fact-check/.test(sys)) return { lines: [] };
+    if (/Rewrite each resume line using only the person's facts/.test(sys)) return { lines: [{ n: 0, text: "Answer about 60 billing and refund tickets a day" }] };
+    if (/write a one-page resume/.test(sys)) return { summary: "", jobs: [{ index: 0, bullets: [{ text: "Manage about 60 billing and refund tickets a day", source: "about 60 tickets a day" }] }] };
+    return {};
+  };
+  const r = await S.createFromInterview({ jobs: [{ title: "Support Specialist", employer: "Globex", start: "2022", current: true, daily: "answer billing and refund tickets", numbers: "about 60 tickets a day" }] }, null, {});
+  const lines = r.profile.experience[0].bullets.map((b) => b.text);
+  assert.ok(lines.includes("Answer about 60 billing and refund tickets a day"), JSON.stringify(lines));
+  assert.ok(!lines.some((t) => /^Manage/.test(t)));
+});
+
+test("a merge of several lines that fails its check keeps every line it was made from", async () => {
+  const p = { schema: Profile.SCHEMA, name: "Jordan Lee", contact: {}, rules: Profile.EXAMPLE.rules, summaries: [], headers: [], projects: [], education: [], skills: [], bases: [],
+    experience: [{ id: "shop", title: "Cashier", org: "Initech Market", dates: "Jun 2019 – Feb 2022", bullets: [
+      { id: "a", text: "Ran the register for about 200 customers a shift" }, { id: "b", text: "Trained 4 new cashiers" }, { id: "c", text: "Closed the store on weekends" }] }] };
+  reply = (sys) => {
+    if (/fact-check/.test(sys)) return { lines: [] };
+    if (/turning a person's resume lines/.test(sys)) return { jobs: [{ i: 0, lines: [{ text: "Closed the store on weekends", from: [0, 1, 2] }] }], headline: "", summary: "", skills: [] };
+    if (/Rewrite each resume line/.test(sys)) return { lines: [{ n: 0, text: "Closed the store on weekends" }] };
+    return {};
+  };
+  const r = await P.polishCreated(p, { ids: ["shop"], linesOnly: true });
+  const lines = r.profile.experience[0].bullets.map((b) => b.text);
+  for (const t of ["Ran the register for about 200 customers a shift", "Trained 4 new cashiers", "Closed the store on weekends"]) assert.ok(lines.includes(t), `kept: ${t} in ${JSON.stringify(lines)}`);
 });
