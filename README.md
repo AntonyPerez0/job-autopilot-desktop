@@ -22,6 +22,12 @@ For hourly and everyday jobs as well as office and tech work. Desktop app for ma
   <img src="docs/images/overview-light.png" alt="The Job Autopilot overview: applications sent, the queue, and jobs waiting for an answer" width="900">
 </picture>
 
+<br><br>
+
+**The 60-second tour**: every step from the first setup screen to going live.
+
+https://github.com/user-attachments/assets/18073345-3718-43e3-89f1-352ddd10d98b
+
 </div>
 
 <br>
