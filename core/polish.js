@@ -8,6 +8,8 @@
 // Every rewritten line passes the same honesty checks as the rest of the app (vet, then factCheck).
 // The rules come from docs/resume-research.md.
 import { Profile, Tailor, approvedOnly } from "./engine.js";
+import { skillGroup } from "./skillsort.js";
+import { houseStyle } from "./style.js";
 import { GUIDE, ask, setProgress, repeatedPhrase, casualBits, changeVerbs, claimWords, factCheck, refixFlagged, knownTerms, newWords, numbersIn, resultLine, sameLine, specificTerms, vet as vet0, xyzLine } from "./studio.js";
 
 // The app's honesty check, plus: a rewording may use professional words for the same facts, but never a
@@ -28,11 +30,16 @@ export function vet(text, sources, profile, allowed, original) {
   const kept = numbersIn(text);
   const lost = [...numbersIn(original)].filter((n) => !kept.has(n));
   if (lost.length) why.push(`leaves out your number ${lost.join(", ")}`);
+  // The names in their line (ChatGPT, Zendesk, Austin Public Library) are facts too: a rewording keeps them.
+  const lower = String(text).toLowerCase();
+  const names = [...specificTerms(original)].filter((w) => !lower.includes(w));
+  if (names.length) why.push(`leaves out ${names.slice(0, 3).join(", ")}, which your line names`);
   return { ok: !why.length, why };
 }
 
 const arr = (x) => (Array.isArray(x) ? x : []);
-const clean = (t) => Profile.stripDashes(String(t || "")).replace(/\s+/g, " ").trim().replace(/\.$/, "");
+// Everything the AI writes here is put in the house style (core/style.js) before it is checked.
+const clean = (t) => houseStyle(Profile.stripDashes(String(t || "")).replace(/\s+/g, " ").trim()).replace(/\.$/, "");
 const slug = (s, taken) => { const b = String(s || "x").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 24) || "x"; let id = b, n = 2; while (taken.has(id)) id = `${b}-${n++}`; taken.add(id); return id; };
 const isCurrent = (e) => /present|now|current/i.test(String(e.dates || ""));
 
@@ -161,8 +168,7 @@ ${GUIDE}
 ${POLISH_RULES}
 For each job, choose at most "keep" lines, strongest first. Each chosen line is one of theirs reworded, or two of theirs merged ("from": the k numbers used). Keep every number exactly, and keep "about", "helped", "part-time" and similar limits.
 Then write "headline" and "summary" (aimed at the job they want next, if given) from these facts only.
-Then sort their skills into groups, using only the exact items given (you may drop a duplicate like "Vinyl cutting" when "Vinyl cutter" is there): ${JSON.stringify(SKILL_GROUPS)}.
-Return JSON only: {"jobs": [{"i": 0, "lines": [{"text": "...", "from": [0, 3]}]}], "headline": "...", "summary": "...", "skills": [{"label": "Licenses & certifications", "items": ["..."]}]}`;
+Return JSON only: {"jobs": [{"i": 0, "lines": [{"text": "...", "from": [0, 3]}]}], "headline": "...", "summary": "..."}`;
   if (!linesOnly) setProgress(3, 4, "Choosing your strongest lines and wording them the way recruiters like");
   const r = await ask([{ role: "system", content: sys }, { role: "user", content: JSON.stringify(payload) }]);
   const known = knownTerms(p, answers);
@@ -182,7 +188,7 @@ Return JSON only: {"jobs": [{"i": 0, "lines": [{"text": "...", "from": [0, 3]}]}
       if (!from.length) continue;
       from.forEach((k) => used.add(k));
       const src = from.map((k) => [old[k].text, old[k].source].filter(Boolean).join(". "));
-      const original = from.map((k) => old[k].text).join(" ");
+      const original = from.map((k) => old[k].text).join(". ");
       const allowed = [...known, ...specificTerms(e.title), ...specificTerms(e.org)];
       const check = (t) => vet(clean(t), [...src, e.title, e.org || ""], p, allowed, original);
       const text = clean(l.text);
@@ -233,6 +239,14 @@ Return JSON only: {"jobs": [{"i": 0, "lines": [{"text": "...", "from": [0, 3]}]}
     if (!next.length) continue;
     // The lines left out stay available for tailoring to a posting, below the chosen ones.
     const rest = old.filter((b, k) => !used.has(k) && !next.some((x) => sameLine(x.text, b.text))).map((b) => ({ ...b, approved: b.approved === true ? true : false, id: slug(b.text.split(/\s+/).slice(0, 2).join(" "), taken) }));
+    // A number of theirs the chosen lines left out: its own line goes back on the page while there's room.
+    const onPage = new Set(next.flatMap((b) => [...numbersIn(b.text)]));
+    for (const b of [...rest]) {
+      if (next.length >= limit(e, i)) break;
+      const nums = [...numbersIn(b.text)].filter((n) => !onPage.has(n));
+      if (!nums.length) continue;
+      next.push(b); rest.splice(rest.indexOf(b), 1); nums.forEach((n) => onPage.add(n));
+    }
     e.bullets = [...next, ...rest];
     e.minBullets = Math.min(2, next.length);
     e.lead = next.map((b) => b.id); // the ones to show by default
@@ -259,10 +273,9 @@ Return JSON only: {"jobs": [{"i": 0, "lines": [{"text": "...", "from": [0, 3]}]}
     p.newSummary = id;
     toCheck.push({ b: p.summaries[0], text: summary, source: facts });
   }
-  // Skills: only items the person typed, in clear groups. Licenses and languages go where they belong
-  // without the AI; it only sorts the rest into equipment, software and skills.
+  // Skills: only items the person typed, in clear groups, sorted without the AI (core/skillsort.js) so the
+  // same skills land in the same groups every time.
   const stemOf = (x) => x.toLowerCase().replace(/(ing|er|ers|s)$/, "").trim();
-  const SOFT = /^(driving|customer service|communication|teamwork|team work|leadership|time management|problem solving|work ethic|punctual\w*|reliab\w*|hard work\w*|reading work orders|multitasking|organization)$/i;
   const split = (s0) => String(s0.items).split(/\s*,\s*/).filter(Boolean);
   const certs = mine.filter((s0) => /certif|licen/i.test(s0.label)).flatMap(split);
   const langs = mine.filter((s0) => /language/i.test(s0.label)).flatMap(split);
@@ -270,20 +283,13 @@ Return JSON only: {"jobs": [{"i": 0, "lines": [{"text": "...", "from": [0, 3]}]}
   const buckets = new Map([["Licenses & Certifications", [...certs]], ["Equipment & Tools", []], ["Software & Systems", []], ["Skills", []], ["Languages", [...langs]]]);
   const soft = [];
   const placedOnce = (x) => [...buckets.values()].flat().some((y) => y.toLowerCase() === x.toLowerCase() || stemOf(y) === stemOf(x));
-  const have = new Map(rest.map((x) => [x.toLowerCase(), x]));
-  for (const g of arr(r.skills)) {
-    const label = ["Equipment & Tools", "Software & Systems", "Skills"].find((x) => x.toLowerCase() === String(g.label || "").toLowerCase());
-    for (const raw of arr(g.items)) {
-      const x = have.get(String(raw).toLowerCase());
-      if (!x || !label || placedOnce(x)) continue;
-      if (SOFT.test(x)) { if (!soft.includes(x)) soft.push(x); continue; }
-      buckets.get(label).push(x);
-    }
-  }
-  // Nothing they typed is lost: a soft skill is kept off the page, anything else the AI missed goes under Skills.
-  for (const x of rest) {
+  // Nothing they typed is lost: a soft skill is kept off the page. Of two that are the same thing ("Vinyl
+  // cutting", "Vinyl cutter"), the one that names the machine or the software is kept.
+  const rank = (x) => (["Equipment & Tools", "Software & Systems"].includes(skillGroup(x)) ? 0 : 1);
+  for (const x of [...rest].sort((a, b) => rank(a) - rank(b))) {
     if (placedOnce(x) || soft.includes(x)) continue;
-    if (SOFT.test(x)) soft.push(x); else buckets.get("Skills").push(x);
+    const g = skillGroup(x);
+    if (g === "soft") soft.push(x); else buckets.get(g).push(x);
   }
   if (!linesOnly && mine.length && skillItems.length) {
     const oldIds = new Set(mine.map((s0) => s0.id));

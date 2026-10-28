@@ -9,6 +9,8 @@
 import { Profile, STEADY, Tailor, aiSettings, approvedOnly } from "./engine.js";
 import { isLocal } from "./llm.js";
 import { cacheKey, cached, remember } from "./aicache.js";
+import { houseStyle } from "./style.js";
+import { fmtDate } from "./dates.js";
 
 const arr = (x) => (Array.isArray(x) ? x : []);
 const words = (s) => String(s || "").trim().split(/\s+/).filter(Boolean);
@@ -111,7 +113,10 @@ export function checklist(profile, answers = {}, fit = null) {
   });
   const dates = arr(p.experience).map((e) => e.dates).filter(Boolean);
   const styles = new Set(dates.map((d) => (/\b[A-Z][a-z]{2,8}\.? \d{4}/.test(d) ? "month" : /\d{1,2}\/\d{4}/.test(d) ? "slash" : "year")));
-  if (styles.size > 1) add("dates", "fix", "Write dates the same way", "Pick one style, such as \"Jun 2023 - Present\", for every job.", arr(p.experience).map((e) => ({ path: `experience.${e.id}`, text: e.dates, why: e.title })));
+  // Most often it's a job with only the year among jobs with the month: say which ones need the month.
+  const yearOnly = arr(p.experience).filter((e) => e.dates && !/[A-Za-z]{3}\.? \d{4}|\d{1,2}\/\d{4}/.test(e.dates.replace(/present/i, "")));
+  if (styles.size > 1 && styles.has("month") && yearOnly.length) add("dates", "fix", "Add the month to these dates", "Your other jobs show the month and year (\"Jun 2023 – Present\"). Add the month to these so every date reads the same way; if you're not sure of it, the year alone is fine.", yearOnly.map((e) => ({ path: `experience.${e.id}`, text: e.dates, why: e.title })));
+  else if (styles.size > 1) add("dates", "fix", "Write dates the same way", "Pick one style, such as \"Jun 2023 – Present\", for every job.", arr(p.experience).map((e) => ({ path: `experience.${e.id}`, text: e.dates, why: e.title })));
   const groups = arr(p.skills);
   if (!groups.length) add("skills", "tip", "Add a skills line", "A short list of skills (tools, machines, languages, certifications) helps both recruiters and the software that screens resumes.");
   else if (groups.some((g) => String(g.items).split(",").length > 15)) add("skills", "tip", "Keep skills lists short", "Fifteen or fewer per line; list the ones that matter for the jobs you want.");
@@ -350,7 +355,7 @@ export async function refixFlagged(items) {
   for (const l of arr(r.lines)) {
     const x = items[Number(l.n)];
     if (!x || cands.some((c) => c.x === x)) continue;
-    const t = Profile.stripDashes(String(l.text || "")).trim().replace(/\.$/, "");
+    const t = houseStyle(Profile.stripDashes(String(l.text || "")).trim()).replace(/\.$/, "");
     if (t && t !== x.text && x.check(t).ok) cands.push({ x, t });
   }
   if (!cands.length) return 0;
@@ -454,7 +459,7 @@ Return JSON only:
     const allowedHere = [...known, ...specificTerms(j.title), ...specificTerms(j.employer)];
     const failed = [];
     for (const b of arr(out.bullets)) {
-      const text = Profile.stripDashes(String(b.text || "")).trim().replace(/\.$/, "");
+      const text = houseStyle(Profile.stripDashes(String(b.text || "")).trim()).replace(/\.$/, "");
       if (bullets.some((x) => sameLine(x.text, text))) continue;
       const v = vet(text, sources, p, allowedHere);
       if (v.ok) bullets.push({ id: slug(text.split(/\s+/).slice(0, 2).join(" "), bt), text, approved: false, source: String(b.source || "").slice(0, 300) });
@@ -469,7 +474,7 @@ Return JSON only:
           { role: "user", content: `JOB: ${j.title} at ${j.employer}\nTHEIR WORDS: ${sources.join(". ")}\n\n` + failed.map((x, n) => `${n}. LAST TRY: ${x.text} -> rejected: ${x.why.join("; ")}`).join("\n") }]);
       } catch { r2 = {}; }
       failed.forEach((x, n) => {
-        const t2 = Profile.stripDashes(String((arr(r2.lines).find((l) => Number(l.n) === n) || {}).text || "")).trim().replace(/\.$/, "");
+        const t2 = houseStyle(Profile.stripDashes(String((arr(r2.lines).find((l) => Number(l.n) === n) || {}).text || "")).trim()).replace(/\.$/, "");
         const v2 = t2 ? vet(t2, sources, p, allowedHere) : { ok: false };
         if (v2.ok && !bullets.some((y) => sameLine(y.text, t2))) bullets.push({ id: slug(t2.split(/\s+/).slice(0, 2).join(" "), bt), text: t2, approved: false, source: x.source.slice(0, 300) });
         else rejected.push({ job: j.title, text: x.text, why: x.why });
@@ -478,6 +483,24 @@ Return JSON only:
     // Nothing the AI wrote survived the check: the person's own words, as they gave them.
     if (!bullets.length && j.daily) for (const part of String(j.daily).split(/[.;\n]+/).map((x) => x.trim()).filter((x) => words(x).length >= 2).slice(0, 3)) {
       bullets.push({ id: slug(part.split(/\s+/).slice(0, 2).join(" "), bt), text: part[0].toUpperCase() + part.slice(1), approved: false, source: part });
+    }
+    // Every number they gave goes into a line: one the lines left out ("about 200 customers a shift") gets a
+    // line of its own, written from the part of their answer that says it, and checked like the rest.
+    const given = [j.daily, j.proud, j.numbers].filter(Boolean).join(". ");
+    const usedNums = new Set(bullets.flatMap((b) => [...numbersIn(b.text)]));
+    const missing = [...numbersIn(given)].filter((n) => !usedNums.has(n) && !(Number(n) >= 1950 && Number(n) <= 2100));
+    if (missing.length) {
+      const said = given.split(/(?<=[.;!?])\s+|,\s+(?=[a-z])/).filter((x) => missing.some((n) => numbersIn(x).has(n)));
+      try {
+        const r3 = await ask([{ role: "system", content: `Write one resume line for each fact below, using only that fact's words and every number in it exactly, with its "about".\n${GUIDE}${j.current ? "\nThis is their current job: present tense for ongoing duties." : "\nThis is a past job: past tense."}\nReturn JSON only: {"lines": [{"n": 0, "text": "..."}]}` },
+          { role: "user", content: `JOB: ${j.title} at ${j.employer}\n` + said.map((x, n) => `${n}. ${x}`).join("\n") }]);
+        for (const l of arr(r3.lines)) {
+          const t = houseStyle(Profile.stripDashes(String(l.text || "")).trim()).replace(/\.$/, "");
+          if (!t || bullets.some((y) => sameLine(y.text, t)) || !vet(t, sources, p, allowedHere).ok) continue;
+          if (![...numbersIn(t)].some((n) => missing.includes(n))) continue;
+          bullets.push({ id: slug(t.split(/\s+/).slice(0, 2).join(" "), bt), text: t, approved: false, source: said[Number(l.n)] || given.slice(0, 300) });
+        }
+      } catch { /* the lines they have stand */ }
     }
     // The things they said yes to when the app jogged their memory.
     if (arr(j.confirmed).length) {
@@ -493,7 +516,7 @@ Return JSON only:
       (numbersIn(j.numbers || "").size > 0 && /how many|average|number of/i.test(q) &&
         String(j.numbers).toLowerCase().split(/[^a-z]+/).filter((w) => w.length > 3).some((w) => q.toLowerCase().includes(w.replace(/s$/, ""))));
     for (const q of arr(out.questions).filter((q) => !asked(String(q))).slice(0, 3)) questions.push({ job: `${j.title} at ${j.employer}`, question: String(q) });
-    const dates = `${j.start || ""}${j.start || j.end || j.current ? " – " : ""}${j.current ? "Present" : j.end || ""}`.trim();
+    const dates = `${fmtDate(j.start)}${j.start || j.end || j.current ? " – " : ""}${j.current ? "Present" : fmtDate(j.end)}`.trim();
     newExp.push({ id: slug(j.employer || j.title, expIds), title: j.title || "", org: j.employer || "", location: j.location || "", dates, minBullets: Math.min(2, bullets.length), bullets });
   }
   // The second pass: anything the person's answers don't back up gets a visible note for them.
@@ -511,7 +534,7 @@ Return JSON only:
     else if (verdict[i]) x.b.warning = `Check this: "${verdict[i]}" isn't in your answers. Edit it out or delete the line if it isn't true.`;
   });
   p.experience.push(...newExp);
-  let sumText = Profile.stripDashes(String(r.summary || "")).trim();
+  let sumText = houseStyle(Profile.stripDashes(String(r.summary || "")).trim());
   let sv = vet(sumText, [facts], p, known);
   // A summary never talks about pay or wanting to leave.
   const PAY = /\b(pay|pays|paid|salary|money|wages?)\b/i;
@@ -521,7 +544,7 @@ Return JSON only:
     try {
       const again = await ask([{ role: "system", content: `Write a 2 to 3 sentence resume summary from a person's own answers, aimed at the job they want next.\n${GUIDE}\nYour last try was rejected because it ${sv.why.join("; ")}. Avoid these words too: ${arr((p.rules || {}).bannedWords).join(", ")}.\nReturn JSON only: {"summary": "..."}` },
         { role: "user", content: facts }]);
-      const t2 = Profile.stripDashes(String(again.summary || "")).trim();
+      const t2 = houseStyle(Profile.stripDashes(String(again.summary || "")).trim());
       let v2 = vet(t2, [facts], p, known);
       if (PAY.test(t2)) v2 = { ok: false, why: [...v2.why, "talks about pay"] };
       if (v2.ok) { sumText = t2; sv = v2; }
@@ -582,7 +605,7 @@ Return JSON only: {"lines": [{"i": 0, "keep": false, "text": "...", "why": "..."
   for (const s of arr(r.lines)) {
     const it = list[Number(s.i)];
     if (!it) continue;
-    const text = Profile.stripDashes(String(s.text || "")).trim();
+    const text = houseStyle(Profile.stripDashes(String(s.text || "")).trim());
     const question = String(s.question || "").trim();
     if (s.keep || !text || text === it.text) { if (question) out.push({ ...it, original: it.text, text: "", why: "", question }); continue; }
     const v = vet(text, [it.text], p, known, it.text);
@@ -604,7 +627,7 @@ export async function rewriteWithAnswer(profile, answers, { path, original, ques
 ${GUIDE}
 Return JSON only: {"text": "...", "why": "..."}`;
   const r = await ask([{ role: "system", content: sys }, { role: "user", content: `LINE: ${original}\nQUESTION: ${question}\nTHEIR ANSWER: ${answer}${current === null ? "" : current ? "\nTHIS IS THEIR CURRENT JOB: keep the present tense" : "\nTHIS IS A PAST JOB: past tense"}` }]);
-  let text = Profile.stripDashes(String(r.text || "")).trim();
+  let text = houseStyle(Profile.stripDashes(String(r.text || "")).trim());
   const v = vet(text, [original, answer], approvedOnly(profile), knownTerms(approvedOnly(profile), answers), original);
   if (!v.ok) return { path, original, text: "", why: "", error: `The rewrite ${v.why.join("; ")}, so it wasn't used. You can edit the line yourself.` };
   let fc = await factCheck([{ text, source: `${original} ${answer}` }]);
@@ -612,7 +635,7 @@ Return JSON only: {"text": "...", "why": "..."}`;
   if (fc && fc[0]) {
     try {
       const r2 = await ask([{ role: "system", content: sys }, { role: "user", content: `LINE: ${original}\nQUESTION: ${question}\nTHEIR ANSWER: ${answer}\nYour last try "${text}" was rejected because "${fc[0]}" isn't in the line or the answer. Use only the line's own words plus their answer.` }]);
-      const t2 = Profile.stripDashes(String(r2.text || "")).trim();
+      const t2 = houseStyle(Profile.stripDashes(String(r2.text || "")).trim());
       if (t2 && vet(t2, [original, answer], approvedOnly(profile), knownTerms(approvedOnly(profile), answers), original).ok) {
         const fc2 = await factCheck([{ text: t2, source: `${original} ${answer}` }]);
         if (fc2 && !fc2[0]) { text = t2; fc = fc2; r.why = r2.why; }
@@ -745,7 +768,7 @@ Return JSON only: {"lines": [{"text": "...", "from": [0]}]}`;
   const write = async (cs, note = "") => {
     const r = await ask([{ role: "system", content: sys + tense + note }, { role: "user", content: `JOB: ${job.title}${job.employer ? " at " + job.employer : ""}${now ? " (they work here now)" : ""}\nTHEY CONFIRMED:\n${list(cs)}` }]);
     return arr(r.lines).map((l) => {
-      const text = Profile.stripDashes(String(l.text || "")).trim().replace(/\.$/, "");
+      const text = houseStyle(Profile.stripDashes(String(l.text || "")).trim()).replace(/\.$/, "");
       const used = arr(l.from).map((i) => cs[Number(i)]).filter(Boolean);
       const from = used.length ? used : cs;
       const v = vet(text, [...from.map(yesSource), job.title, job.employer || ""], p, known, from.map((c) => `${c.q} ${c.detail || ""}`).join(" "));

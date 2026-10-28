@@ -45,7 +45,7 @@ test("after the creator: strongest lines first, merged repeats, guesses kept, no
     return { jobs: [
       { i: 0, lines: [{ text: "Handle about 8 to 12 dispatch calls a shift", from: [0] }, { text: "Never damaged a customer's vehicle", from: [2] },
         { text: "Secure accident scenes with cones, flares and lights", from: [3, 4] }, { text: "Handle 15 calls a shift", from: [1] }] },
-      { i: 1, lines: [{ text: "Produced road closure signs on short notice during emergencies", from: [1] }, { text: "Trained two new hires on the vinyl cutter", from: [0] }] }],
+      { i: 1, lines: [{ text: "Produced road closure signs on short notice during emergencies", from: [1] }, { text: "Trained 2 new hires on the vinyl cutter", from: [0] }] }],
       headline: "Class B CDL tow truck driver", summary: "Tow truck driver handling about 8 to 12 calls a shift. Trained new hires at the City of Springfield sign shop",
       skills: [{ label: "Licenses & Certifications", items: ["Class B CDL"] }, { label: "Equipment & Tools", items: ["Vinyl cutter", "Winch", "Laser engraver"] }, { label: "Languages", items: ["English", "Spanish"] }] };
   };
@@ -58,7 +58,7 @@ test("after the creator: strongest lines first, merged repeats, guesses kept, no
   assert.ok(r.rejected.some((x) => /15/.test(x.text)));
   assert.ok(tow.bullets.every((b) => b.approved === false), "nothing used before approval");
   assert.strictEqual(tow.bullets.filter((b) => /cones/.test(b.text)).length, 1, "no duplicate left behind for tailoring");
-  assert.deepStrictEqual(r.profile.experience[1].bullets.map((b) => b.text).slice(0, 2), ["Produced road closure signs on short notice during emergencies", "Trained two new hires on the vinyl cutter"]);
+  assert.deepStrictEqual(r.profile.experience[1].bullets.map((b) => b.text).slice(0, 2), ["Produced road closure signs on short notice during emergencies", "Trained 2 new hires on the vinyl cutter"]);
   assert.strictEqual((r.profile.headers.find((h) => h.id === base.header) || {}).text, "Class B CDL tow truck driver");
   assert.match(r.profile.summaries.find((s) => s.id === base.summary).text, /^Tow truck driver handling about 8 to 12 calls a shift/);
   const skills = Object.fromEntries(r.profile.skills.map((s) => [s.label, s.items]));
@@ -133,20 +133,20 @@ test("a rewording may not lose their number; a summary says what they are; a pla
   const skills = Object.fromEntries(r.profile.skills.map((s) => [s.label, s.items]));
   assert.strictEqual(skills.Languages, "English, Spanish", "languages stay languages");
   assert.strictEqual(skills["Licenses & Certifications"], "Class B CDL");
-  assert.strictEqual(skills["Equipment & Tools"], "Winch, Vinyl cutter");
+  assert.strictEqual(skills["Equipment & Tools"], "Vinyl cutter, Winch", "sorted without the AI, in the order they typed them");
 });
 
 test("a casual or failed line gets one more try with the reason; still casual means a note for them", async () => {
   let asked = "";
   reply = (sys, user) => {
     if (/fact-check/.test(sys)) return { lines: [] };
-    if (/Rewrite each resume line in professional/.test(sys)) { asked = user; return { lines: [{ n: 0, text: "Trained two new hires on the vinyl cutter" }, { n: 1, text: "Made road closure signs real quick in emergencies" }] }; }
+    if (/Rewrite each resume line in professional/.test(sys)) { asked = user; return { lines: [{ n: 0, text: "Trained 2 new hires on the vinyl cutter" }, { n: 1, text: "Made road closure signs real quick in emergencies" }] }; }
     return { jobs: [{ i: 0, lines: [{ text: "Trained two new guys on the vinyl cutter", from: [0] }, { text: "Made road closure signs real quick", from: [1] }] }], headline: "Class B CDL tow truck driver", summary: "Tow truck driver with a Class B CDL" };
   };
   const r = await P.polishCreated(created(), { ids: ["sign"], skillIds: [] });
   assert.match(asked, /reads casually/, "the retry is told why");
   const sign = r.profile.experience.find((e) => e.id === "sign");
-  assert.strictEqual(sign.bullets[0].text, "Trained two new hires on the vinyl cutter");
+  assert.strictEqual(sign.bullets[0].text, "Trained 2 new hires on the vinyl cutter");
   assert.ok(!sign.bullets.some((b) => /real quick/.test(b.text)), "a still-casual rewording is never used");
 });
 

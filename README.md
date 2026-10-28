@@ -402,6 +402,23 @@ the same way every time:
   say, and only keeps its note if that try fails too.
 - A short resume is set a little larger and its space spread evenly between
   sections, so the page doesn't stop two thirds of the way down.
+- A house style: the AI's words for the same thing are made the same
+  ("Decreased", "Lowered" and "Reduced" a number become "Cut"; "approximately"
+  becomes "about"; "daily" and "per shift" become "a day" and "a shift";
+  "three new hires" becomes "3 new hires"). Only the AI's wording, never what
+  you typed, and the honesty checks run afterwards.
+- Every number you gave ends up in a line; one the AI left out gets its own
+  line, and one dropped from the page goes back while there's room. A
+  rewording also keeps every name in your line (ChatGPT, Zendesk, your
+  employer).
+- Your skills are sorted without the AI, the same way every time: software
+  from the U.S. Department of Labor's O*NET list of software used at work
+  (Zendesk, Excel, QuickBooks...), equipment by what it is (pallet jack, vinyl
+  cutter), and traits like "teamwork" left off the page.
+- Dates are picked as a month and a year (or the year alone if you're not
+  sure), and every date is written the same way: "Sep 2023 – Present". Dates
+  from an uploaded resume are rewritten the same way, and Check & improve
+  points out a job that has only the year when the others have the month.
 
 On **Check & improve**:
 - **Read it like a recruiter** reads a layout in two stages, like a real

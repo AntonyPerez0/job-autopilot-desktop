@@ -243,3 +243,65 @@ test("a line the fact check flags gets one more try without the flagged part; it
   assert.strictEqual(b.text, "Trained 3 new support hires on company processes", "the retry added Kubernetes: refused, the note stays");
   assert.strictEqual(b.warning, "y");
 });
+
+test("house style: the same thing said the same way, without changing what it says", async () => {
+  const { houseStyle } = await import("../core/style.js");
+  const same = [
+    ["Decreased duplicate tickets by 50% by creating a shared refund guide", "Cut duplicate tickets 50% by creating a shared refund guide"],
+    ["Lowered new-customer complaints 31% by drafting onboarding emails", "Cut new-customer complaints 31% by drafting onboarding emails"],
+    ["Edited every email, reducing new-customer complaints by 31%", "Edited every email, cutting new-customer complaints 31%"],
+    ["Answer approximately 60 emails and chats daily regarding billing", "Answer about 60 emails and chats a day regarding billing"],
+    ["Ran the register for about 200 customers per shift", "Ran the register for about 200 customers a shift"],
+    ["Trained three new support hires", "Trained 3 new support hires"],
+    ["Grew followers by 30% by testing video openings", "Increased followers 30% by testing video openings"],
+    ["Utilized Excel in order to track inventory", "Used Excel to track inventory"]];
+  for (const [a, b] of same) assert.strictEqual(houseStyle(a), b);
+  const untouched = ["Prepared daily reports for the manager", "Inspect the truck every shift before driving", "Help with one-on-one technology support", "Reduced errors by double-checking orders"];
+  for (const t of untouched) assert.strictEqual(houseStyle(t), t, "no number, no change");
+});
+
+test("skills sorted without the AI: software from O*NET's list, equipment by what it is, soft skills off the page", async () => {
+  const { skillGroup } = await import("../core/skillsort.js");
+  const want = { "Zendesk": "Software & Systems", "Microsoft Excel": "Software & Systems", "Excel": "Software & Systems", "Google Sheets": "Software & Systems", "ChatGPT": "Software & Systems", "Intuit QuickBooks": "Software & Systems",
+    "Pallet jack": "Equipment & Tools", "Vinyl cutter": "Equipment & Tools", "Cash register": "Equipment & Tools", "Bucket truck": "Equipment & Tools",
+    "Truck driving": "Skills", "Forklift operation": "Skills", "Payroll": "Skills", "Inventory management": "Skills", "HVAC": "Skills", "Customer onboarding": "Skills", "Teamwork": "soft" };
+  for (const [k, v] of Object.entries(want)) assert.strictEqual(skillGroup(k), v, k);
+});
+
+test("dates one way: Mar 2022, 2022, Present; ranges with an en dash; anything else left as it was", async () => {
+  const { fmtDate, fmtRange } = await import("../core/dates.js");
+  assert.deepStrictEqual(["2022-03", "3/2022", "March 2022", "Sept. 2022", "2023", "now", "Summer 2021"].map(fmtDate), ["Mar 2022", "Mar 2022", "Mar 2022", "Sep 2022", "2023", "Present", "Summer 2021"]);
+  assert.strictEqual(fmtRange("06/2021 - present"), "Jun 2021 – Present");
+  assert.strictEqual(fmtRange("2019-2021"), "2019 – 2021");
+  const p = example();
+  p.experience[1].dates = "2022 – 2023";
+  const c = S.checklist(p).find((x) => x.id === "dates");
+  assert.ok(c && c.title === "Add the month to these dates" && c.items.map((x) => x.path).join() === `experience.${p.experience[1].id}`, JSON.stringify(c));
+});
+
+test("every number they gave reaches a line: the creator asks for a missing one, and the polish puts a dropped one back", async () => {
+  reply = (sys) => {
+    if (/fact-check/.test(sys)) return { lines: [] };
+    if (/Write one resume line for each fact below/.test(sys)) return { lines: [{ n: 0, text: "Ran the register for about 200 customers a shift" }] };
+    if (/write a one-page resume/.test(sys)) return { summary: "", jobs: [{ index: 0, bullets: [{ text: "Trained 4 new cashiers", source: "trained 4 new cashiers" }, { text: "Closed the store on weekends", source: "closed the store on weekends" }] }] };
+    return {};
+  };
+  const c = await S.createFromInterview({ jobs: [{ title: "Cashier", employer: "Initech Market", start: "2019", end: "2022", daily: "ran the register, about 200 customers a shift, closed the store on weekends", proud: "trained 4 new cashiers" }] }, null, {});
+  const lines = c.profile.experience[0].bullets.map((b) => b.text);
+  assert.ok(lines.includes("Ran the register for about 200 customers a shift"), JSON.stringify(lines));
+  // The polish chose two lines and left the one with "200" off: it goes back on, there's room for three.
+  reply = (sys) => {
+    if (/fact-check/.test(sys)) return { lines: [] };
+    if (/turning a person's resume lines/.test(sys)) return { jobs: [{ i: 0, lines: [{ text: "Trained 4 new cashiers", from: [0] }, { text: "Closed the store on weekends", from: [1] }] }], headline: "", summary: "" };
+    return {};
+  };
+  const pol = await P.polishCreated(c.profile, { ids: [c.profile.experience[0].id], linesOnly: true });
+  const e = pol.profile.experience[0];
+  assert.ok(e.bullets.slice(0, 3).some((b) => /200/.test(b.text)), JSON.stringify(e.bullets.map((b) => b.text)));
+});
+
+test("a rewording keeps the names in the line: dropping ChatGPT or Zendesk is refused", () => {
+  const o = "Drafted an onboarding email sequence with ChatGPT, then edited every email; new-customer complaints dropped 31%";
+  assert.match(P.vet("Cut new-customer complaints 31% by editing the onboarding email sequence", [o], { rules: {} }, [], o).why.join(), /leaves out chatgpt/);
+  assert.ok(P.vet("Cut new-customer complaints 31% by drafting an onboarding email sequence with ChatGPT, then editing every email", [o], { rules: {} }, [], o).ok);
+});

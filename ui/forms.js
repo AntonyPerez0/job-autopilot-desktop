@@ -9,6 +9,19 @@
   const msg = (el, kind, text) => { el.innerHTML = text ? `<div class="msg ${kind}">${esc(text)}</div>` : ""; };
   const fld = (label, inner, hint) => `<div class="fld"><span>${label}</span>${inner}${hint ? `<small>${hint}</small>` : ""}</div>`;
   const inp = (name, value, attrs = "") => `<input name="${name}" value="${esc(value)}" ${attrs}>`;
+  // A month and a year, so every date on the resume is written the same way ("Sep 2023"). The hidden field
+  // holds "Sep 2023", or just "2023" when they don't remember the month.
+  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const datePick = (name, label) => `<div class="date-pick" data-date="${name}">
+      <select class="inp" data-dm aria-label="${label}: month"><option value="">Month</option>${MONTHS.map((m) => `<option>${m}</option>`).join("")}<option value="-">Not sure</option></select>
+      <input class="inp" data-dy type="number" inputmode="numeric" min="1950" max="${new Date().getFullYear() + 1}" placeholder="Year" aria-label="${label}: year">
+      <input type="hidden" name="${name}" value=""></div>`;
+  document.addEventListener("input", (e) => {
+    const w = e.target.closest && e.target.closest("[data-date]");
+    if (!w) return;
+    const m = w.querySelector("[data-dm]").value, y = w.querySelector("[data-dy]").value.trim();
+    w.querySelector("input[type=hidden]").value = /^\d{4}$/.test(y) ? (m && m !== "-" ? `${m} ${y}` : y) : "";
+  });
   const sel = (name, value, opts) => `<select name="${name}">${opts.map(([v, l]) => `<option value="${esc(v)}" ${String(v) === String(value) ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
   const radios = (name, value, opts) => `<div class="radio-row">${opts.map(([v, l]) => `<label><input type="radio" name="${name}" value="${esc(v)}" ${String(v) === String(value) ? "checked" : ""}>${esc(l)}</label>`).join("")}</div>`;
   const val = (root, name) => { const e = root.querySelector(`[name="${name}"]`); if (!e) return undefined; if (e.type === "radio") { const c = root.querySelector(`[name="${name}"]:checked`); return c ? c.value : ""; } if (e.type === "checkbox") return e.checked; return e.value.trim(); };
@@ -263,7 +276,7 @@
     const jobCard = (n) => `<div class="sub-item" data-cjob>
       <div class="row-actions" style="justify-content:space-between"><b>Job ${n}</b><button type="button" class="btn ghost sm" data-rm-cjob>${icon("trash")}Remove</button></div>
       <div class="form-row">${fld("Job title", inp("c_title", "", 'placeholder="e.g. Cashier, Line cook, Office assistant"'))}${fld("Employer", inp("c_employer", "", 'placeholder="e.g. Target"'))}${fld("City", inp("c_location", "", 'placeholder="e.g. Austin, TX"'))}</div>
-      <div class="form-row">${fld("Started", inp("c_start", "", 'placeholder="e.g. Jun 2023"'))}${fld("Ended", inp("c_end", "", 'placeholder="e.g. Aug 2024"'))}
+      <div class="form-row">${fld("Started", datePick("c_start", "Started"))}${fld("Ended", datePick("c_end", "Ended"))}
         <div class="fld" style="align-self:end"><label class="check"><input type="checkbox" name="c_current">I work here now</label></div></div>
       ${fld("What did you do on a normal day?", `<textarea name="c_daily" rows="3" placeholder="In your own words, e.g. ran the register, stocked shelves, opened and closed the store, answered phones"></textarea>`)}
       ${fld("What went well? What happened, what was your part, and how did you do it?", `<textarea name="c_proud" rows="2" placeholder="e.g. trained 3 new people so we could open on Sundays; cut the line at lunch by setting up a second register; never had my drawer come up short"></textarea>`, "Optional, but this is what makes a resume stand out.")}
@@ -347,7 +360,7 @@
     const workCard = (kind) => `<div class="sub-item" data-fwork="${kind}">
       <div class="form-row">${fld(kind === "vol" ? "What you did (role)" : "Job title", inp("f_title", "", `placeholder="${kind === "vol" ? "e.g. Youth soccer coach, Food bank volunteer" : "e.g. Delivery driver, Seasonal warehouse"}"`))}
         ${fld(kind === "vol" ? "Where" : "Employer", inp("f_employer", "", kind === "vol" ? 'placeholder="e.g. Sacramento Food Bank, a church, Little League (or leave empty)"' : 'placeholder="e.g. DoorDash, family business"'))}</div>
-      <div class="form-row">${fld("Started", inp("f_start", "", 'placeholder="e.g. 2019"'))}${fld("Ended", inp("f_end", "", 'placeholder="e.g. 2020"'))}
+      <div class="form-row">${fld("Started", datePick("f_start", "Started"))}${fld("Ended", datePick("f_end", "Ended"))}
         <div class="fld" style="align-self:end"><label class="check"><input type="checkbox" name="f_current">Still doing it</label></div></div>
       ${fld("What did you do?", `<textarea name="f_daily" rows="2" placeholder="In your own words, with any numbers you know"></textarea>`)}
       ${kind === "vol" ? "" : fld("Tools, machines or software", inp("f_tools", "", 'placeholder="e.g. hand truck, delivery app"'))}</div>`;

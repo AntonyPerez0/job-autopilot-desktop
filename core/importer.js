@@ -3,6 +3,7 @@
 // until the user approves it on the review screen.
 import path from "node:path";
 import { Tailor, aiSettings } from "./engine.js";
+import { fmtRange } from "./dates.js";
 
 export async function resumeText(name, bytes) {
   const ext = path.extname(String(name)).toLowerCase();
@@ -124,5 +125,7 @@ export async function importResumes(files, onStep = () => {}, settings = aiSetti
   }
   // The "own voice" paragraph is for words the person wrote themselves; the AI copies the example's and invents one.
   if (merged) delete merged.essaySample;
+  // Dates one way ("Jun 2021 – Present"), whatever style the uploaded resume used.
+  if (merged) for (const k of ["experience", "projects"]) for (const e of merged[k] || []) if (e.dates) e.dates = fmtRange(e.dates);
   return { profile: unapproved(merged), texts };
 }

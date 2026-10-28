@@ -6,10 +6,14 @@
 import { Profile } from "./engine.js";
 import { GUIDE, ask, createFromInterview, factCheck, knownTerms, numbersIn, refixFlagged, rewriteWithAnswer, specificTerms } from "./studio.js";
 import { POLISH_RULES, polishCreated, vet, xyzOrder } from "./polish.js";
+import { skillGroup } from "./skillsort.js";
+import { houseStyle } from "./style.js";
 
 const arr = (x) => (Array.isArray(x) ? x : []);
 const str = (x) => String(x == null ? "" : x).trim();
 const clean = (t) => Profile.stripDashes(str(t)).replace(/\s+/g, " ").replace(/\.$/, "");
+// What the AI wrote, in the house style (core/style.js); what the person typed goes through clean() only.
+const styled = (t) => houseStyle(clean(t)).replace(/\.$/, "");
 const isCert = (s) => /certif|licen/i.test(String(s.label || ""));
 const shownLines = (p) => {
   const lay = arr(p.bases).find((b) => b.approved) || arr(p.bases)[0];
@@ -94,7 +98,9 @@ export async function applyFill(profile, input = {}, answers = {}) {
       // Tools they named for the new work join their list of the same kind; the combined list takes
       // the old one's place once approved, so the page never shows the same heading twice.
       for (const s of q.skills.filter((s) => !before.skills.includes(s.id))) {
-        s.label = /language/i.test(s.label) ? s.label : /certif|licen/i.test(s.label) ? "Licenses & Certifications" : /\b(app|apps|software|system|systems)\b/i.test(s.items) && !String(s.items).includes(",") ? "Software & Systems" : "Equipment & Tools";
+        // Sorted the same way as everywhere else (core/skillsort.js): software if most of them are software.
+        const groups = String(s.items).split(/\s*,\s*/).filter(Boolean).map(skillGroup);
+        s.label = /language/i.test(s.label) ? s.label : /certif|licen/i.test(s.label) ? "Licenses & Certifications" : groups.filter((g) => g === "Software & Systems").length > groups.length / 2 ? "Software & Systems" : "Equipment & Tools";
         const old = q.skills.find((x) => before.skills.includes(x.id) && (x.label === s.label || (s.label === "Equipment & Tools" && /^(skills|equipment|tools)/i.test(x.label))));
         if (old) {
           s.items = dedupe([...String(old.items).split(/\s*,\s*/), ...String(s.items).split(/\s*,\s*/)].filter(Boolean)).join(", ");
@@ -139,8 +145,8 @@ export async function applyFill(profile, input = {}, answers = {}) {
     const toCheck = [];
     const tries = recs.map((x, n) => {
       const e = p.experience.find((y) => y.id === x.id), said = clean(x.text);
-      const check = (t) => (clean(t) ? vet(clean(t), [said, e.title, e.org || ""], p, [...known, ...specificTerms(e.title)], said) : { ok: false, why: ["empty"] });
-      const text = clean((arr(out.lines).find((l) => Number(l.n) === n) || {}).text);
+      const check = (t) => (styled(t) ? vet(styled(t), [said, e.title, e.org || ""], p, [...known, ...specificTerms(e.title)], said) : { ok: false, why: ["empty"] });
+      const text = styled((arr(out.lines).find((l) => Number(l.n) === n) || {}).text);
       return { x, e, said, check, text, v: check(text) };
     });
     // A line that failed a check gets one more try with the reason; their raw words never go on the page.
@@ -149,7 +155,7 @@ export async function applyFill(profile, input = {}, answers = {}) {
       try {
         const r2 = await ask([{ role: "system", content: `Rewrite each record or recognition as one professional resume line, using only what they said.\n${GUIDE}\nEach item says why the last try was rejected; fix exactly that. Keep every number exactly as they gave it.\nReturn JSON only: {"lines": [{"n": 0, "text": "..."}]}` },
           { role: "user", content: again.map((t, n) => `${n}. JOB: ${t.e.title}${/present/i.test(t.e.dates || "") ? " (current: present tense)" : " (past tense)"}\n   THEY SAID: ${t.said}\n   LAST TRY: ${t.text || "(none)"} -> rejected: ${t.v.why.join("; ")}`).join("\n") }]);
-        for (const l of arr(r2.lines)) { const t = again[Number(l.n)]; if (!t) continue; const v = t.check(l.text); if (v.ok) { t.text = clean(l.text); t.v = v; } }
+        for (const l of arr(r2.lines)) { const t = again[Number(l.n)]; if (!t) continue; const v = t.check(l.text); if (v.ok) { t.text = styled(l.text); t.v = v; } }
       } catch { /* reported below */ }
     }
     for (const { e, said, text, v } of tries) {
@@ -187,7 +193,7 @@ export async function applyFill(profile, input = {}, answers = {}) {
       const e = x.where === "own" ? null : p.experience.find((y) => y.id === x.where);
       const src = [said(x), str(x.tool), str(x.name), e ? e.title : "", e ? e.org || "" : ""].filter(Boolean);
       const check = (t) => {
-        const c = clean(t);
+        const c = styled(t);
         if (!c) return { ok: false, why: ["empty"] };
         // What changed is theirs to say: with it, the plain verb for that change ("cut", "reduced") is fair.
         const change = str(x.result) ? ["cut", "reduced", "shortened", "saved", "improved", "increased", "decreased", "lowered", "raised"] : [];
@@ -196,7 +202,7 @@ export async function applyFill(profile, input = {}, answers = {}) {
         if (!c.toLowerCase().includes(str(x.tool).toLowerCase())) return { ok: false, why: [...v.why, `leaves out ${str(x.tool)}`] };
         return v;
       };
-      const text = clean((arr(out.lines).find((l) => Number(l.n) === n) || {}).text);
+      const text = styled((arr(out.lines).find((l) => Number(l.n) === n) || {}).text);
       return { x, e, src, check, text, v: check(text) };
     });
     const again = tries.filter((t) => !t.v.ok);
@@ -204,7 +210,7 @@ export async function applyFill(profile, input = {}, answers = {}) {
       try {
         const r2 = await ask([{ role: "system", content: sys.replace(/Return JSON only[\s\S]*$/, "") + `Each item says why the last try was rejected; fix exactly that.\nReturn JSON only: {"lines": [{"n": 0, "text": "..."}]}` },
           { role: "user", content: again.map((t, n) => `${n}. ${where(t.x)}\n   TOOL: ${str(t.x.tool)}\n   THEY SAID: ${said(t.x)}\n   LAST TRY: ${t.text || "(none)"} -> rejected: ${t.v.why.join("; ")}`).join("\n") }]);
-        for (const l of arr(r2.lines)) { const t = again[Number(l.n)]; if (!t) continue; const v = t.check(l.text); if (v.ok) { t.text = clean(l.text); t.v = v; } }
+        for (const l of arr(r2.lines)) { const t = again[Number(l.n)]; if (!t) continue; const v = t.check(l.text); if (v.ok) { t.text = styled(l.text); t.v = v; } }
       } catch { /* reported below */ }
     }
     // Result, measure, method, the same way as every other line; the tool has to stay in it.

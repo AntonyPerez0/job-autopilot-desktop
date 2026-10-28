@@ -323,6 +323,10 @@ tbody tr:hover { background: var(--color-paper-2); }
 
 /* ---------- forms (setup and settings) ---------- */
 .form { display: grid; gap: var(--space-md); }
+/* A month list and a year box side by side. */
+.date-pick { display: flex; gap: var(--space-xs); }
+.date-pick select { flex: 1 1 8rem; min-width: 0; }
+.date-pick input { flex: 0 1 6.5rem; min-width: 5rem; }
 .form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: var(--space-md); }
 .fld { display: grid; gap: var(--space-2xs); min-width: 0; align-content: start; }
 .fld > span { font-size: var(--text-sm); font-weight: 500; color: var(--color-ink-2); }
