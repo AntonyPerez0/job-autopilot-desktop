@@ -19,7 +19,7 @@ For hourly and everyday jobs as well as office and tech work. Desktop app for ma
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/overview-dark.png">
-  <img src="docs/images/overview-light.png" alt="The Job Autopilot overview: applications sent, the queue, and jobs waiting for an answer" width="900">
+  <img src="docs/images/overview-light.png" alt="The Job Autopilot overview: what needs you, recent applications and what's up next" width="900">
 </picture>
 
 <br><br>
@@ -136,6 +136,16 @@ key (about a cent per application) or a free model on your own computer.
 <td valign="top" align="center">
 <img src="docs/images/resume-sample.png" alt="A sample one-page resume made by the app, for a made-up software engineer named John Doe"><br>
 <sub><b>A finished resume.</b> One page, drawn by the app, for a made-up software engineer.</sub>
+</td>
+</tr>
+<tr>
+<td valign="top" align="center">
+<img src="docs/images/move-up.png" alt="Move up: jobs you could apply for now and jobs one step away, with typical pay where you live"><br>
+<sub><b>Move up.</b> Work your jobs, skills and projects point to, with typical pay where you live and what each step takes.</sub>
+</td>
+<td valign="top" align="center">
+<img src="docs/images/answer-choices.png" alt="A question the app stopped on, answered by picking one of the form's own choices"><br>
+<sub><b>Answer what only you can.</b> When an application stops on a question, you pick from the form's own choices.</sub>
 </td>
 </tr>
 </table>
@@ -976,9 +986,11 @@ licenses.
 
 ## Contributing
 
-Issues and pull requests are welcome. Run `npm test` and `npm run e2e` before
-sending a change, and keep the honesty rules intact: the app never states a fact
-the user didn't give.
+Issues and pull requests are welcome. Run `npm test`, `npm run e2e` and
+`npm run a11y` before sending a change, and keep the honesty rules intact: the
+app never states a fact the user didn't give. After a change to how the app
+looks, `node scripts/readme-shots.mjs` remakes the README's screenshots from
+made-up data, with a stand-in for the AI, so it needs no key.
 
 ## License
 

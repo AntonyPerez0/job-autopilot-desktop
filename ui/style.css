@@ -386,7 +386,7 @@ tbody tr:hover { background: var(--color-paper-2); }
 .wiz-step.on { background: var(--color-cotton); color: var(--color-ink); font-weight: 600; box-shadow: var(--edge-stock); }
 .wiz-step.on .n { color: var(--color-ink); }
 .wiz-step.done .n { color: var(--color-done); }
-.wiz-main { padding: var(--space-xl) var(--space-xl) var(--space-2xl); max-width: 52rem; width: 100%; }
+.wiz-main { padding: var(--space-xl) var(--space-xl) var(--space-2xl); max-width: 56rem; width: 100%; margin-inline: auto; }
 .wiz-main h1 { font-size: var(--text-3xl); line-height: 1.1; margin-bottom: var(--space-xs); max-width: 22ch; }
 .wiz-main .lead { color: var(--color-ink-2); margin: 0 0 var(--space-lg); max-width: 60ch; }
 .wiz-main > #step > .card + .card, .wiz-main #history-found .card { margin-top: var(--space-md); }

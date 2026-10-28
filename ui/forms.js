@@ -903,7 +903,8 @@
         ? `<span class="pill">${money(x.pay.hourly)}/hr typical, about the same pay</span>`
         : `<span class="pill ok">${money(x.pay.hourly)}/hr typical${x.gain ? `, about ${x.gain}% more` : ""}</span>`) + group(x);
       const now = r.now ? `${r.now.from === "your pay" ? "You make" : `Typical pay for ${esc(r.from.title.toLowerCase())}${r.from.pay ? ` in ${esc(r.from.pay.area)}` : ""}:`} ${money(r.now.hourly)}/hr (about ${yearly(r.now.hourly)} a year).` : "";
-      const based = (r.based || []).length ? ` Based on all your jobs (${esc(r.based.join(", "))}), your skills and your projects.` : "";
+      const list = (a) => a.length > 1 ? a.slice(0, -1).join(", ") + " and " + a[a.length - 1] : a[0];
+      const based = (r.based || []).length ? ` Based on your jobs as ${esc(list(r.based))}, your skills and your projects.` : "";
       const showHidden = hidden.length ? ` <a href="#" data-mu-unhide>Show the ${hidden.length} you hid again</a>` : "";
       // A job title hidden is gone; related work (not an idea from their skills) also goes by its occupation.
       const goneTitle = new Set(hidden.map((x) => nt(x.title))), goneCode = new Set(hidden.map((x) => x.code));
@@ -912,7 +913,7 @@
       const notMe = (x) => `<button type="button" class="btn ghost sm" data-mu-hide="${esc(x.code)}" data-mu-title="${esc(x.title)}">Not for me</button>`;
       if (!ready.length && !step.length) host.innerHTML = `<div class="msg info">${now}${based} The app didn't find other kinds of work within one step of what you've done that pay about the same or more. Try telling it what you'd like to move toward above, and press the button again.${showHidden}</div>`;
       else host.innerHTML = `<p class="hint" style="margin:6px 0">${now}${based} Moving up in your own line of work counts too: tick <b>Senior</b> or <b>Manager or team lead</b> under What level, when your experience fits.</p>
-        ${ready.length ? `<div class="section-t" style="margin-top:4px">You could apply for these now</div><div class="sugg-list">${ready.map((x) => `<div class="sugg-item"><div><b>${esc(x.title)}</b> ${payLine(x)}
+        ${ready.length ? `<div class="section-t" style="margin-top:12px">You could apply for these now</div><div class="sugg-list">${ready.map((x) => `<div class="sugg-item"><div><b>${esc(x.title)}</b> ${payLine(x)}
             <div class="muted">${esc(x.why)}</div></div><div class="row-actions" style="flex-wrap:nowrap">${notMe(x)}<button type="button" class="btn sm" data-mu-add="${esc(x.title)}">${icon("plus")}Add</button></div></div>`).join("")}</div>` : ""}
         ${step.length ? `<div class="section-t">One step away</div><div class="sugg-list">${step.map((x) => `<div class="sugg-item"><div><b>${esc(x.title)}</b> ${payLine(x)}
             <div><b>What you'd need:</b> ${esc(x.need)}</div>${x.how ? `<div class="muted">${esc(x.how)}</div>` : ""}${x.why ? `<div class="muted">${esc(x.why)}</div>` : ""}</div>${notMe(x)}</div>`).join("")}</div>` : ""}
