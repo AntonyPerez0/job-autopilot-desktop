@@ -46,8 +46,10 @@ export const POLISH_RULES = `What recruiters want:
 - A headline under the name: the kind of job they do or want plus their strongest credential they hold, about 6 to 12 words ("Class B CDL tow truck driver, WreckMaster certified"). For a driving or trade job the license class goes here. No adjectives about character.
 - A summary of two or three short lines: what they do, the scope (numbers they gave), and what they bring to the job they want next (name that job when they are changing fields). No "I", no objective statement ("seeking a challenging position"), no "hard-working", "team player", "detail-oriented", "motivated", "results-driven", "passionate".
 - Lines: an action verb first, one sentence of about 12 to 28 words, the most relevant to the job they want first. Lead with scope or a result they gave (how many, how often, trust given to them, people trained, an emergency handled), then the task.
+- Where they gave a result and how they did it: what changed, by how much, then how (Google's X-Y-Z, "Accomplished X, as measured by Y, by doing Z"): "Decreased duplicate tickets by 50% by creating a shared refund guide for sales and support". Never complete the pattern with a part they didn't give.
+- Where their facts show they used an AI tool to get something done, that line goes first in its job: the problem, the tool, the result.
 - Turn "responsible for", "duties included", "tasked with", "worked on", "helped with" into the task's own verb ("Responsible for towing cars" -> "Tow cars"), but keep "helped" when they only helped.
-- Plain, concrete verbs: never "spearheaded", "leveraged", "orchestrated", "transformed" or other big words their facts don't support.
+- Plain, concrete verbs: never "spearheaded", "leveraged", "orchestrated", "transformed" or other big words their facts don't support. It should read like a person wrote it, not an AI: plain, specific, in words they could say in an interview.
 - Every number they gave stays exactly as they gave it, with its "about"; use each one somewhere.
 - Professional, technical register: the terms people in their trade use on a resume, never everyday talk. "Take dispatch calls and drive to breakdowns" -> "Respond to dispatched breakdown and accident calls"; "hard recoveries like cars in ditches" -> "complex off-road vehicle recoveries"; "talking with police" -> "coordinating with law enforcement on scene"; "turned signs around fast" -> "produced signs on short notice"; "went out with the crew" -> "installed signs as part of a field crew"; "two new guys" -> "two new hires". Proper capitals for names ("City of Sacramento"); standard abbreviations only (CDL, DOT). Same facts, never a bigger claim, and no corporate filler.
 - Tense: present for the current job's ongoing work, past for everything else. No trailing full stops.
@@ -61,10 +63,18 @@ async function topOfPage(first, facts, p, known, aim) {
   const check = (h, s0) => ({ h: clean(h), s: clean(s0), hv: vet(clean(h), [facts], p, known), sv: vet(clean(s0), [facts], p, known) });
   // A summary says what they are ("Tow truck driver with..."), not a duty list that starts with a verb.
   const VERB_START = /^(operate|operated|maintain|maintained|respond|responded|manage|managed|handle|handled|perform|performed|deliver|delivered|make|made|work|worked|provide|provided|fabricate|fabricated|keep|kept|drive|drove|train|trained|assist|assisted|use|used|complete|completed|collect|collected|install|installed|run|ran|serve|served)\b/i;
-  const okH = (x) => x.h && x.hv.ok && x.h.split(/\s+/).length <= 16, okS = (x) => x.s && x.sv.ok && !/\b(pay|pays|paid|salary|money)\b/i.test(x.s) && !VERB_START.test(x.s);
+  // Any past-tense verb opening counts ("Drafted...", "Wrote..."); "Licensed", "Certified" describe what they are.
+  const PAST_START = /^(?!licensed|certified|bilingual|registered|seasoned|experienced)[a-z]+ed\b|^(wrote|built|ran|led|made|drove|took|grew|cut|sold|won|taught|kept|brought|began)\b/i;
+  // ... and any verb their own lines start with ("Answer about 60 tickets..." is a line, not a summary).
+  // Each job's facts start with its title ("Tow Truck Driver. Initech Towing. ..."): a word a title starts with
+  // says what they are ("Tow truck driver with..."), so only the words their lines start with count.
+  const titleWords = new Set(String(facts).split("\n").map((l) => l.split(/\s+/)[0].toLowerCase()));
+  const lineVerbs = new Set([...String(facts).matchAll(/\. ([A-Z][a-z]+)\b/g)].map((m) => m[1].toLowerCase()).filter((w) => !titleWords.has(w) && !/^(the|a|an|at|in|on|for|with|about|before|after|job|tools|skills|their)$/.test(w)));
+  const lineStart = (t) => { const w = String(t).split(/\s+/)[0].toLowerCase().replace(/[^a-z]/g, ""); return lineVerbs.has(w) && !String(first.headline || "").toLowerCase().startsWith(w); };
+  const okH = (x) => x.h && x.hv.ok && x.h.split(/\s+/).length <= 16, okS = (x) => x.s && x.sv.ok && !/\b(pay|pays|paid|salary|money)\b/i.test(x.s) && !VERB_START.test(x.s) && !PAST_START.test(x.s) && !lineStart(x.s);
   let c = check(first.headline, first.summary);
   if (!okH(c) || !okS(c)) {
-    const why = [!okH(c) && c.h ? `the headline "${c.h}" ${c.hv.why.join("; ") || "was too long"}` : "", !okS(c) && c.s ? `the summary ${c.sv.why.join("; ") || (VERB_START.test(c.s) ? "started with a verb like a resume line; start with what they are, e.g. 'Tow truck driver with a Class B CDL...'" : "mentioned pay")}` : ""].filter(Boolean).join(". ");
+    const why = [!okH(c) && c.h ? `the headline "${c.h}" ${c.hv.why.join("; ") || "was too long"}` : "", !okS(c) && c.s ? `the summary ${c.sv.why.join("; ") || (VERB_START.test(c.s) || PAST_START.test(c.s) || lineStart(c.s) ? "started with a verb like a resume line; start with what they are, e.g. 'Tow truck driver with a Class B CDL...'" : "mentioned pay")}` : ""].filter(Boolean).join(". ");
     try {
       const r2 = await ask([{ role: "system", content: `Write a resume headline (6 to 12 words) and a two-sentence summary from a person's facts only, ${aim}.\n${POLISH_RULES}\nYour last try was rejected: ${why}. Use only their own words for any claim about them; no praise words at all.\nReturn JSON only: {"headline": "...", "summary": "..."}` },
         { role: "user", content: facts }]);
@@ -277,6 +287,7 @@ export async function makeVersion(profile, target, answers = {}) {
   const sys = `You are a recruiter for "${target}" jobs, building this person's resume for that kind of job from their approved lines ONLY.
 ${GUIDE}
 ${POLISH_RULES}
+First work out what a ${target} employer most needs the person to do, and the skills and terms their ads use. Then map: put those terms only into lines whose facts show them, once each, inside the line that proves them. Never add a keyword the lines don't support, never list keywords, never repeat one.
 1. For each job, choose the lines that matter most for ${target} work (current job at most ${LINES.current}, others at most ${LINES.older}), best first, by "id".
    Where a line would mean more to a ${target} recruiter in that field's words, give a reworded version: same facts, same numbers, same limits, nothing added
    (a sign-shop line about fixing the vinyl cutter can become "Troubleshot and maintained..." for a technician job; it cannot gain a tool, a system or a result).
@@ -363,9 +374,15 @@ Never ask for a bulleted summary or one that starts with a verb: the summary is 
 7. Line budget: current job 3 to 5 lines, older jobs 2 or 3, no near-duplicate lines, one page.
 8. Skills: grouped and labeled (licenses and certifications, equipment and tools, software and systems, languages); hard skills only.
 9. Format: dates on every job, standard headings, consistent punctuation (no trailing full stops), proper capitals.
-10. Career changers: the summary names the target role and at least two lines use that field's words honestly.`;
+10. Career changers: the summary names the target role and at least two lines use that field's words honestly.
+11. Sounds like a person: no phrasing every AI tool writes ("spearheaded", "cross-functional initiatives", "results-driven", "leveraged", "operational excellence", "robust", "seamless"). Flag each such line and give the plain wording of the same facts.
+12. Result, measure, method: a line that shows a result also says how it was done (Google's X-Y-Z: accomplished X, as measured by Y, by doing Z). When the how or the measure is missing, say what to ask the person; never supply it.
+13. Proof, not name-dropping: a tool (AI tools like ChatGPT or Copilot included) appears with what it did and the result, not just its name; a project shows a link where one exists.
+14. Keywords in context: the skills that matter for the target job sit inside lines that show them being used. Flag a line or skills list that repeats a keyword or lists keywords without a fact behind them.`;
 
-export async function recruiterReview(profile, { base = null, target = "" } = {}) {
+// posting: a job ad the person pasted (optional). The AI names what the employer most needs and the terms
+// that matter; whether the resume shows each term is then checked in the resume's own words, not by the AI.
+export async function recruiterReview(profile, { base = null, target = "", posting = "" } = {}) {
   const p = approvedOnly(profile);
   const b = arr(p.bases).find((x) => x.id === base) || arr(p.bases)[0];
   if (!b) throw new Error("Approve a layout first (All your resume pieces).");
@@ -380,13 +397,39 @@ export async function recruiterReview(profile, { base = null, target = "" } = {}
   const sys = `You are an experienced recruiter${target ? ` hiring for ${target} roles` : ""} reviewing a one-page resume.
 ${REVIEW_RULES}
 Be specific and kind. Never suggest adding facts the resume doesn't show, and never put an example number, percentage, outcome or fact in a fix ("zero violations", "100% uptime", "e.g. heavy equipment"): when a detail would help, say only what to ask the person.
-Return JSON only: {"score": 1-10, "verdict": "one sentence", "strengths": ["..."], "items": [{"path": "the line's path, or 'headline', 'summary', 'skills'", "problem": "...", "fix": "what to change, without inventing facts"}]}`;
-  let r = await ask([{ role: "system", content: sys }, { role: "user", content: JSON.stringify(doc) }]);
+${posting ? `A JOB POSTING follows the resume. Read it first: name what the EMPLOYER needs this role to do, taken from the posting itself, never advice about the resume ("needs", at most 4, plain words, such as "Onboard new customers" or "Keep the knowledge base accurate") and the skills and terms that matter most in it ("keywords", at most 12, each as the ad words it, 1 to 4 words, with "path": the resume line that already shows it in other words (ChatGPT for "AI tools"), or "" when no line does; never stretch a line to fit). Judge the resume against that job. Never suggest adding a keyword the resume's facts don't support; say only where an existing line could use the ad's word for something it already shows.
+` : ""}Return JSON only: {"score": 1-10, "verdict": "one sentence", "strengths": ["..."], "items": [{"path": "the line's path, or 'headline', 'summary', 'skills'", "problem": "...", "fix": "what to change, without inventing facts"}]${posting ? `, "needs": ["..."], "keywords": [{"term": "...", "path": "..."}]` : ""}}`;
+  const user = JSON.stringify(doc) + (posting ? `\n\nJOB POSTING\n${String(posting).slice(0, 12000)}` : "");
+  let r = await ask([{ role: "system", content: sys }, { role: "user", content: user }]);
   // An answer without a score or verdict is a failed read: one more try, then say so.
-  if (!Number(r.score) || !String(r.verdict || "").trim()) r = await ask([{ role: "system", content: sys }, { role: "user", content: JSON.stringify(doc) }]);
+  if (!Number(r.score) || !String(r.verdict || "").trim()) r = await ask([{ role: "system", content: sys }, { role: "user", content: user }]);
   if (!Number(r.score) || !String(r.verdict || "").trim()) throw new Error("The recruiter read didn't come back complete. Try again.");
   const known = new Set(["headline", "summary", "skills", "layout"]);
   for (const s of doc.sections) for (const it of s.items) for (const l of it.lines) known.add(l.path);
   const items = arr(r.items).map((x) => ({ path: known.has(x.path) ? x.path : "layout", problem: String(x.problem || "").slice(0, 300), fix: String(x.fix || "").slice(0, 300) })).filter((x) => x.problem).slice(0, 12);
-  return JSON.parse(JSON.stringify({ score: Math.max(1, Math.min(10, Number(r.score) || 0)), verdict: String(r.verdict || "").slice(0, 400), strengths: arr(r.strengths).map(String).slice(0, 4), items, base: b.id }));
+  const job = posting ? { needs: arr(r.needs).map((x) => String(x).trim().slice(0, 200)).filter(Boolean).slice(0, 4), keywords: keywordMap(doc, arr(r.keywords)) } : null;
+  // Where the AI says a line shows a term in other words: only a real line of this resume counts.
+  if (job) for (const k of job.keywords) {
+    const said = arr(r.keywords).find((x) => x && typeof x === "object" && String(x.term || "").trim().toLowerCase() === k.term.toLowerCase());
+    if (!k.shown.length && said && known.has(String(said.path || "")) && /^(experience|projects)\./.test(said.path)) k.mapped = said.path;
+  }
+  return JSON.parse(JSON.stringify({ score: Math.max(1, Math.min(10, Number(r.score) || 0)), verdict: String(r.verdict || "").slice(0, 400), strengths: arr(r.strengths).map(String).slice(0, 4), items, base: b.id, job }));
+}
+
+// Each of the ad's terms, and where the resume already shows it (in its own words), or not at all.
+// Shown many times is flagged too: past a few mentions, a keyword reads as stuffing.
+export function keywordMap(doc, terms) {
+  const places = [];
+  if (doc.header) places.push({ where: "headline", text: doc.header });
+  if (doc.summary) places.push({ where: "summary", text: doc.summary });
+  for (const s of arr(doc.skills)) places.push({ where: "skills", text: s });
+  for (const s of arr(doc.sections)) for (const it of arr(s.items)) for (const l of arr(it.lines)) places.push({ where: l.path, text: l.text });
+  const norm = (t) => " " + String(t).toLowerCase().replace(/[^a-z0-9+#.]+/g, " ").replace(/\b(\w{3,}?)(ing|ed|es|s)\b/g, "$1") + " ";
+  const seen = new Set();
+  return terms.map((t) => String((t && typeof t === "object" ? t.term : t) || "").trim().slice(0, 60)).filter((t) => t && !seen.has(t.toLowerCase()) && seen.add(t.toLowerCase())).slice(0, 12).map((term) => {
+    const k = norm(term).trim();
+    const hits = places.filter((p) => k && norm(p.text).includes(" " + k + " "));
+    const count = hits.reduce((n, p) => n + norm(p.text).split(" " + k + " ").length - 1, 0);
+    return { term, shown: hits.map((h) => h.where).slice(0, 3), count, stuffed: count > 4 };
+  });
 }

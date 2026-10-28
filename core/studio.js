@@ -18,6 +18,27 @@ const WEAK_START = /^(responsible for|duties (included|include)|helped( to)?|wor
 const PRONOUN = /\b(I|me|my|mine|we|our)\b/;
 const HAS_NUMBER = /\d|\b(one|two|three|four|five|six|seven|eight|nine|ten|dozens?|hundreds?|thousands?)\b/i;
 const CLICHE = /\b(hard[- ]working|team player|detail[- ]oriented|go[- ]getter|self[- ]starter|results[- ]driven|think outside the box|synergy|dynamic|passionate|rock ?star|ninja|guru|best of breed|proven track record)\b/i;
+// The phrasing AI tools put on every resume: recruiters spot it, and it makes every applicant sound the same.
+// A word the person used themselves is theirs to keep; anything else is said plainly instead.
+export const AI_TELLS = /\b(spearhead(ed|ing|s)?|cross[- ]functional (initiatives?|collaboration|teams?)|operational excellence|drive (operational|business) (excellence|results|growth)|drove (operational|business) (excellence|results|growth)|results[- ]driven|proven track record|track record of success|leverag(ed|ing|e)|utiliz(ed|ing|e)|robust|seamless(ly)?|cutting[- ]edge|state[- ]of[- ]the[- ]art|foster(ed|ing)|synerg(y|ies|ize)|dynamic (professional|environment|team)|passionate about|adept at|fast[- ]paced environment|best[- ]in[- ]class|game[- ]chang(er|ing)|value[- ]add(ed)?|holistic|end[- ]to[- ]end solutions?|thought leader(ship)?|go[- ]to person|wide (range|variety) of|tapestry|delve|meticulous(ly)?|showcas(ed|ing)|pivotal role|instrumental in)\b/i;
+export const aiTells = (text, sources = []) => { const src = sources.join(" ").toLowerCase(); return [...new Set((String(text).match(new RegExp(AI_TELLS.source, "gi")) || []).map((x) => x.toLowerCase()))].filter((x) => !src.includes(x)); };
+// "Customer support, customer service and customer-focused communication": one word three times is stuffing.
+const STOP = /^(with|from|that|this|their|they|them|into|onto|over|each|every|about|other|and|the|for|per|day|week|month|year|years|shift|shifts|team|teams)$/;
+export function stuffedWord(text) {
+  const n = new Map();
+  for (const w of String(text).toLowerCase().split(/[^a-z0-9+#]+/).filter((x) => x.length > 3 && !STOP.test(x))) {
+    const k = w.replace(/(ers|ing|ed|er|es|s)$/, "");
+    n.set(k, (n.get(k) || 0) + 1);
+    if (n.get(k) >= 3) return w;
+  }
+  return "";
+}
+// A result ("Cut", "Reduced", a percentage) reads strongest with how it was done (Google's X-Y-Z).
+// Only a line that opens with the result: one that opens with what was done ("Wrote a refund guide...") says how already.
+const RESULT = /^(cut|reduced|lowered|decreased|increased|raised|grew|boosted|improved|saved|doubled|tripled|halved|dropped|shortened|sped up|eliminated|recovered|won)\b/i;
+// "by setting up CI" says how; "by 40%" only says how much.
+const METHOD = /\b(using|through|via|thanks to)\b|\bby (?!\d|about\b|around\b|roughly\b|nearly\b|over\b|almost\b|more\b|up to\b|half\b|a (third|quarter|half)\b)[a-z]/i;
+const AI_TOOL = /\b(chatgpt|gpt-?\d\w*|claude( code)?|copilot|gemini|midjourney|cursor|perplexity|llms?|generative ai|ai tools?|an ai)\b/i;
 
 // Each check: { id, level: "good"|"fix"|"tip", title, detail, items: [{ path, text, why }] }
 export function checklist(profile, answers = {}, fit = null) {
@@ -55,12 +76,20 @@ export function checklist(profile, answers = {}, fit = null) {
   if (long.length) add("long", "fix", "Shorten long lines", "One or two lines each. Long lines get skipped.", long.map((b) => ({ ...b, why: `${b.text.length} characters` })));
   const short = bullets.filter((b) => words(b.text).length < 4);
   if (short.length) add("short", "tip", "Say a little more", "A line of two or three words doesn't show what you did or how well.", short.map((b) => ({ ...b, why: "very short" })));
-  const twice = bullets.filter((b) => repeatedPhrase(b.text));
-  if (twice.length) add("twice", "fix", "Say it once", "These lines repeat the same words. Recruiters skim; each line should say one thing once.", twice.map((b) => ({ ...b, why: `"${repeatedPhrase(b.text)}" twice` })));
+  const twice = bullets.filter((b) => repeatedPhrase(b.text) || stuffedWord(b.text));
+  if (twice.length) add("twice", "fix", "Say it once", "These lines repeat the same words. Recruiters skim, and screening software marks a word repeated over and over as keyword stuffing; each line should say one thing once.", twice.map((b) => ({ ...b, why: repeatedPhrase(b.text) ? `"${repeatedPhrase(b.text)}" twice` : `"${stuffedWord(b.text)}" three times or more` })));
   const casual = bullets.filter((b) => CASUAL.test(b.text));
   if (casual.length) add("casual", "fix", "Make these sound like a resume", "These read the way people talk (\"take calls\", \"like cars in ditches\", \"guys\"). Recruiters expect the trade's professional wording for the same facts.", casual.map((b) => ({ ...b, why: casualBits(b.text)[0] })));
   const cliche = [...bullets, ...arr(p.summaries).map((s) => ({ path: `summaries.${s.id}`, text: s.text }))].filter((b) => CLICHE.test(b.text));
   if (cliche.length) add("cliche", "fix", "Swap buzzwords for facts", "\"Hard-working team player\" is on every resume. Show it with something you did instead.", cliche.map((b) => ({ ...b, why: (b.text.match(CLICHE) || [""])[0] })));
+  const robotic = [...bullets, ...arr(p.summaries).map((s) => ({ path: `summaries.${s.id}`, text: s.text }))].filter((b) => aiTells(b.text).length);
+  if (robotic.length) add("ai-words", "fix", "Sounds like AI wrote it", "Words like \"spearheaded\", \"leveraged\" or \"cross-functional initiatives\" are what AI tools put on every resume, and recruiters notice. Say the same thing the way you'd explain it in an interview.", robotic.map((b) => ({ ...b, why: aiTells(b.text)[0] })));
+  const how = bullets.filter((b) => RESULT.test(b.text.trim()) && HAS_NUMBER.test(b.text) && !METHOD.test(b.text));
+  if (how.length) add("how", "tip", "Say how you did it", "A result reads strongest as what changed, by how much, and how you did it (Google's X-Y-Z: accomplished X, as measured by Y, by doing Z). These say what changed but not how. Add the how, in your own words.", how.map((b) => ({ ...b, why: "no \"by ...\"" })));
+  const dropped = bullets.filter((b) => AI_TOOL.test(b.text) && !HAS_NUMBER.test(b.text));
+  if (dropped.length) add("ai-proof", "tip", "Show what the AI did", "Hiring managers want proof, not a tool's name: the problem, the tool and the result (\"Cut weekly reporting from 2 hours to 30 minutes by using ...\"). Add the result if you know it.", dropped.map((b) => ({ ...b, why: "names an AI tool without a result" })));
+  const unlinked = arr(p.projects).filter((e) => e.title && !e.link && !e.url);
+  if (unlinked.length) add("links", "tip", "Link your projects", "A link (a GitHub page, a public document) lets a recruiter see the work for themselves. Add one to each project that has one.", unlinked.map((e) => ({ path: `projects.${e.id}`, text: e.title, why: "no link" })));
   const banned = bullets.filter((b) => Profile.textIssues(b.text, p).some((x) => /^uses/.test(x)));
   if (banned.length) add("banned", "fix", "Words on your avoid list", "These lines use words from your list of words to avoid.", banned.map((b) => ({ ...b, why: Profile.textIssues(b.text, p).join(", ") })));
   if (bullets.length >= 3) {
@@ -119,7 +148,9 @@ export function addedFacts(suggestion, sources, allowed = []) {
   const ok = new Set(allowed.map((x) => String(x).toLowerCase()));
   const problems = [];
   for (const n of numbersIn(suggestion)) if (!srcNums.has(n)) problems.push(`the number ${n}`);
-  for (const w of specificTerms(suggestion)) if (!srcLower.includes(w) && !ok.has(w)) problems.push(`"${w}"`);
+  // "ChatGPT-drafted", "Zendesk-based": a compound of words they gave adds nothing new.
+  const given = (w) => srcLower.includes(w) || ok.has(w);
+  for (const w of specificTerms(suggestion)) if (!given(w) && !(w.includes("-") && w.split("-").every((x) => x && (given(x) || lineWords(src).has(x.replace(/(ing|ed|es|s|e)$/, "")))))) problems.push(`"${w}"`);
   return problems;
 }
 
@@ -194,6 +225,18 @@ export function repeatedPhrase(text) {
   return "";
 }
 
+const DOWN = /\b(dropped|drop|down|fell|fewer|less|lower(ed)?|decreas\w*|reduc\w*|cut|shorter|faster|halved|from [^.;]*\d[^.;]* to [^.;]*\d)\b/i;
+const UP = /\b(up|rose|grew|more|higher|increas\w*|doubled|tripled|gained|raised)\b/i;
+export function changeVerbs(sources) {
+  const out = [];
+  for (const s of sources.map(String)) for (const part of s.split(/[.;\n]+/)) {
+    if (!HAS_NUMBER.test(part)) continue;
+    if (DOWN.test(part)) out.push("cut", "cuts", "cutting", "reduced", "reduce", "reduces", "reducing", "lowered", "lowering", "decreased", "decreasing", "shortened", "shortening");
+    if (UP.test(part)) out.push("increased", "increase", "increases", "increasing", "raised", "raising", "grew", "growing", "boosted", "boosting");
+  }
+  return [...new Set(out)];
+}
+
 export function vet(text, sources, profile, allowed = [], original = null) {
   const t = String(text || "").trim();
   if (!t) return { ok: false, why: ["empty"] };
@@ -203,8 +246,13 @@ export function vet(text, sources, profile, allowed = [], original = null) {
   if (original) for (const h of droppedHedges(original, t)) why.push(`drops "${h}", which makes the claim bigger`);
   for (const h of droppedApprox(sources, t)) if (!why.some((w) => w.includes(`"${h.split(" ")[0]}"`))) why.push(`says the number without "${h.split(" ").slice(0, -1).join(" ")}", which makes a guess sound exact`);
   if (PRONOUN.test(t)) why.push("uses I/my");
-  // Being in charge, a system, a result: a word like that has to come from them.
-  const claims = claimWords(t, [...sources, ...allowed]);
+  const tells = aiTells(t, [...sources, ...allowed]).filter((x) => !why.some((w) => w.toLowerCase().includes(x)));
+  if (tells.length) why.push(`sounds AI-written ("${tells[0]}"); say it plainly`);
+  const stuffed = stuffedWord(t);
+  if (stuffed && stuffedWord(sources.join(" ")) !== stuffed) why.push(`says "${stuffed}" three times; say it once`);
+  // Being in charge, a system, a result: a word like that has to come from them. A change they stated with
+  // its size ("dropped by 50%", "from 2 hours to 30 minutes") may take the plain verb for it ("Cut", "Increased").
+  const claims = claimWords(t, [...sources, ...allowed, ...changeVerbs(sources)]);
   if (claims.length && !why.some((w) => /claim/.test(w))) why.push(`adds a claim you didn't make: ${claims.slice(0, 3).join(", ")}`);
   return { ok: !why.length, why };
 }
@@ -227,6 +275,10 @@ export const GUIDE = `How recruiters want resume lines written:
 - Never describe the person with praise they didn't use themselves (proven, expert, experienced, seasoned, high-performing, exceptional). Keep every word that limits a claim (about, helped, part-time, assisted, leaning, shared).
 - Professional, specific wording: the terms people in that trade use on a resume, never the casual way someone talks about their day. "Take calls and drive to breakdowns" -> "Respond to dispatched breakdown and accident calls"; "cars in ditches" -> "off-road vehicle recoveries"; "talk with police" -> "coordinate with law enforcement on scene"; "ran the vinyl cutter" -> "operated the vinyl cutter"; "went out with the crew" -> "installed ... as part of a field crew"; "fast" -> "on short notice"; "guys" -> "hires"; "like X" -> "including X". The same facts, better words; never a bigger claim.
 - Avoid empty corporate phrases ("service delivery", "stakeholders", "various tasks", "synergy").
+- Write it the way they would explain it in an interview: plain and specific. Never the phrasing AI tools put on every resume: spearheaded, cross-functional initiatives, operational excellence, results-driven, proven track record, leveraged, utilized, robust, seamless, cutting-edge, fostered, dynamic, passionate about, adept at, fast-paced environment, instrumental in.
+- When they gave a result, how much it changed and how they did it, write it as result, measure, method (Google's X-Y-Z: "Accomplished X, as measured by Y, by doing Z"): "Cut failed deploys from weekly to rare by setting up CI with unit and integration tests". Use only the parts they gave; never make up a result, a measure or a method to complete the pattern.
+- An AI tool they used is a tool like any other: name it with what it did and the result they gave, never just "Used ChatGPT".
+- A skill or keyword goes inside the line that shows it being used, once; never a list of keywords in a line, never the same word three times.
 - Say what was done and, when the person gave one, the size or result (how many, how much, how often, what improved). Every number they gave goes into a line, exactly as given (with its "about").
 - One line each: about 8 to 20 words, at most 150 characters. No "I", "my" or "we". No buzzwords (hard-working, team player, detail-oriented, passionate, results-driven).
 - Words a hiring manager in that field uses. Keep the person's own specific terms (machines, tools, product names).

@@ -27,6 +27,7 @@ export const FILL_PROMPTS = {
   records: "Records and recognition at each job: years without an accident or claim, employee of the month, a thank-you or commendation, being trusted with the hard jobs.",
   volunteer: "Volunteering or outside work: coaching, church or community help, fixing things for neighbors.",
   school: "School and courses: trade or driving school, shop classes, online courses (with the year).",
+  ai: "Have you used an AI tool (ChatGPT, Copilot, Claude, Gemini) to get something done, at work or on your own? Hiring managers want proof, not a tool's name: say what the problem was, what you did with the tool, how you checked its work, and what changed.",
 };
 
 // What to ask: the fixed questions, the jobs to ask about, their certifications to add details to, and
@@ -39,7 +40,7 @@ export async function fillQuestions(profile) {
   let numbers = [];
   if (bare.length) {
     try {
-      const r = await ask([{ role: "system", content: `A recruiter wants scope on resume lines: how many, how often, how big, how fast. For the lines below that would gain the most from a number, write one short, plain question for the person (at most 5 lines). Never suggest a number or an answer in the question.
+      const r = await ask([{ role: "system", content: `A recruiter wants scope on resume lines: how many, how often, how big, how fast. For the lines below that would gain the most from a number, write one short, plain question for the person (at most 5 lines). Think past the obvious count: volume handled, money (sales, savings, a budget), time saved or turnaround, fewer errors, complaints or returns, tools or steps combined or replaced. A line that already says a result but not how it was done may ask how they did it instead. Never suggest a number or an answer in the question.
 Return JSON only: {"questions": [{"path": "...", "question": "..."}]}` }, { role: "user", content: JSON.stringify(bare) }]);
       const by = new Map(bare.map((l) => [l.path, l]));
       numbers = arr(r.questions).filter((q) => by.has(q.path) && str(q.question)).slice(0, 5)
@@ -60,7 +61,8 @@ const lastIn = (taken, pre) => { let n = 2, id = pre; while (taken.has(id)) id =
 // input: { jobs: [{ title, employer, location, start, end, current, daily, numbers, tools }],
 //   volunteer: [{ title, employer, start, end, current, daily }], certs: [{ name, issuer, year }],
 //   records: [{ id: experience id, text }], school: [{ school, earned, year }],
-//   numbers: [{ path, original, question, answer }] }
+//   numbers: [{ path, original, question, answer }],
+//   ai: [{ where: experience id or "own", tool, problem, did, result, name, link }] }
 export async function applyFill(profile, input = {}, answers = {}) {
   let p = JSON.parse(JSON.stringify(profile));
   for (const k of ["experience", "projects", "skills", "education", "summaries", "headers", "bases"]) p[k] = arr(p[k]);
@@ -162,6 +164,75 @@ export async function applyFill(profile, input = {}, answers = {}) {
         it.bullets = arr(it.bullets).length >= cap ? next.slice(0, cap) : next;
       }
       added.push({ kind: "record", title: `${e.title}: ${text}` });
+    }
+    const verdict = toCheck.length ? await factCheck(toCheck.map((x) => ({ text: x.text, source: x.source }))) : [];
+    toCheck.forEach((x, k) => {
+      if (verdict === null) x.b.warning = "This line wasn't double-checked. Read it carefully.";
+      else if (verdict[k]) x.b.warning = `Check this: "${verdict[k]}" goes beyond what you said.`;
+    });
+  }
+
+  // AI tools they used: at a job, one line first in that job (the strongest place for it); on their own, a
+  // project with its link. Written as result, measure, method from what they said, naming the tool.
+  const uses = arr(input.ai).filter((x) => str(x.tool) && (str(x.did) || str(x.problem)) && (x.where === "own" ? str(x.name) : p.experience.some((e) => e.id === x.where)));
+  if (uses.length) {
+    const known = knownTerms(p, answers);
+    const said = (x) => [x.problem && `The problem: ${str(x.problem)}`, x.did && `What they did with ${str(x.tool)}: ${str(x.did)}`, x.result && `What changed: ${str(x.result)}`].filter(Boolean).join(". ");
+    const sys = `Turn what a person said about using an AI tool into one resume line each, using only their facts.\n${GUIDE}\n${POLISH_RULES}\nWrite it as result, measure, method where they gave them: what changed, by how much, then how, naming the tool exactly as they did ("Cut weekly customer-feedback reporting from 2 hours to 30 minutes by using Claude Code to build a shared database of recurring issues"). Without a result, say what they made with the tool and for what. Never add a result, number or method they didn't give.\nReturn JSON only: {"lines": [{"n": 0, "text": "..."}]}`;
+    const where = (x) => x.where === "own" ? `THEIR OWN PROJECT: ${str(x.name)} (past tense unless ongoing)` : (() => { const e = p.experience.find((y) => y.id === x.where); return `JOB: ${e.title}${/present/i.test(e.dates || "") ? " (current: present tense)" : " (past tense)"}`; })();
+    let out = {};
+    try { out = await ask([{ role: "system", content: sys }, { role: "user", content: uses.map((x, n) => `${n}. ${where(x)}\n   TOOL: ${str(x.tool)}\n   THEY SAID: ${said(x)}`).join("\n") }]); } catch { out = {}; }
+    const tries = uses.map((x, n) => {
+      const e = x.where === "own" ? null : p.experience.find((y) => y.id === x.where);
+      const src = [said(x), str(x.tool), str(x.name), e ? e.title : "", e ? e.org || "" : ""].filter(Boolean);
+      const check = (t) => {
+        const c = clean(t);
+        if (!c) return { ok: false, why: ["empty"] };
+        // What changed is theirs to say: with it, the plain verb for that change ("cut", "reduced") is fair.
+        const change = str(x.result) ? ["cut", "reduced", "shortened", "saved", "improved", "increased", "decreased", "lowered", "raised"] : [];
+        const v = vet(c, src, p, [...known, ...change, ...specificTerms(str(x.tool)), ...(e ? specificTerms(e.title) : [])]);
+        // The point of the line is the tool: one that leaves it out is just another duty.
+        if (!c.toLowerCase().includes(str(x.tool).toLowerCase())) return { ok: false, why: [...v.why, `leaves out ${str(x.tool)}`] };
+        return v;
+      };
+      const text = clean((arr(out.lines).find((l) => Number(l.n) === n) || {}).text);
+      return { x, e, src, check, text, v: check(text) };
+    });
+    const again = tries.filter((t) => !t.v.ok);
+    if (again.length) {
+      try {
+        const r2 = await ask([{ role: "system", content: sys.replace(/Return JSON only[\s\S]*$/, "") + `Each item says why the last try was rejected; fix exactly that.\nReturn JSON only: {"lines": [{"n": 0, "text": "..."}]}` },
+          { role: "user", content: again.map((t, n) => `${n}. ${where(t.x)}\n   TOOL: ${str(t.x.tool)}\n   THEY SAID: ${said(t.x)}\n   LAST TRY: ${t.text || "(none)"} -> rejected: ${t.v.why.join("; ")}`).join("\n") }]);
+        for (const l of arr(r2.lines)) { const t = again[Number(l.n)]; if (!t) continue; const v = t.check(l.text); if (v.ok) { t.text = clean(l.text); t.v = v; } }
+      } catch { /* reported below */ }
+    }
+    const toCheck = [];
+    for (const t of tries) {
+      if (!t.v.ok) { rejected.push({ job: t.e ? t.e.title : str(t.x.name), text: t.text || said(t.x), why: [...t.v.why, "type this one as a line yourself under All your resume pieces"] }); continue; }
+      if (t.e) {
+        const id = lastIn(new Set(t.e.bullets.map((b) => b.id)), "ai");
+        const b = { id, text: t.text, approved: false, source: said(t.x) };
+        t.e.bullets.unshift(b);
+        toCheck.push({ b, text: t.text, source: t.src.join(". ") });
+        for (const base of p.bases) for (const sec of arr(base.sections)) for (const it of arr(sec.items)) if (it.id === t.e.id) {
+          const cap = capFor(base, t.e.id), next = [id, ...arr(it.bullets)];
+          it.bullets = arr(it.bullets).length >= cap ? next.slice(0, cap) : next;
+        }
+        added.push({ kind: "ai", title: `${t.e.title}: ${t.text}` });
+      } else {
+        const link = str(t.x.link).replace(/^https?:\/\//, "");
+        const id = lastIn(new Set(p.projects.map((x) => x.id)), String(t.x.name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 24) || "ai-project");
+        const b = { id: "what", text: t.text, approved: false, source: said(t.x) };
+        p.projects.push({ id, title: titleCase(t.x.name), ...(link ? { link, url: /^https?:/.test(str(t.x.link)) ? str(t.x.link) : "https://" + link } : {}), bullets: [b] });
+        toCheck.push({ b, text: t.text, source: t.src.join(". ") });
+        // First among the projects on every layout, before education.
+        for (const base of bases.map((x) => p.bases.find((y) => y.id === x.id)).filter(Boolean)) {
+          let sec = base.sections.find((x) => x.kind === "projects");
+          if (!sec) { sec = { kind: "projects", items: [] }; const ed = base.sections.findIndex((x) => x.kind === "education"); base.sections.splice(ed < 0 ? base.sections.length : ed, 0, sec); }
+          sec.items = [{ id, bullets: ["what"] }, ...arr(sec.items)].slice(0, 3);
+        }
+        added.push({ kind: "ai-project", title: `${titleCase(t.x.name)}: ${t.text}` });
+      }
     }
     const verdict = toCheck.length ? await factCheck(toCheck.map((x) => ({ text: x.text, source: x.source }))) : [];
     toCheck.forEach((x, k) => {

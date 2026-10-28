@@ -80,6 +80,62 @@ Sources are marked **[High-trust]** (university career centers, government, orig
 
 ---
 
+## 9. Resumes when software and AI read them first
+
+Source: Jeff Su, "Write a Killer Résumé in the AI Era: 5 New Rules!" (video, 2026),
+https://www.youtube.com/watch?v=N1Fm4JYae1I. The video cites surveys and studies for each rule (hiring
+manager surveys, an analysis of about 2 million applications, NBER papers on AI writing help, Greenhouse's
+parsing guide). The app follows the rules; it doesn't depend on, or repeat, the exact figures, which haven't
+been checked here.
+
+A resume now passes two readers: first the screening software (an ATS, often with an AI model on top), then
+a person, who still makes the call.
+
+1. **Readable by software, not decorated.** One column of real, selectable text; standard headings
+   (Summary, Experience, Education, Skills, Projects); no tables, text boxes, icons, skill bars or photo;
+   a small file (Greenhouse's guide says files over 2.5 MB fail to parse). *In the app:* the PDF is drawn
+   that way, and `core/screening.js` checks every file it makes: its size, that its text reads back out
+   without OCR, and that the headings come back in reading order. It's the first item on Check & improve
+   and stage 1 of the recruiter's read.
+2. **Keywords in context, not stuffing.** Map the employer's priorities onto real accomplishments; never
+   paste in the ad's words without a fact behind them. Over-stuffed resumes do worse than ones with
+   moderate, grounded coverage. *In the app:* a line that repeats a word three or more times is sent back
+   (`stuffedWord`); a version for a kind of job puts the field's terms only into lines that show them; the
+   recruiter's read takes a pasted posting, says what the employer needs, and marks each of the ad's terms
+   as shown (found in the resume's own words), shown in other words (a real line the AI points to), or
+   missing. Missing terms are never added.
+3. **AI rewords; the person supplies the facts.** The person gives the raw notes: the outcome, their own
+   part, and how they did it. AI only makes it clear and concise, keeping every number and fact. Unedited
+   AI phrasing ("spearheaded cross-functional initiatives") is easy to spot and makes everyone sound the
+   same. *In the app:* this was already the honesty rule; now the phrases AI tools always write are also
+   refused unless the person used them (`AI_TELLS`), and the interview asks "What happened, what was your
+   part, and how did you do it?".
+4. **Result, measure, method (Google's X-Y-Z).** "Accomplished X, as measured by Y, by doing Z": what
+   changed, by how much, and how. Measures can be money, time saved, volume, fewer errors, or tools
+   combined. *In the app:* lines are written that way when the person gave all three parts, and never
+   completed with a made-up part. A change they stated with its size ("dropped by 50%") may take the
+   plain verb ("Cut"); a result line with no "how" gets a tip on Check & improve, and Fill out my page asks
+   about time, money, errors and volume, not just counts.
+5. **Proof of AI skills, not a tool's name.** "Used ChatGPT" says nothing. Best is a line under the most
+   recent job showing a problem solved with AI and its result; next, a project of one's own; and a public
+   link (GitHub, a public document with the problem, tool, method and outcome). *In the app:* Fill out my
+   page asks about AI tools used at work or on one's own (the problem, the tool, how they checked its
+   work, what changed). At work it becomes the job's first line; on their own, a project with its link.
+   Check & improve flags an AI tool named without a result, and projects without a link.
+
+The video's before-and-after examples, all reworded from the person's own notes:
+- "Delivered customer support, customer service, and customer-focused communication..." (stuffing) →
+  "Reduced customer complaints by 31% using AI to create an onboarding email sequence from help center documents."
+- "Spearheaded cross-functional initiatives to drive operational excellence..." (generic AI) → from the
+  notes "I compared the replies from sales and support... wrote a refund guide... duplicate tickets dropped by 50%":
+  "Decreased duplicate tickets by 50% by creating a shared refund guide for sales and support so customers received consistent answers."
+- "Responsible for planning social media campaigns" → "Drove a 30% YoY increase in short-form views within
+  2 months by testing different video openings and repeating the best-performing formats."
+- "Used ChatGPT in my day-to-day reporting" → "Cut weekly customer-feedback reporting from 2 hours to 30
+  minutes by using Claude Code to build a shared database with recurring issues."
+
+---
+
 ## Rules for the app
 
 ### A. Polish and recruiter-check rules

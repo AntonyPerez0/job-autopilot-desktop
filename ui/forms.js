@@ -266,7 +266,7 @@
       <div class="form-row">${fld("Started", inp("c_start", "", 'placeholder="e.g. Jun 2023"'))}${fld("Ended", inp("c_end", "", 'placeholder="e.g. Aug 2024"'))}
         <div class="fld" style="align-self:end"><label class="check"><input type="checkbox" name="c_current">I work here now</label></div></div>
       ${fld("What did you do on a normal day?", `<textarea name="c_daily" rows="3" placeholder="In your own words, e.g. ran the register, stocked shelves, opened and closed the store, answered phones"></textarea>`)}
-      ${fld("What are you proud of, or what went well?", `<textarea name="c_proud" rows="2" placeholder="e.g. trained 3 new people, got employee of the month, never had my cash drawer come up short"></textarea>`, "Optional, but this is what makes a resume stand out.")}
+      ${fld("What went well? What happened, what was your part, and how did you do it?", `<textarea name="c_proud" rows="2" placeholder="e.g. trained 3 new people so we could open on Sundays; cut the line at lunch by setting up a second register; never had my drawer come up short"></textarea>`, "Optional, but this is what makes a resume stand out.")}
       <div class="form-row">${fld("Any numbers you know?", inp("c_numbers", "", 'placeholder="e.g. about 150 customers a day, team of 6, $3,000 a shift"'), "Only numbers you're sure of. Rough is fine (about 100).")}
         ${fld("Tools, machines or software", inp("c_tools", "", 'placeholder="e.g. cash register, forklift, Excel, Square"'))}</div>
       <div data-recall-host></div></div>`;
@@ -353,6 +353,14 @@
       ${kind === "vol" ? "" : fld("Tools, machines or software", inp("f_tools", "", 'placeholder="e.g. hand truck, delivery app"'))}</div>`;
     const certRow = (name = "") => `<div class="form-row" data-fcert>${fld("License or training", inp("f_cname", name, 'placeholder="e.g. OSHA 10, First aid / CPR, Flagger"'))}
       ${fld("Who issued it", inp("f_issuer", "", 'placeholder="e.g. WreckMaster, Red Cross, state DMV"'))}${fld("Year", inp("f_year", "", 'placeholder="e.g. 2022"'))}</div>`;
+    const aiCard = () => `<div class="sub-item" data-fai>
+      <div class="form-row">${fld("Where", `<select name="f_aiwhere">${q.jobs.map((j) => `<option value="${esc(j.id)}">At ${esc(j.title)}${j.org ? ", " + esc(j.org) : ""}</option>`).join("")}<option value="own">On my own (a project)</option></select>`)}
+        ${fld("Which AI tool", inp("f_aitool", "", 'placeholder="e.g. ChatGPT, Copilot, Claude, Gemini"'))}</div>
+      ${fld("What was the problem or the task?", `<textarea name="f_aiprob" rows="2" placeholder="e.g. the weekly customer-feedback report took 2 hours to put together by hand"></textarea>`)}
+      ${fld("What did you do with it, and how did you check its work?", `<textarea name="f_aidid" rows="2" placeholder="e.g. had it sort the comments into recurring issues, then read every group to fix the mistakes"></textarea>`)}
+      ${fld("What changed? (optional)", inp("f_aires", "", 'placeholder="e.g. the report now takes about 30 minutes"'), "Only what you know is true. Rough is fine.")}
+      <div class="form-row" data-fai-own hidden>${fld("Project name", inp("f_ainame", "", 'placeholder="e.g. Customer review insights"'))}
+        ${fld("Link (optional)", inp("f_ailink", "", 'placeholder="e.g. github.com/you/project or a public document"'), "A recruiter can see the work for themselves.")}</div></div>`;
     const schoolRow = () => `<div class="form-row" data-fschool>${fld("School, class or course", inp("f_school", "", 'placeholder="e.g. truck driving school, shop class, online course"'))}
       ${fld("What you earned or studied", inp("f_earned", "", 'placeholder="e.g. Certificate, CompTIA A+ study"'))}${fld("Year", inp("f_syear", "", 'placeholder="e.g. 2020, or In progress"'))}</div>`;
     el.innerHTML = `<div class="form fill">
@@ -365,6 +373,8 @@
       <div class="sub-list" data-fcerts>${q.certs.map(certRow).join("")}${certRow()}</div><div><button type="button" class="btn sm" data-fadd="cert">${icon("plus")}Add another</button></div>
       ${q.jobs.length ? `<div class="section-t">Records and recognition</div><p class="hint" style="margin:-4px 0 0">${esc(q.prompts.records)}</p>
         ${q.jobs.map((j) => fld(esc(`${j.title}${j.org ? ", " + j.org : ""}`), inp(`f_rec_${j.id}`, "", 'placeholder="e.g. 3 years with no damage claims, employee of the month 2023"'))).join("")}` : ""}
+      <div class="section-t">AI tools you've used</div><p class="hint" style="margin:-4px 0 0">${esc(q.prompts.ai)}</p>
+      <div class="sub-list" data-fais>${aiCard()}</div><div><button type="button" class="btn sm" data-fadd="ai">${icon("plus")}Add another</button></div>
       <div class="section-t">Volunteering and outside work</div><p class="hint" style="margin:-4px 0 0">${esc(q.prompts.volunteer)}</p>
       <div class="sub-list" data-fvols>${workCard("vol")}</div>
       <div class="section-t">School and courses</div><p class="hint" style="margin:-4px 0 0">${esc(q.prompts.school)}${(q.schools || []).length ? ` Already on your resume: ${q.schools.map(esc).join("; ")}.` : ""}</p>
@@ -372,9 +382,18 @@
       <div class="row-actions"><button type="button" class="btn primary" data-fgo>${icon("check")}Add these to my resume</button></div>
       <div data-fmsg></div></div>`;
     el.querySelectorAll("[data-fadd]").forEach((b) => b.onclick = () => {
-      const host = el.querySelector(b.dataset.fadd === "job" ? "[data-fjobs]" : "[data-fcerts]");
-      host.insertAdjacentHTML("beforeend", b.dataset.fadd === "job" ? workCard("job") : certRow());
+      const kind = b.dataset.fadd;
+      const host = el.querySelector(kind === "job" ? "[data-fjobs]" : kind === "ai" ? "[data-fais]" : "[data-fcerts]");
+      host.insertAdjacentHTML("beforeend", kind === "job" ? workCard("job") : kind === "ai" ? aiCard() : certRow());
+      wireAi();
     });
+    // "On my own" asks for the project's name and link.
+    const wireAi = () => el.querySelectorAll("[data-fai]").forEach((c) => {
+      const w = c.querySelector("[name=f_aiwhere]"), own = c.querySelector("[data-fai-own]");
+      const sync = () => { own.hidden = w.value !== "own"; };
+      w.onchange = sync; sync();
+    });
+    wireAi();
     const work = (kind) => [...el.querySelectorAll(`[data-fwork="${kind}"]`)].map((c) => ({ title: val(c, "f_title"), employer: val(c, "f_employer"), start: val(c, "f_start"),
       end: val(c, "f_end"), current: val(c, "f_current"), daily: c.querySelector("[name=f_daily]").value.trim(), tools: val(c, "f_tools") || "" })).filter((j) => j.title || j.employer);
     el.querySelector("[data-fgo]").onclick = async (e) => {
@@ -383,7 +402,11 @@
         certs: [...el.querySelectorAll("[data-fcert]")].map((c) => ({ name: val(c, "f_cname"), issuer: val(c, "f_issuer"), year: val(c, "f_year") })).filter((c) => c.name && (c.issuer || c.year || !q.certs.includes(c.name))),
         records: q.jobs.map((j) => ({ id: j.id, text: val(el, `f_rec_${j.id}`) })).filter((x) => x.text),
         school: [...el.querySelectorAll("[data-fschool]")].map((c) => ({ school: val(c, "f_school"), earned: val(c, "f_earned"), year: val(c, "f_syear") })).filter((x) => x.school),
-        numbers: q.numbers.map((x, i) => ({ ...x, answer: val(el.querySelector(`[data-fnum="${i}"]`), "f_num") })).filter((x) => x.answer) };
+        numbers: q.numbers.map((x, i) => ({ ...x, answer: val(el.querySelector(`[data-fnum="${i}"]`), "f_num") })).filter((x) => x.answer),
+        ai: [...el.querySelectorAll("[data-fai]")].map((c) => ({ where: val(c, "f_aiwhere"), tool: val(c, "f_aitool"), problem: c.querySelector("[name=f_aiprob]").value.trim(),
+          did: c.querySelector("[name=f_aidid]").value.trim(), result: val(c, "f_aires"), name: val(c, "f_ainame"), link: val(c, "f_ailink") })).filter((x) => x.tool || x.did || x.problem) };
+      const aiThin = input.ai.find((x) => !x.tool || (!x.did && !x.problem) || (x.where === "own" && !x.name));
+      if (aiThin) return msg(m, "err", !aiThin.tool ? "Say which AI tool you used." : aiThin.where === "own" && !aiThin.name ? "Give your project a name." : "Say what you did with the AI tool.");
       const thin = [...input.jobs, ...input.volunteer].find((j) => !j.daily);
       if (thin) return msg(m, "err", `Say a few words about what you did at ${thin.title || thin.employer}.`);
       if (!Object.values(input).some((x) => x.length)) return msg(m, "err", "Answer at least one question first.");
@@ -412,6 +435,7 @@
       <div data-smsg></div>
       <div class="adv"><div class="section-t">A recruiter's read</div>
       <p class="hint" style="margin:-4px 0 0">The AI reads your resume the way a recruiter skims one, and says what stands out and what is weak, line by line. It never adds facts.</p>
+      <div class="fld" style="margin-top:8px"><span>A job posting to read it against (optional)</span><textarea class="inp" data-rv-posting rows="3" placeholder="Paste the job ad here: the review then says what the employer needs, which of the ad's skills your lines already show, and what's missing"></textarea></div>
       <div class="row-actions"><select class="inp" data-rv-base style="max-width:18rem" aria-label="Which resume layout to read"></select><button type="button" class="btn" data-review>${icon("eye")}Read it like a recruiter</button></div>
       <div data-rv-out></div>
       <div class="section-t">A version for each kind of job</div>
@@ -438,15 +462,24 @@
     el.querySelector("[data-review]").onclick = async (e) => {
       const btn = e.currentTarget, out = el.querySelector("[data-rv-out]");
       btn.disabled = true; msg(out, "info", "Reading your resume the way a recruiter would...");
-      const r = await api("/api/resume/review", { base: el.querySelector("[data-rv-base]").value });
+      const r = await api("/api/resume/review", { base: el.querySelector("[data-rv-base]").value, posting: el.querySelector("[data-rv-posting]").value });
       btn.disabled = false;
       if (r.error) return msg(out, "err", r.error);
       const where = (path) => { if (["headline", "summary", "skills", "layout"].includes(path)) return path === "layout" ? "Overall" : path.charAt(0).toUpperCase() + path.slice(1);
         const [k, eid, bid] = path.split("."); const e2 = ((cfg.profile[k] || []).find((x) => x.id === eid)) || {}; const b2 = (e2.bullets || []).find((x) => x.id === bid); return b2 ? `${e2.title}: "${b2.text}"` : e2.title || path; };
-      out.innerHTML = `<div class="review"><div class="review-score"><span class="fig">${r.score}</span><span>/10</span></div><div><b>${esc(r.verdict)}</b>
+      // Stage 1: the screening software. Stage 2: the person. Then, for a pasted posting, the job itself.
+      const sw = r.screening ? `<div class="section-t" style="margin-top:12px">1. The screening software</div>
+        <div class="checklist">${r.screening.items.map((x) => `<div class="check-item"><span class="ck ${x.ok ? "good" : "fix"}">${x.ok ? icon("check") : "!"}</span><div style="flex:1"><b>${esc(x.title)}</b><div class="muted">${esc(x.detail)}</div></div></div>`).join("")}</div>
+        <div class="section-t">2. The person reading it</div>` : "";
+      const jobPart = r.job ? `<div class="section-t">What this job needs</div>
+        ${r.job.needs.length ? `<ul class="bul">${r.job.needs.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+        ${r.job.keywords.length ? `<p class="hint">The ad's skills and terms, and whether your resume already shows them. Only add a missing one if it's true, inside the line that shows it, once.</p>
+          <div class="chips">${r.job.keywords.map((k) => `<span class="badge ${k.stuffed ? "amber" : k.shown.length ? "green" : k.mapped ? "blue" : "gray"}">${k.shown.length ? icon("check") : ""}${esc(k.term)}${k.stuffed ? ` (${k.count} times: too many)` : k.shown.length ? "" : k.mapped ? ": in other words" : ": not on your resume"}</span>`).join("")}</div>
+          ${r.job.keywords.some((k) => k.mapped && !k.shown.length) ? `<ul class="bul">${r.job.keywords.filter((k) => k.mapped && !k.shown.length).map((k) => `<li><b>${esc(k.term)}</b>: your line ${esc(where(k.mapped))} shows it. Use the ad's word in that line if it says the same thing.</li>`).join("")}</ul>` : ""}` : ""}` : "";
+      out.innerHTML = sw + `<div class="review"><div class="review-score"><span class="fig">${r.score}</span><span>/10</span></div><div><b>${esc(r.verdict)}</b>
           ${r.strengths.length ? `<ul class="bul" style="margin-top:6px">${r.strengths.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}</div></div>
         ${r.items.length ? `<div class="checklist">${r.items.map((x) => `<div class="check-item"><span class="ck fix">!</span><div style="flex:1"><b>${esc(where(x.path))}</b><div class="muted">${esc(x.problem)}</div><div>${esc(x.fix)}</div></div>
-          ${/^(experience|projects)\./.test(x.path) ? `<button type="button" class="btn sm" data-rv-fix="${esc(x.path)}">Improve this</button>` : ""}</div>`).join("")}</div>` : ""}`;
+          ${/^(experience|projects)\./.test(x.path) ? `<button type="button" class="btn sm" data-rv-fix="${esc(x.path)}">Improve this</button>` : ""}</div>`).join("")}</div>` : ""}` + jobPart;
       out.querySelectorAll("[data-rv-fix]").forEach((b) => b.onclick = () => improve([b.dataset.rvFix]));
     };
     el.querySelector("[data-version]").onclick = async (e) => {

@@ -11,7 +11,7 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test --test-concurrency=1 test/*.test.js",
-    "test:unit": "node --test test/truth.test.js test/dedupe.test.js test/mail.test.js test/geo.test.js test/tailor.test.js test/facts.test.js test/llm.test.js test/update.test.js test/history.test.js test/sources.test.js test/studio.test.js test/github.test.js test/asked.test.js test/suggest.test.js test/polish.test.js test/fillpage.test.js test/usajobs.test.js test/ladder.test.js",
+    "test:unit": "node --test test/truth.test.js test/dedupe.test.js test/mail.test.js test/geo.test.js test/tailor.test.js test/facts.test.js test/llm.test.js test/update.test.js test/history.test.js test/sources.test.js test/studio.test.js test/github.test.js test/asked.test.js test/suggest.test.js test/polish.test.js test/fillpage.test.js test/usajobs.test.js test/ladder.test.js test/airules.test.js",
     "e2e": "node test/e2e/onboarding.mjs",
     "a11y": "node scripts/contrast.mjs && node test/e2e/a11y.mjs",
     "dist:mac": "electron-builder --mac --universal --publish never",

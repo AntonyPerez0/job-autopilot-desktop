@@ -17,6 +17,7 @@ import { AGENCIES, lastSearch } from "./discover.js";
 import { suggestTitles } from "./suggest.js";
 import { moveUp } from "./ladder.js";
 import { makeVersion, polishCreated, recruiterReview } from "./polish.js";
+import { screening } from "./screening.js";
 import { plainAiError } from "./llm.js";
 import { applyFill, fillQuestions } from "./fill.js";
 import { listAccounts, passwordProblems } from "./accounts.js";
@@ -316,7 +317,13 @@ const ROUTES = {
   },
   "POST /api/resume/review": async (b) => {
     if (!aiSettings().apiKey) return bad("Connect an AI first (Settings > AI).");
-    try { return await recruiterReview(getProfile(), { base: b.base, target: b.target }); } catch (e) { return bad(e.message); }
+    try {
+      const raw = getProfile();
+      const review = await recruiterReview(raw, { base: b.base, target: b.target, posting: String(b.posting || "").trim() });
+      // Stage 1, before any person reads it: the screening software.
+      try { review.screening = await screening(loadProfile(raw), review.base); } catch { review.screening = null; }
+      return review;
+    } catch (e) { return bad(e.message); }
   },
   // "Fill out my page": questions about what people usually leave out, and the answers turned into pieces.
   "POST /api/resume/fill/questions": async () => {
@@ -332,14 +339,20 @@ const ROUTES = {
   "POST /api/resume/check": async () => {
     const raw = getProfile();
     if (!raw) return bad("No resume yet.");
-    let fit = null;
+    let fit = null, ats = null;
     try {
       const p = loadProfile(raw);
       const { spec } = Tailor.checkPlan(p, { base: p.bases[0].id });
       const r = await Tailor.fit(p, spec, []);
       fit = { overflow: r.overflow, slack: r.slack };
+      ats = await screening(p, p.bases[0].id);
     } catch { /* not enough approved yet: the list says what is missing */ }
-    return { checks: checklist(raw, getAnswers(), fit) };
+    const checks = checklist(raw, getAnswers(), fit);
+    // First: whether the screening software on job sites can read the file at all.
+    if (ats) checks.unshift(ats.ok
+      ? { id: "ats", level: "good", title: "Job sites' screening software can read it", detail: ats.items.map((x) => x.title).join("; ") + ".", items: [] }
+      : { id: "ats", level: "fix", title: "Job sites' screening software may not read it", detail: ats.items.filter((x) => !x.ok).map((x) => `${x.title}: ${x.detail}`).join(" "), items: [] });
+    return { checks };
   },
   "POST /api/resume/improve": async (b) => {
     if (!getProfile()) return bad("No resume yet.");

@@ -319,10 +319,18 @@ Then press **Start in dry run**.
 
 The **Resume** page (in the sidebar) has five parts.
 
-**Check & improve.** A checklist of what a recruiter notices first: one page,
-complete contact details, a short summary, lines that start with an action,
-no "I" or "my", no buzzwords ("hard-working team player"), consistent dates,
-and lines that show size or results. Each item says what to change and why.
+**Check & improve.** A resume now has two readers: first the screening
+software job sites use, then a person. The checklist starts with the software:
+whether it can read your file (one column of real text, standard headings,
+a small file; checked on the PDF the app makes, not assumed). Then what a
+recruiter notices: one page, complete contact details, a short summary, lines
+that start with an action, no "I" or "my", no buzzwords ("hard-working team
+player"), nothing that sounds AI-written ("spearheaded", "leveraged"), no word
+stuffed in three times, consistent dates, and lines that show size or results.
+A result without how you got it ("Cut costs by 20%") gets a tip to say how;
+an AI tool named without a result ("Used ChatGPT") gets a tip to show what it
+did; a project without a link gets a tip to add one. Each item says what to
+change and why.
 **Suggest improvements for every line** (or **Improve these** on one item)
 rewrites your lines the way recruiters like them. Each suggestion sits next to
 your original. You can **Use this**, **Keep both** (the app never puts both on
@@ -334,8 +342,8 @@ your answer.
 **Make a resume with me.** A short interview:
 - the job you want next
 - each job you've had (including part-time, gig and family work): what you did
-  on a normal day, what you're proud of, any numbers you know, and the tools or
-  machines you used
+  on a normal day, what went well (what happened, your part, and how you did
+  it), any numbers you know, and the tools or machines you used
 - school and training
 - certifications, languages and skills
 
@@ -373,12 +381,23 @@ guys" becomes "two new hires"), a headline under your name, a short summary
 aimed at the job you want, and your skills sorted into Licenses &
 Certifications, Equipment & Tools, Software & Systems and Languages. Every
 number stays exactly as you gave it, with its "about", and a rewording that adds
-a claim is thrown out.
+a claim is thrown out. When you've said what changed, by how much and how you
+did it, the line says it in that order, Google's "X-Y-Z" (accomplished X, as
+measured by Y, by doing Z): "Cut duplicate tickets 50% by writing a refund guide
+both teams use". It never makes up a part to complete the pattern. The phrases
+AI tools put on every resume are refused, so your resume sounds like you.
 
 On **Check & improve**:
-- **Read it like a recruiter** scores a layout out of 10 and lists what is weak,
-  line by line, with **Improve this** next to each line. It never suggests adding
-  something you didn't do; when a number would help, it says what to ask you.
+- **Read it like a recruiter** reads a layout in two stages, like a real
+  application: first the screening software (can it read the file?), then the
+  person, who scores it out of 10 and lists what is weak, line by line, with
+  **Improve this** next to each line. It never suggests adding something you
+  didn't do; when a number would help, it says what to ask you. Paste a job
+  posting into the box first and it also says what that employer needs, and
+  marks each of the ad's skills and terms: on your resume, shown in other words
+  (with the line, and a tip to use the ad's word), or missing. Add a missing one
+  only if it's true, inside the line that shows it, once: resumes stuffed with
+  an ad's keywords do worse, not better.
 - **A version for each kind of job** makes a layout for one field ("CDL
   driving", "IT support"): your approved lines that matter most for it, worded
   in that field's terms where the facts allow, with a headline and summary for
@@ -391,12 +410,20 @@ On **Check & improve**:
 for the real things people usually leave out, never filler. It's on **Check &
 improve**, and it's offered right after "Make a resume with me":
 - **The numbers behind your lines**: a question for each line that would read
-  stronger with a number ("About how many signs did you install a week?").
+  stronger with a number ("About how many signs did you install a week?"),
+  including time saved, money, fewer mistakes and how much you handled, or how
+  you did it when a line has a result but not the how.
 - **Other work, even small**: part-time, seasonal, gig or family-business work.
 - **Licenses and training**: who issued each one and the year, plus anything
   missing (OSHA 10, first aid, flagger...).
 - **Records and recognition**: years without a claim, a thank-you letter,
   employee of the month.
+- **AI tools you've used**: hiring managers want proof, not a tool's name. Say
+  where (at a job, or on your own), which tool, the problem, what you did with
+  it and how you checked its work, and what changed. At a job it becomes that
+  job's first line ("Cut weekly reporting from 2 hours to 30 minutes by using
+  Claude to ..."); on your own it becomes a project, with its link if it has
+  one, so a recruiter can see the work.
 - **Volunteering and outside work**, and **school and courses**.
 
 Each answer becomes a resume piece in professional wording that waits for your
