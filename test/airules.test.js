@@ -194,8 +194,8 @@ test("result, measure, method the same way every time: a reorder is used only wh
 test("no AI summary passed: the same three-part shape from their title, their best checked line and their target", () => {
   const job = { title: "Customer Support Specialist", org: "Globex" };
   const lines = [{ text: "Answer about 60 tickets a day" }, { text: "Cut duplicate tickets 50% by writing a shared refund guide" }];
-  assert.strictEqual(P.builtSummary(job, lines, "Customer Success Specialist"), "Customer Support Specialist at Globex. Cut duplicate tickets 50% by writing a shared refund guide. Moving into a Customer Success Specialist role");
-  assert.strictEqual(P.builtSummary(job, lines, "customer support specialist"), "Customer Support Specialist at Globex. Cut duplicate tickets 50% by writing a shared refund guide", "same job: no 'moving into'");
+  assert.strictEqual(P.builtSummary(job, lines, "Customer Success Specialist"), "Customer Support Specialist at Globex. Cut duplicate tickets 50% by writing a shared refund guide. Looking for a Customer Success Specialist role");
+  assert.strictEqual(P.builtSummary(job, lines, "customer support specialist"), "Customer Support Specialist at Globex. Cut duplicate tickets 50% by writing a shared refund guide", "same job: no 'looking for'");
 });
 
 test("a short resume fills the page with even spacing, never past one page", async () => {
@@ -304,4 +304,60 @@ test("a rewording keeps the names in the line: dropping ChatGPT or Zendesk is re
   const o = "Drafted an onboarding email sequence with ChatGPT, then edited every email; new-customer complaints dropped 31%";
   assert.match(P.vet("Cut new-customer complaints 31% by editing the onboarding email sequence", [o], { rules: {} }, [], o).why.join(), /leaves out chatgpt/);
   assert.ok(P.vet("Cut new-customer complaints 31% by drafting an onboarding email sequence with ChatGPT, then editing every email", [o], { rules: {} }, [], o).ok);
+});
+
+test("an AI tool they used always gets a line, first in its job, even without a number", async () => {
+  reply = (sys) => {
+    if (/fact-check/.test(sys)) return { lines: [] };
+    if (/Write one resume line for each fact below/.test(sys)) return { lines: [{ n: 0, text: "Turned receiving notes into a step-by-step guide for new hires with ChatGPT, checking every step with the lead" }] };
+    if (/write a one-page resume/.test(sys)) return { summary: "", jobs: [{ index: 0, bullets: [{ text: "Pick and pack orders with an RF scanner", source: "pick and pack orders" }, { text: "Load and unload trucks", source: "load and unload trucks" }] }] };
+    return {};
+  };
+  const c = await S.createFromInterview({ jobs: [{ title: "Warehouse Associate", employer: "Acme Distribution", start: "2022", current: true, daily: "pick and pack orders with an RF scanner, load and unload trucks",
+    proud: "I used ChatGPT to turn our receiving notes into a step-by-step guide for new hires, then checked every step with my lead" }] }, null, {});
+  const lines = c.profile.experience[0].bullets.map((b) => b.text);
+  assert.ok(lines.some((t) => /ChatGPT/.test(t)), JSON.stringify(lines));
+  reply = (sys) => {
+    if (/fact-check/.test(sys)) return { lines: [] };
+    if (/turning a person's resume lines/.test(sys)) return { jobs: [{ i: 0, lines: [{ text: "Pick and pack orders with an RF scanner", from: [0] }, { text: "Load and unload trucks", from: [1] }] }], headline: "", summary: "" };
+    return {};
+  };
+  const pol = await P.polishCreated(c.profile, { ids: [c.profile.experience[0].id], linesOnly: true });
+  assert.match(pol.profile.experience[0].bullets[0].text, /ChatGPT/, "first in the job");
+});
+
+test("house style: 'monthly' becomes 'a month' only right after a count, never when it says how often", async () => {
+  const { houseStyle } = await import("../core/style.js");
+  assert.strictEqual(houseStyle("Sort and pack food donations monthly, processing about 300 pounds"), "Sort and pack food donations monthly, processing about 300 pounds");
+  assert.strictEqual(houseStyle("Inspect the truck every shift, about 12 stops a day"), "Inspect the truck every shift, about 12 stops a day");
+  assert.strictEqual(houseStyle("Assist about 10 older adults monthly with technology setup"), "Assist about 10 older adults a month with technology setup");
+});
+
+test("every duty they described reaches a line, and a full job makes room by letting go of a line without a number", async () => {
+  reply = (sys) => {
+    if (/fact-check/.test(sys)) return { lines: [] };
+    if (/Write one resume line for each fact below/.test(sys)) return { lines: [{ n: 0, text: "Checked the truck before every route" }] };
+    if (/write a one-page resume/.test(sys)) return { summary: "", jobs: [{ index: 0, bullets: [{ text: "Delivered groceries to stores, about 12 stops a day", source: "delivered groceries" }] }] };
+    return {};
+  };
+  const c = await S.createFromInterview({ jobs: [{ title: "Delivery Driver", employer: "Initech Foods", start: "2020", end: "2022", daily: "delivered groceries to stores, about 12 stops a day, checked the truck before every route" }] }, null, {});
+  assert.ok(c.profile.experience[0].bullets.some((b) => /checked the truck/i.test(b.text)), JSON.stringify(c.profile.experience[0].bullets.map((b) => b.text)));
+  // A recognition goes first in a full job: the line that goes is the one without a number.
+  const p = example();
+  const e = p.experience[0], base = p.bases[0].sections.find((s) => s.kind === "experience").items.find((it) => it.id === e.id);
+  e.bullets = [{ id: "a", text: "Cut failed deploys 40% by adding CI", approved: true }, { id: "b", text: "Train about 2 new hires a month", approved: true }, { id: "c", text: "Write API docs", approved: true }, { id: "d", text: "Review pull requests", approved: true }, { id: "f", text: "Pair with 3 teammates a week", approved: true }];
+  base.bullets = ["a", "b", "c", "d", "f"];
+  reply = (sys) => (/fact-check/.test(sys) ? { lines: [] } : /record or recognition/.test(sys) ? { lines: [{ n: 0, text: "Named Engineer of the Quarter in 2024" }] } : {});
+  const r = await F.applyFill(p, { records: [{ id: e.id, text: "engineer of the quarter in 2024" }] }, {});
+  const shown = r.profile.bases[0].sections.find((s) => s.kind === "experience").items.find((it) => it.id === e.id).bullets;
+  assert.strictEqual(shown.length, 5);
+  assert.ok(shown.includes("b") && shown.includes("f"), `numbers stay: ${shown}`);
+  assert.ok(!shown.includes("d"), "the last line without a number made room");
+});
+
+test("their own wording isn't stuffing, and a plain ending on a name of theirs isn't a new fact", () => {
+  const src = ["I used ChatGPT to turn our receiving notes into a step-by-step guide for new hires, then checked every step with my lead"];
+  assert.ok(S.vet("Turned receiving notes into a step-by-step guide using ChatGPT, then checked every step with the lead", src, { rules: {} }, []).ok);
+  assert.deepStrictEqual(S.addedFacts("Wrote a ChatGPT-assisted guide", src), []);
+  assert.deepStrictEqual(S.addedFacts("A Kubernetes-based pipeline", ["built a pipeline"]), ['"kubernetes-based"']);
 });

@@ -10,7 +10,7 @@
 import { Profile, Tailor, approvedOnly } from "./engine.js";
 import { skillGroup } from "./skillsort.js";
 import { houseStyle } from "./style.js";
-import { GUIDE, ask, setProgress, repeatedPhrase, casualBits, changeVerbs, claimWords, factCheck, refixFlagged, knownTerms, newWords, numbersIn, resultLine, sameLine, specificTerms, vet as vet0, xyzLine } from "./studio.js";
+import { AI_TOOL, GUIDE, ask, covers, setProgress, repeatedPhrase, casualBits, changeVerbs, claimWords, factCheck, refixFlagged, knownTerms, newWords, numbersIn, resultLine, sameLine, specificTerms, vet as vet0, xyzLine } from "./studio.js";
 
 // The app's honesty check, plus: a rewording may use professional words for the same facts, but never a
 // word that makes a new claim ("using a ticketing system", "managed", "reduced"), and not many new words at all.
@@ -51,7 +51,7 @@ export const SKILL_GROUPS = ["Licenses & Certifications", "Equipment & Tools", "
 // mostly on titles, the top third and the first words of each line.
 export const POLISH_RULES = `What recruiters want:
 - A headline under the name: the kind of job they do or want plus their strongest credential they hold, about 6 to 12 words ("Class B CDL tow truck driver, WreckMaster certified"). For a driving or trade job the license class goes here. No adjectives about character.
-- A summary in this shape, two or three sentences, every time: (1) their current or latest job title at the employer, with the scope they gave (a number, the main tools): "Customer Support Specialist at Globex answering about 60 billing and refund tickets a day in Zendesk and Salesforce." (2) their one or two strongest results with the numbers, each with how: "Cut duplicate tickets 50% with a shared refund guide and lowered new-customer complaints 31% with an onboarding email sequence." (3) only when the job they want next is a different one: "Moving into a Customer Success Specialist role." No "I", no objective statement ("seeking a challenging position"), no "hard-working", "team player", "detail-oriented", "motivated", "results-driven", "passionate".
+- A summary in this shape, two or three sentences, every time: (1) their current or latest job title at the employer, with the scope they gave (a number, the main tools): "Customer Support Specialist at Globex answering about 60 billing and refund tickets a day in Zendesk and Salesforce." (2) their one or two strongest results with the numbers, each with how: "Cut duplicate tickets 50% with a shared refund guide and lowered new-customer complaints 31% with an onboarding email sequence." (3) only when the job they want next is a different one: "Looking for a Customer Success Specialist role." No "I", no objective statement ("seeking a challenging position"), no "hard-working", "team player", "detail-oriented", "motivated", "results-driven", "passionate".
 - Lines: an action verb first, one sentence of about 12 to 28 words, the most relevant to the job they want first. Lead with scope or a result they gave (how many, how often, trust given to them, people trained, an emergency handled), then the task.
 - Where they gave a result and how they did it: what changed, by how much, then how (Google's X-Y-Z, "Accomplished X, as measured by Y, by doing Z"): "Decreased duplicate tickets by 50% by creating a shared refund guide for sales and support". Never complete the pattern with a part they didn't give.
 - Where their facts show they used an AI tool to get something done, that line goes first in its job: the problem, the tool, the result.
@@ -131,7 +131,7 @@ export function builtSummary(job, lines, target = "") {
   const best = lines.find((x) => resultLine(x.text)) || lines.find((x) => /\d/.test(x.text)) || lines[0];
   const aim = String(target || "").trim();
   const changing = aim && !String(job.title).toLowerCase().includes(aim.toLowerCase()) && !aim.toLowerCase().includes(String(job.title).toLowerCase());
-  return [`${job.title}${job.org ? " at " + job.org : ""}`, best ? best.text : "", changing ? `Moving into a ${aim} role` : ""].filter(Boolean).join(". ");
+  return [`${job.title}${job.org ? " at " + job.org : ""}`, best ? best.text : "", changing ? `Looking for a ${aim} role` : ""].filter(Boolean).join(". ");
 }
 
 // "Tow Truck Driver with Class B CDL and WreckMaster 4/5": their own title and credentials, nothing else.
@@ -174,7 +174,10 @@ Return JSON only: {"jobs": [{"i": 0, "lines": [{"text": "...", "from": [0, 3]}]}
   const known = knownTerms(p, answers);
   const notes = [], rejected = [], toCheck = [];
   // The headline and summary (with their own retry) run while the lines are checked and retried.
-  const facts = ordered.map((e) => [e.title, e.org, e.dates, ...sourcesOf(e)].join(". ")).join("\n") + "\n" + skillItems.join(", ") + "\n" + target;
+  // Labelled, so the fact check reads "OSHA 10" as a certification they hold and the target as the job they want.
+  const facts = ordered.map((e) => [e.title, e.org, e.dates, ...sourcesOf(e)].join(". ")).join("\n") +
+    (skillItems.length ? `\nTheir skills, tools, licenses and certifications, as they listed them: ${skillItems.join(", ")}` : "") +
+    (target ? `\nThe job they want next, in their own words (they are looking for this role): ${target}` : "");
   r.fallbackHeadline = plainHeadline(ordered[0], arr(p.skills).filter((x) => /certif|licen/i.test(x.label)));
   const topP = linesOnly ? Promise.resolve({ headline: "", summary: "", rejected: [] }) : topOfPage(r, facts, p, known, target ? `aimed at ${target} jobs` : "aimed at the work their facts show");
   // First the choices and their wording; a line that fails a check gets one more try, with the reason.
@@ -239,6 +242,14 @@ Return JSON only: {"jobs": [{"i": 0, "lines": [{"text": "...", "from": [0, 3]}]}
     if (!next.length) continue;
     // The lines left out stay available for tailoring to a posting, below the chosen ones.
     const rest = old.filter((b, k) => !used.has(k) && !next.some((x) => sameLine(x.text, b.text))).map((b) => ({ ...b, approved: b.approved === true ? true : false, id: slug(b.text.split(/\s+/).slice(0, 2).join(" "), taken) }));
+    // Their AI-tool line is the proof hiring managers look for: it's on the page, first in the job.
+    if (!next.some((b) => AI_TOOL.test(b.text))) {
+      const ai = rest.find((b) => AI_TOOL.test(b.text));
+      if (ai) { rest.splice(rest.indexOf(ai), 1); if (next.length >= limit(e, i)) rest.unshift(next.pop()); next.unshift(ai); }
+    } else {
+      const at = next.findIndex((b) => AI_TOOL.test(b.text));
+      if (at > 0 && !resultLine(next[0].text)) next.unshift(...next.splice(at, 1));
+    }
     // A number of theirs the chosen lines left out: its own line goes back on the page while there's room.
     const onPage = new Set(next.flatMap((b) => [...numbersIn(b.text)]));
     for (const b of [...rest]) {
@@ -246,6 +257,12 @@ Return JSON only: {"jobs": [{"i": 0, "lines": [{"text": "...", "from": [0, 3]}]}
       const nums = [...numbersIn(b.text)].filter((n) => !onPage.has(n));
       if (!nums.length) continue;
       next.push(b); rest.splice(rest.indexOf(b), 1); nums.forEach((n) => onPage.add(n));
+    }
+    // Still room: a line that says something the chosen ones don't goes back on.
+    for (const b of [...rest]) {
+      if (next.length >= limit(e, i)) break;
+      if (covers(next.map((x) => x.text), b.text)) continue;
+      next.push(b); rest.splice(rest.indexOf(b), 1);
     }
     e.bullets = [...next, ...rest];
     e.minBullets = Math.min(2, next.length);

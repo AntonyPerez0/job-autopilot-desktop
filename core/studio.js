@@ -29,7 +29,8 @@ export const aiTells = (text, sources = []) => { const src = sources.join(" ").t
 const STOP = /^(with|from|that|this|their|they|them|into|onto|over|each|every|about|other|and|the|for|per|day|week|month|year|years|shift|shifts|team|teams)$/;
 export function stuffedWord(text) {
   const n = new Map();
-  for (const w of String(text).toLowerCase().split(/[^a-z0-9+#]+/).filter((x) => x.length > 3 && !STOP.test(x))) {
+  // "step-by-step" and "mis-picks" are one word each.
+  for (const w of String(text).toLowerCase().split(/[^a-z0-9+#-]+/).map((x) => x.replace(/^-+|-+$/g, "")).filter((x) => x.length > 3 && !STOP.test(x))) {
     const k = w.replace(/(ers|ing|ed|er|es|s)$/, "");
     n.set(k, (n.get(k) || 0) + 1);
     if (n.get(k) >= 3) return w;
@@ -41,7 +42,7 @@ export function stuffedWord(text) {
 const RESULT = /^(cut|reduced|lowered|decreased|increased|raised|grew|boosted|improved|saved|doubled|tripled|halved|dropped|shortened|sped up|eliminated|recovered|won)\b/i;
 // "by setting up CI" says how; "by 40%" only says how much.
 const METHOD = /\b(using|through|via|thanks to)\b|\bby (?!\d|about\b|around\b|roughly\b|nearly\b|over\b|almost\b|more\b|up to\b|half\b|a (third|quarter|half)\b)[a-z]/i;
-const AI_TOOL = /\b(chatgpt|gpt-?\d\w*|claude( code)?|copilot|gemini|midjourney|cursor|perplexity|llms?|generative ai|ai tools?|an ai)\b/i;
+export const AI_TOOL = /\b(chatgpt|gpt-?\d\w*|claude( code)?|copilot|gemini|midjourney|cursor|perplexity|llms?|generative ai|ai tools?|an ai)\b/i;
 
 // Each check: { id, level: "good"|"fix"|"tip", title, detail, items: [{ path, text, why }] }
 export function checklist(profile, answers = {}, fit = null) {
@@ -158,7 +159,9 @@ export function addedFacts(suggestion, sources, allowed = []) {
   for (const n of numbersIn(suggestion)) if (!srcNums.has(n)) problems.push(`the number ${n}`);
   // "ChatGPT-drafted", "Zendesk-based": a compound of words they gave adds nothing new.
   const given = (w) => srcLower.includes(w) || ok.has(w);
-  for (const w of specificTerms(suggestion)) if (!given(w) && !(w.includes("-") && w.split("-").every((x) => x && (given(x) || lineWords(src).has(x.replace(/(ing|ed|es|s|e)$/, "")))))) problems.push(`"${w}"`);
+  // ... and so is a name of theirs with a plain ending: "ChatGPT-assisted", "Excel-based".
+  const ENDING = /^(assisted|based|made|built|drafted|written|generated|powered|enabled|supported|tracked)$/;
+  for (const w of specificTerms(suggestion)) if (!given(w) && !(w.includes("-") && w.split("-").every((x, k) => x && (given(x) || lineWords(src).has(x.replace(/(ing|ed|es|s|e)$/, "")) || (k > 0 && ENDING.test(x)))))) problems.push(`"${w}"`);
   return problems;
 }
 
@@ -250,6 +253,15 @@ export function changeVerbs(sources) {
 export const resultLine = (t) => changeVerbs([String(t)]).length > 0;
 export const xyzLine = (t) => RESULT.test(String(t).trim()) && /\bby [a-z]+ing\b/i.test(String(t));
 
+// Whether some line already says this part of their answer: most of its meaningful words are in one line.
+const stemW = (w) => w.replace(/(ing|ed|es|s|e)$/, "");
+const meaning = (t) => new Set(String(t).toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !/^(the|and|with|for|our|my|their|them|they|was|were|got|every|about|from|into|that|this|then|also|before|after|each|one|two|all|some|any|more)$/.test(w)).map(stemW));
+export function covers(lines, part) {
+  const want = [...meaning(part)];
+  if (!want.length) return true;
+  return lines.some((l) => { const have = meaning(l); return want.filter((w) => have.has(w)).length / want.length >= 0.5; });
+}
+
 export function vet(text, sources, profile, allowed = [], original = null) {
   const t = String(text || "").trim();
   if (!t) return { ok: false, why: ["empty"] };
@@ -261,8 +273,10 @@ export function vet(text, sources, profile, allowed = [], original = null) {
   if (PRONOUN.test(t)) why.push("uses I/my");
   const tells = aiTells(t, [...sources, ...allowed]).filter((x) => !why.some((w) => w.toLowerCase().includes(x)));
   if (tells.length) why.push(`sounds AI-written ("${tells[0]}"); say it plainly`);
+  // Said three times by them too ("step-by-step", "every step"), it's their wording, not stuffing.
   const stuffed = stuffedWord(t);
-  if (stuffed && stuffedWord(sources.join(" ")) !== stuffed) why.push(`says "${stuffed}" three times; say it once`);
+  const theirs = (w) => (sources.join(" ").toLowerCase().match(new RegExp(`\\b${w.replace(/(ers|ing|ed|er|es|s)$/, "")}`, "g")) || []).length >= 3;
+  if (stuffed && !theirs(stuffed)) why.push(`says "${stuffed}" three times; say it once`);
   // Being in charge, a system, a result: a word like that has to come from them. A change they stated with
   // its size ("dropped by 50%", "from 2 hours to 30 minutes") may take the plain verb for it ("Cut", "Increased").
   const claims = claimWords(t, [...sources, ...allowed, ...changeVerbs(sources)]);
@@ -291,7 +305,7 @@ export const GUIDE = `How recruiters want resume lines written:
 - Avoid empty corporate phrases ("service delivery", "stakeholders", "various tasks", "synergy").
 - Write it the way they would explain it in an interview: plain and specific. Never the phrasing AI tools put on every resume: spearheaded, cross-functional initiatives, operational excellence, results-driven, proven track record, leveraged, utilized, robust, seamless, cutting-edge, fostered, dynamic, passionate about, adept at, fast-paced environment, instrumental in.
 - When they gave a result, how much it changed and how they did it, write it as result, measure, method (Google's X-Y-Z: "Accomplished X, as measured by Y, by doing Z"): "Cut failed deploys from weekly to rare by setting up CI with unit and integration tests". Use only the parts they gave; never make up a result, a measure or a method to complete the pattern.
-- An AI tool they used is a tool like any other: name it with what it did and the result they gave, never just "Used ChatGPT".
+- An AI tool they used is a tool like any other: name it with what it did and the result they gave, never just "Used ChatGPT". When they said how they checked its work ("then checked every step with my lead"), keep that in the line: it's what makes it believable.
 - A skill or keyword goes inside the line that shows it being used, once; never a list of keywords in a line, never the same word three times.
 - Say what was done and, when the person gave one, the size or result (how many, how much, how often, what improved). Every number they gave goes into a line, exactly as given (with its "about").
 - One line each: about 8 to 20 words, at most 150 characters. No "I", "my" or "we". No buzzwords (hard-working, team player, detail-oriented, passionate, results-driven).
@@ -489,15 +503,21 @@ Return JSON only:
     const given = [j.daily, j.proud, j.numbers].filter(Boolean).join(". ");
     const usedNums = new Set(bullets.flatMap((b) => [...numbersIn(b.text)]));
     const missing = [...numbersIn(given)].filter((n) => !usedNums.has(n) && !(Number(n) >= 1950 && Number(n) <= 2100));
-    if (missing.length) {
-      const said = given.split(/(?<=[.;!?])\s+|,\s+(?=[a-z])/).filter((x) => missing.some((n) => numbersIn(x).has(n)));
+    // ... and an AI tool they used is proof hiring managers look for: it gets a line too, even without a number.
+    const aiSaid = AI_TOOL.test(given) && !bullets.some((b) => AI_TOOL.test(b.text));
+    // ... and each duty they described ("checked the truck before every route") that no line covers.
+    const parts = given.split(/(?<=[.;!?])\s+|,\s+(?=[a-z])/).map((x) => x.trim()).filter((x) => x.split(/\s+/).length >= 3);
+    const uncovered = parts.filter((x) => !covers(bullets.map((b) => b.text), x)).slice(0, 4);
+    if (missing.length || aiSaid || uncovered.length) {
+      const said = parts.filter((x) => missing.some((n) => numbersIn(x).has(n)) || (aiSaid && AI_TOOL.test(x)) || uncovered.includes(x));
       try {
         const r3 = await ask([{ role: "system", content: `Write one resume line for each fact below, using only that fact's words and every number in it exactly, with its "about".\n${GUIDE}${j.current ? "\nThis is their current job: present tense for ongoing duties." : "\nThis is a past job: past tense."}\nReturn JSON only: {"lines": [{"n": 0, "text": "..."}]}` },
           { role: "user", content: `JOB: ${j.title} at ${j.employer}\n` + said.map((x, n) => `${n}. ${x}`).join("\n") }]);
         for (const l of arr(r3.lines)) {
           const t = houseStyle(Profile.stripDashes(String(l.text || "")).trim()).replace(/\.$/, "");
           if (!t || bullets.some((y) => sameLine(y.text, t)) || !vet(t, sources, p, allowedHere).ok) continue;
-          if (![...numbersIn(t)].some((n) => missing.includes(n))) continue;
+          const forPart = said[Number(l.n)] || "";
+          if (![...numbersIn(t)].some((n) => missing.includes(n)) && !(aiSaid && AI_TOOL.test(t)) && !(uncovered.includes(forPart) && covers([t], forPart))) continue;
           bullets.push({ id: slug(t.split(/\s+/).slice(0, 2).join(" "), bt), text: t, approved: false, source: said[Number(l.n)] || given.slice(0, 300) });
         }
       } catch { /* the lines they have stand */ }

@@ -60,6 +60,14 @@ const dedupe = (xs) => [...new Map(xs.map((x) => [x.toLowerCase().replace(/\s*\(
 const titleCase = (t) => clean(t).replace(/\b([a-z])([a-z]{2,})/g, (m, a, b) => a.toUpperCase() + b);
 // Lines a layout shows per entry: 5 for the first job, 3 for the others (docs/resume-research.md).
 const capFor = (base, eid) => { const sec = arr(base.sections).find((s) => s.kind === "experience"); return sec && arr(sec.items)[0] && sec.items[0].id === eid ? 5 : 3; };
+// A full job takes a new first line by letting one go: the last line with no number of its own, so a fact
+// like "about 2 new hires a month" stays on the page. The line let go stays available for tailoring.
+const makeRoom = (ids, cap, e) => {
+  const text = (id) => ((arr(e.bullets).find((b) => b.id === id) || {}).text || "");
+  let drop = -1;
+  for (let k = ids.length - 1; k > 0 && drop < 0; k--) if (!numbersIn(text(ids[k])).size) drop = k;
+  return (drop < 0 ? ids.slice(0, cap) : ids.filter((_, k) => k !== drop)).slice(0, cap);
+};
 const lastIn = (taken, pre) => { let n = 2, id = pre; while (taken.has(id)) id = `${pre}-${n++}`; taken.add(id); return id; };
 
 // input: { jobs: [{ title, employer, location, start, end, current, daily, numbers, tools }],
@@ -167,7 +175,7 @@ export async function applyFill(profile, input = {}, answers = {}) {
       // First in the job; the last line makes room (it stays available for tailoring).
       for (const base of p.bases) for (const s of arr(base.sections)) for (const it of arr(s.items)) if (it.id === e.id) {
         const cap = capFor(base, e.id), next = [id, ...arr(it.bullets)];
-        it.bullets = arr(it.bullets).length >= cap ? next.slice(0, cap) : next;
+        it.bullets = arr(it.bullets).length >= cap ? makeRoom(next, cap, e) : next;
       }
       added.push({ kind: "record", title: `${e.title}: ${text}` });
     }
@@ -185,7 +193,7 @@ export async function applyFill(profile, input = {}, answers = {}) {
   if (uses.length) {
     const known = knownTerms(p, answers);
     const said = (x) => [x.problem && `The problem: ${str(x.problem)}`, x.did && `What they did with ${str(x.tool)}: ${str(x.did)}`, x.result && `What changed: ${str(x.result)}`].filter(Boolean).join(". ");
-    const sys = `Turn what a person said about using an AI tool into one resume line each, using only their facts.\n${GUIDE}\n${POLISH_RULES}\nWrite it as result, measure, method where they gave them: what changed, by how much, then how, naming the tool exactly as they did ("Cut weekly customer-feedback reporting from 2 hours to 30 minutes by using Claude Code to build a shared database of recurring issues"). Without a result, say what they made with the tool and for what. Never add a result, number or method they didn't give.\nReturn JSON only: {"lines": [{"n": 0, "text": "..."}]}`;
+    const sys = `Turn what a person said about using an AI tool into one resume line each, using only their facts.\n${GUIDE}\n${POLISH_RULES}\nWrite it as result, measure, method where they gave them: what changed, by how much, then how, naming the tool exactly as they did ("Cut weekly customer-feedback reporting from 2 hours to 30 minutes by using Claude Code to build a shared database of recurring issues"). Without a result, say what they made with the tool and for what. When they said how they checked the tool's work ("checked every step with my lead"), keep that in the line: it's what makes it believable. Never add a result, number or method they didn't give.\nReturn JSON only: {"lines": [{"n": 0, "text": "..."}]}`;
     const where = (x) => x.where === "own" ? `THEIR OWN PROJECT: ${str(x.name)} (past tense unless ongoing)` : (() => { const e = p.experience.find((y) => y.id === x.where); return `JOB: ${e.title}${/present/i.test(e.dates || "") ? " (current: present tense)" : " (past tense)"}`; })();
     let out = {};
     try { out = await ask([{ role: "system", content: sys }, { role: "user", content: uses.map((x, n) => `${n}. ${where(x)}\n   TOOL: ${str(x.tool)}\n   THEY SAID: ${said(x)}`).join("\n") }]); } catch { out = {}; }
@@ -227,7 +235,7 @@ export async function applyFill(profile, input = {}, answers = {}) {
         toCheck.push({ b, text: t.text, source: t.src.join(". ") });
         for (const base of p.bases) for (const sec of arr(base.sections)) for (const it of arr(sec.items)) if (it.id === t.e.id) {
           const cap = capFor(base, t.e.id), next = [id, ...arr(it.bullets)];
-          it.bullets = arr(it.bullets).length >= cap ? next.slice(0, cap) : next;
+          it.bullets = arr(it.bullets).length >= cap ? makeRoom(next, cap, e) : next;
         }
         added.push({ kind: "ai", title: `${t.e.title}: ${t.text}` });
       } else {

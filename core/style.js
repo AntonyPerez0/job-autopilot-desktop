@@ -16,11 +16,12 @@ export function houseStyle(text) {
   s = s.replace(new RegExp(String.raw`\b(raised|boosted|grew|raise|boost|grow|raising|boosting|growing)\b(?=[^,.;]*?\d[\d,.]*\s?%)`, "gi"), (m) => keepCase(m, /ing$/i.test(m) ? "increasing" : /^(raise|boost|grow)$/i.test(m) ? "increase" : "increased"));
   s = s.replace(new RegExp(String.raw`\b((?:cut|cutting|increased|increase|increasing) [^,.;]+?) by (${PCT})`, "gi"), "$1 $2");
   // How often, after a count: "60 tickets daily", "per day", "each day" -> "a day".
-  if (/\d/.test(s)) {
-    s = s.replace(/\b(per|each|every) (day|shift|week|month|year|hour)\b/gi, "a $2");
-    const UNIT = { daily: "a day", weekly: "a week", monthly: "a month", nightly: "a night", hourly: "an hour" };
-    s = s.replace(/ (daily|weekly|monthly|nightly)(?=$|[,;.)]| (on|in|using|via|across|for|through|with|regarding|about|by|at|from|to|and|during|while)\b)/gi, (m, w) => " " + UNIT[w.toLowerCase()]);
-  }
+  // Only right after a count in the same part of the sentence ("about 10 people monthly"), never a "monthly"
+  // that says how often something happens ("sort donations monthly, about 300 pounds").
+  const countBefore = (str, at) => /\d/.test(str.slice(0, at).split(/[,;.:]/).pop());
+  s = s.replace(/\b(per|each|every) (day|shift|week|month|year|hour)\b/gi, (m, w, unit, at, str) => (countBefore(str, at) ? `a ${unit}` : m));
+  const UNIT = { daily: "a day", weekly: "a week", monthly: "a month", nightly: "a night" };
+  s = s.replace(/ (daily|weekly|monthly|nightly)(?=$|[,;.)]| (on|in|using|via|across|for|through|with|regarding|about|by|at|from|to|and|during|while)\b)/gi, (m, w, _p, at, str) => (countBefore(str, at) ? " " + UNIT[w.toLowerCase()] : m));
   // Counts in digits ("3 new hires"); "one" stays a word ("one-on-one", "one of").
   s = s.replace(/\b(two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b(?=\s+[a-z])/gi, (m) => String(WORD_NUM[m.toLowerCase()]));
   // Plain words.
