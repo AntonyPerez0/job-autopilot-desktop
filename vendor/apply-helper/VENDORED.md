@@ -36,4 +36,11 @@ Local changes, kept as small as possible:
 7. `resume_pdf.js` (`render`): an entry without an employer (volunteer work, say) shows its title
    alone, without a trailing comma.
 
-To update: copy the new files over these, reapply the seven edits, run `npm test`.
+8. `tailor.js` (`chat`): an optional `seed`, sent with the request, so the same question gets the same
+   answer from providers that support one (the app asks at temperature 0 with a fixed seed).
+
+9. `resume_pdf.js` (`render`, `doc.spread`) and `tailor.js` (`fit`): a resume still short after setting it
+   larger spreads the rest of the space between sections and entries, within limits, so the page doesn't
+   stop two thirds of the way down; the largest setting is 1.22.
+
+To update: copy the new files over these, reapply the nine edits, run `npm test`.

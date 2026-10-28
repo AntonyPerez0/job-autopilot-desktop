@@ -174,3 +174,72 @@ test("a merge of several lines that fails its check keeps every line it was made
   const lines = r.profile.experience[0].bullets.map((b) => b.text);
   for (const t of ["Ran the register for about 200 customers a shift", "Trained 4 new cashiers", "Closed the store on weekends"]) assert.ok(lines.includes(t), `kept: ${t} in ${JSON.stringify(lines)}`);
 });
+
+test("result, measure, method the same way every time: a reorder is used only when it passes every check", async () => {
+  const p = example();
+  reply = (sys) => /Rewrite each resume line so it reads as result, measure, method/.test(sys) ? { lines: [
+    { n: 0, text: "Cut duplicate tickets 50% by writing a shared refund guide for sales and support" },
+    { n: 1, text: "Cut complaints 31% by drafting an award-winning email sequence for 5,000 customers" }] } : {};
+  const out = await P.xyzOrder([
+    { text: "Wrote a shared refund guide for sales and support; duplicate tickets dropped 50%", sources: ["wrote a refund guide both teams use; duplicate tickets dropped by 50%"] },
+    { text: "Drafted an onboarding email sequence; complaints dropped 31%", sources: ["drafted onboarding emails; complaints went down 31%"] },
+    { text: "Answer about 60 tickets a day", sources: ["about 60 tickets a day"] },
+    { text: "Cut weekly reporting from 2 hours to 30 minutes by using Claude to group issues", sources: ["2 hours to 30 minutes"] }], p, []);
+  assert.strictEqual(out[0], "Cut duplicate tickets 50% by writing a shared refund guide for sales and support");
+  assert.strictEqual(out[1], "Drafted an onboarding email sequence; complaints dropped 31%", "an added number and praise: the line stays as it was");
+  assert.strictEqual(out[2], "Answer about 60 tickets a day", "no change stated: not touched");
+  assert.strictEqual(out[3], "Cut weekly reporting from 2 hours to 30 minutes by using Claude to group issues", "already in order: not sent");
+});
+
+test("no AI summary passed: the same three-part shape from their title, their best checked line and their target", () => {
+  const job = { title: "Customer Support Specialist", org: "Globex" };
+  const lines = [{ text: "Answer about 60 tickets a day" }, { text: "Cut duplicate tickets 50% by writing a shared refund guide" }];
+  assert.strictEqual(P.builtSummary(job, lines, "Customer Success Specialist"), "Customer Support Specialist at Globex. Cut duplicate tickets 50% by writing a shared refund guide. Moving into a Customer Success Specialist role");
+  assert.strictEqual(P.builtSummary(job, lines, "customer support specialist"), "Customer Support Specialist at Globex. Cut duplicate tickets 50% by writing a shared refund guide", "same job: no 'moving into'");
+});
+
+test("a short resume fills the page with even spacing, never past one page", async () => {
+  const { Tailor, loadProfile } = await import("../core/engine.js");
+  const p = example();
+  p.experience = p.experience.slice(0, 1); p.experience[0].bullets = p.experience[0].bullets.slice(0, 2);
+  p.projects = []; for (const b of p.bases) b.sections = b.sections.filter((s) => s.kind !== "projects").map((s) => s.kind === "experience" ? { ...s, items: s.items.filter((it) => it.id === p.experience[0].id).map((it) => ({ ...it, bullets: it.bullets.slice(0, 2) })) } : s);
+  const lp = loadProfile(p);
+  const { spec } = Tailor.checkPlan(lp, { base: lp.bases[0].id });
+  const r = await Tailor.fit(lp, spec, []);
+  assert.ok(!r.overflow);
+  assert.ok(r.spread && r.spread.head > 0 && r.spread.head <= 16 && r.spread.entry <= 7, JSON.stringify(r.spread));
+  assert.ok(r.slack < r.startSlack, "less blank than before");
+});
+
+test("the same question gets the same answer: AI answers are remembered, so the same facts make the same resume", async () => {
+  const C = await import("../core/aicache.js");
+  delete process.env.JA_NO_AI_CACHE;
+  try {
+    let n = 0;
+    reply = () => ({ text: `answer ${++n}` });
+    const msgs = [{ role: "system", content: "Reword it. Return JSON only" }, { role: "user", content: "a line" }];
+    const a = await S.ask(msgs), b = await S.ask(msgs);
+    assert.deepStrictEqual(a, b, "asked twice, answered once");
+    assert.strictEqual(n, 1);
+    const c = await S.ask([msgs[0], { role: "user", content: "another line" }]);
+    assert.notDeepStrictEqual(c, a, "a new question gets a fresh answer");
+    assert.ok(C.prune() >= 2, "kept in the data folder");
+  } finally { process.env.JA_NO_AI_CACHE = "1"; }
+});
+
+test("a line the fact check flags gets one more try without the flagged part; it replaces the line only if both checks pass", async () => {
+  reply = (sys, user) => {
+    if (/has a part the person never said/.test(sys)) return { lines: [{ n: 0, text: "Trained 4 new cashiers" }, { n: 1, text: "Trained 3 new support hires on Kubernetes" }] };
+    if (/fact-check/.test(sys)) return { lines: [] };
+    return {};
+  };
+  const a = { id: "a", text: "Trained 4 new cashiers on register and return procedures", warning: "x" }, b = { id: "b", text: "Trained 3 new support hires on company processes", warning: "y" };
+  const items = [
+    { b: a, text: a.text, source: "trained 4 new cashiers", flag: "on register and return procedures", check: (t) => S.vet(t, ["trained 4 new cashiers"], { rules: {} }, []) },
+    { b, text: b.text, source: "trained 3 new support hires", flag: "on company processes", check: (t) => S.vet(t, ["trained 3 new support hires"], { rules: {} }, []) }];
+  const n = await S.refixFlagged(items);
+  assert.strictEqual(n, 1);
+  assert.strictEqual(a.text, "Trained 4 new cashiers"); assert.strictEqual(a.warning, undefined);
+  assert.strictEqual(b.text, "Trained 3 new support hires on company processes", "the retry added Kubernetes: refused, the note stays");
+  assert.strictEqual(b.warning, "y");
+});

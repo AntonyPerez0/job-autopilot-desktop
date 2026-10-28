@@ -1,6 +1,6 @@
 // "Not sure what to look for?": job titles to search for, from the person's own approved resume,
 // favouring work they qualify for now that tends to pay more than what they do today.
-import { Tailor, aiSettings, approvedOnly } from "./engine.js";
+import { Tailor, aiSettings, approvedOnly, STEADY } from "./engine.js";
 import { getAnswers, getPrefs, getProfile } from "./store.js";
 
 const arr = (x) => (Array.isArray(x) ? x : []);
@@ -41,7 +41,7 @@ export async function suggestTitles({ profile = getProfile(), answers = getAnswe
 For each: "why" is one short sentence to them ("You hold a Class B CDL and..."), naming only facts listed above, in their words: a tool they used is not a certification, and nothing is added.
 "pay" compares typical pay with their current job from your general knowledge: "more", "similar", "less", or "unsure" when you don't know.
 Return JSON only: {"titles": [{"title": "...", "why": "...", "pay": "more|similar|less|unsure"}]}`;
-  const r = await Tailor.chat(aiSettings(), [{ role: "system", content: sys }, { role: "user", content: JSON.stringify(facts) }]);
+  const r = await Tailor.chat(aiSettings(), [{ role: "system", content: sys }, { role: "user", content: JSON.stringify(facts) }], STEADY);
   // A second, separate pass: every "why" must be backed by the resume, or the suggestion is dropped.
   const { factCheck } = await import("./studio.js");
   const source = JSON.stringify(facts);

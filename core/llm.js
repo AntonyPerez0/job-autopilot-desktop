@@ -36,7 +36,7 @@ async function ollamaChat(url, body, ai, signal) {
     body: JSON.stringify({
       model: body.model, messages: body.messages, stream: false,
       ...(body.response_format ? { format: "json" } : {}),
-      options: { temperature: body.temperature ?? 0.2, num_ctx: Number(ai.contextLength) || 16384 },
+      options: { temperature: body.temperature ?? 0.2, num_ctx: Number(ai.contextLength) || 16384, ...(body.seed != null ? { seed: body.seed } : {}) },
     }),
   });
   const data = await res.json().catch(() => ({}));

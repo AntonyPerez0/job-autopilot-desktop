@@ -8,7 +8,7 @@
 // Every rewritten line passes the same honesty checks as the rest of the app (vet, then factCheck).
 // The rules come from docs/resume-research.md.
 import { Profile, Tailor, approvedOnly } from "./engine.js";
-import { GUIDE, ask, setProgress, repeatedPhrase, casualBits, claimWords, factCheck, knownTerms, newWords, numbersIn, sameLine, specificTerms, vet as vet0 } from "./studio.js";
+import { GUIDE, ask, setProgress, repeatedPhrase, casualBits, changeVerbs, claimWords, factCheck, refixFlagged, knownTerms, newWords, numbersIn, resultLine, sameLine, specificTerms, vet as vet0, xyzLine } from "./studio.js";
 
 // The app's honesty check, plus: a rewording may use professional words for the same facts, but never a
 // word that makes a new claim ("using a ticketing system", "managed", "reduced"), and not many new words at all.
@@ -17,7 +17,7 @@ export function vet(text, sources, profile, allowed, original) {
   if (original === undefined) return v;
   const why = [...v.why];
   const extra = newWords(text, sources).filter((w) => !allowed.some((a) => String(a).toLowerCase().startsWith(w)));
-  const claims = claimWords(text, sources);
+  const claims = claimWords(text, [...sources, ...changeVerbs(sources)]);
   if (claims.length && !why.some((w) => /claim/.test(w))) why.push(`adds a claim your line doesn't make: ${claims.slice(0, 3).join(", ")}`);
   else if (extra.length > 4) why.push(`adds words your line doesn't say: ${extra.slice(0, 4).join(", ")}`);
   const rep = repeatedPhrase(text);
@@ -44,7 +44,7 @@ export const SKILL_GROUPS = ["Licenses & Certifications", "Equipment & Tools", "
 // mostly on titles, the top third and the first words of each line.
 export const POLISH_RULES = `What recruiters want:
 - A headline under the name: the kind of job they do or want plus their strongest credential they hold, about 6 to 12 words ("Class B CDL tow truck driver, WreckMaster certified"). For a driving or trade job the license class goes here. No adjectives about character.
-- A summary of two or three short lines: what they do, the scope (numbers they gave), and what they bring to the job they want next (name that job when they are changing fields). No "I", no objective statement ("seeking a challenging position"), no "hard-working", "team player", "detail-oriented", "motivated", "results-driven", "passionate".
+- A summary in this shape, two or three sentences, every time: (1) their current or latest job title at the employer, with the scope they gave (a number, the main tools): "Customer Support Specialist at Globex answering about 60 billing and refund tickets a day in Zendesk and Salesforce." (2) their one or two strongest results with the numbers, each with how: "Cut duplicate tickets 50% with a shared refund guide and lowered new-customer complaints 31% with an onboarding email sequence." (3) only when the job they want next is a different one: "Moving into a Customer Success Specialist role." No "I", no objective statement ("seeking a challenging position"), no "hard-working", "team player", "detail-oriented", "motivated", "results-driven", "passionate".
 - Lines: an action verb first, one sentence of about 12 to 28 words, the most relevant to the job they want first. Lead with scope or a result they gave (how many, how often, trust given to them, people trained, an emergency handled), then the task.
 - Where they gave a result and how they did it: what changed, by how much, then how (Google's X-Y-Z, "Accomplished X, as measured by Y, by doing Z"): "Decreased duplicate tickets by 50% by creating a shared refund guide for sales and support". Never complete the pattern with a part they didn't give.
 - Where their facts show they used an AI tool to get something done, that line goes first in its job: the problem, the tool, the result.
@@ -55,6 +55,33 @@ export const POLISH_RULES = `What recruiters want:
 - Tense: present for the current job's ongoing work, past for everything else. No trailing full stops.
 - Never mention pay, money wanted, or why they want to leave ("a role that pays better"). If the job they want is vague, aim at the work their facts show instead.
 - Merge two lines that say nearly the same thing. Drop the weakest lines rather than keeping many.`;
+
+// Result lines in result, measure, method order (Google's X-Y-Z), the same way every time: one small rewrite
+// whose only job is the order, checked like any other; a rewrite that fails a check leaves the line as it was.
+// items: [{ text, sources, original }] -> the texts, reordered where that passed.
+export async function xyzOrder(items, p, known = []) {
+  const out = items.map((x) => x.text);
+  const todo = items.map((x, i) => ({ ...x, i })).filter((x) => x.text && resultLine(x.text) && !xyzLine(x.text));
+  if (!todo.length) return out;
+  let r = {};
+  try {
+    r = await ask([{ role: "system", content: `Rewrite each resume line so it reads as result, measure, method (Google's X-Y-Z: accomplished X, as measured by Y, by doing Z).
+Start with the plain verb for the change the line already states (Cut, Reduced, Lowered, Increased, Raised, Grew; past tense for a finished result), then what changed and by how much, then "by" and how it was done as an -ing verb.
+Use only the words and facts already in the line: every number exactly as it is, with its "about"; nothing added, nothing dropped, no new adjectives.
+"Wrote a shared refund guide for sales and support; duplicate tickets dropped 50%" -> "Cut duplicate tickets 50% by writing a shared refund guide for sales and support".
+"Drafted an onboarding email sequence with ChatGPT, then edited every email; new-customer complaints dropped 31%" -> "Lowered new-customer complaints 31% by drafting an onboarding email sequence with ChatGPT, then editing every email".
+If a line doesn't say both a change and how it happened, return it unchanged.
+Return JSON only: {"lines": [{"n": 0, "text": "..."}]}` }, { role: "user", content: todo.map((x, n) => `${n}. ${x.text}`).join("\n") }]);
+  } catch { return out; }
+  for (const l of arr(r.lines)) {
+    const x = todo[Number(l.n)];
+    if (!x) continue;
+    const t = clean(l.text);
+    if (!t || t.length > 180 || !xyzLine(t)) continue;
+    if (vet(t, [...x.sources, x.text], p, known, x.original || x.text).ok) out[x.i] = t;
+  }
+  return out;
+}
 
 // A headline and a summary from the person's facts, through the honesty checks, with one more try that
 // says what was wrong. -> { headline, summary, rejected }
@@ -88,6 +115,16 @@ async function topOfPage(first, facts, p, known, aim) {
   if (!okH(c) && first.fallbackHeadline) { c.h = first.fallbackHeadline; c.hv = { ok: true, why: [] }; }
   if (c.s && !okS(c)) rejected.push({ job: "Summary", text: c.s, why: c.sv.why.length ? c.sv.why : ["mentions pay"] });
   return { headline: okH(c) ? c.h : "", summary: okS(c) ? c.s : "", rejected };
+}
+
+// "Customer Support Specialist at Globex. Cut duplicate tickets 50% by writing a refund guide. Moving into a
+// Customer Success Specialist role." Their title, their best checked line, their target: no AI wording at all.
+export function builtSummary(job, lines, target = "") {
+  if (!job || !job.title) return "";
+  const best = lines.find((x) => resultLine(x.text)) || lines.find((x) => /\d/.test(x.text)) || lines[0];
+  const aim = String(target || "").trim();
+  const changing = aim && !String(job.title).toLowerCase().includes(aim.toLowerCase()) && !aim.toLowerCase().includes(String(job.title).toLowerCase());
+  return [`${job.title}${job.org ? " at " + job.org : ""}`, best ? best.text : "", changing ? `Moving into a ${aim} role` : ""].filter(Boolean).join(". ");
 }
 
 // "Tow Truck Driver with Class B CDL and WreckMaster 4/5": their own title and credentials, nothing else.
@@ -165,6 +202,9 @@ Return JSON only: {"jobs": [{"i": 0, "lines": [{"text": "...", "from": [0, 3]}]}
       }
     } catch { /* keep the first try's verdicts */ }
   }
+  const good = picks.filter((x) => x.v.ok && x.text);
+  const ordered2 = await xyzOrder(good.map((x) => ({ text: x.text, sources: [...x.src, x.e.title, x.e.org || ""], original: x.original })), p, known);
+  good.forEach((x, k) => { x.text = ordered2[k]; });
   for (const [i, e] of ordered.entries()) {
     const mine = picks.filter((x) => x.i === i);
     if (!mine.length) continue;
@@ -201,7 +241,10 @@ Return JSON only: {"jobs": [{"i": 0, "lines": [{"text": "...", "from": [0, 3]}]}
   // Headline and summary: their facts only, through the same checks; the old ones stay if these fail.
   const top = await topP;
   rejected.push(...top.rejected);
-  const headline = top.headline, summary = top.summary;
+  const headline = top.headline;
+  // No AI summary passed: the same shape, built from their title and their strongest line that already passed
+  // every check, plus the job they want when it's a different one. Never the bare list of job titles.
+  const summary = top.summary || (linesOnly ? "" : builtSummary(ordered[0], good.filter((x) => x.i === 0), target));
   if (headline) {
     const ids0 = new Set(arr(p.headers).map((h) => h.id));
     const id = slug("headline", ids0);
@@ -259,6 +302,8 @@ Return JSON only: {"jobs": [{"i": 0, "lines": [{"text": "...", "from": [0, 3]}]}
     if (verdict === null) x.b.warning = "This line wasn't double-checked. Read it carefully.";
     else if (verdict[k]) x.b.warning = `Check this: "${verdict[k]}" goes beyond what you said.`;
   });
+  // A flagged line gets one more try without the flagged part; only lines still flagged keep their note.
+  if (verdict) await refixFlagged(toCheck.map((x, k) => ({ ...x, flag: verdict[k], check: (t) => vet(clean(t), [x.source + listed], p, known, x.text) })).filter((x) => x.flag));
   // The layout the creator made shows the chosen lines, the new headline and the new summary.
   const mineIds = new Set(ordered.map((e) => e.id));
   for (const b of arr(p.bases)) {

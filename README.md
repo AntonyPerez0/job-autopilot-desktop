@@ -387,6 +387,22 @@ measured by Y, by doing Z): "Cut duplicate tickets 50% by writing a refund guide
 both teams use". It never makes up a part to complete the pattern. The phrases
 AI tools put on every resume are refused, so your resume sounds like you.
 
+**The same every time.** AI models word things a little differently each time
+they're asked, even when told not to. So the app does the parts that matter
+the same way every time:
+- It asks for the AI's most likely answer, and remembers each answer: run the
+  same facts again and you get the same resume, line for line. New or changed
+  facts get fresh wording.
+- Every result line goes through one more small step whose only job is the
+  order: result, measure, method ("Cut duplicate tickets 50% by writing a
+  refund guide"). It's used only if it passes every check.
+- The summary always has the same shape: your title and where, your strongest
+  results with how, and the job you're moving into.
+- A line the fact-check flags gets one more try without the part you didn't
+  say, and only keeps its note if that try fails too.
+- A short resume is set a little larger and its space spread evenly between
+  sections, so the page doesn't stop two thirds of the way down.
+
 On **Check & improve**:
 - **Read it like a recruiter** reads a layout in two stages, like a real
   application: first the screening software (can it read the file?), then the
@@ -766,7 +782,9 @@ the folder):
 - Windows: `%APPDATA%\Job Autopilot`
 
 That folder holds your profile, answers, preferences, the job list, every
-resume that was sent, and the screenshots. The only file kept elsewhere is the
+resume that was sent, the screenshots, and the AI's answers to the resume
+questions it was asked (kept 120 days, so the same facts give the same
+resume). The only file kept elsewhere is the
 application history described above (you can turn it off in Settings). The API key, the mailbox password and the job-site account password
 are encrypted by your operating system's keychain (macOS Keychain, Windows
 DPAPI).

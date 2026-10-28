@@ -13,10 +13,11 @@
 
   // ---------- model call (any OpenAI-compatible API; OpenRouter by default) ----------
 
-  async function chat(settings, messages, { json = true, temperature = 0.2 } = {}) {
+  async function chat(settings, messages, { json = true, temperature = 0.2, seed = null } = {}) {
     if (!settings.apiKey) throw new Error("Add your API key in the add-on's Options first.");
     const base = (settings.apiBase || "https://openrouter.ai/api/v1").replace(/\/+$/, "");
     const body = { model: settings.model, messages, temperature };
+    if (seed !== null) body.seed = seed;
     if (json) body.response_format = { type: "json_object" };
     const res = await fetch(base + "/chat/completions", {
       method: "POST",
@@ -323,15 +324,30 @@ ${fields || "(none found on this page)"}`;
     // Still a lot of white space: set the page a little larger and more open rather than leave half of it empty.
     let scale = 1;
     if (!r.overflow && r.slack > 120) {
-      for (const k of [1.18, 1.12, 1.06]) {
+      for (const k of [1.22, 1.18, 1.12, 1.06]) {
         const r2 = await ResumePDF.render({ ...toDoc(profile, cur), scale: k });
         if (!r2.overflow && r2.slack >= 24) { r = r2; scale = k; break; }
+      }
+    }
+    // Still short: the rest of the space between sections (most) and entries (some), within limits, so the
+    // page ends near the bottom instead of two thirds of the way down.
+    let spread = null;
+    if (!r.overflow && r.slack > 48) {
+      const d = toDoc(profile, cur);
+      const heads = (d.summary ? 1 : 0) + ((d.skills || []).length ? 1 : 0) + (d.sections || []).filter((s) => (s.entries || []).length).length;
+      const items = (d.sections || []).reduce((n, s) => n + (s.entries || []).length, 0);
+      const free = r.slack - 30;
+      let sp = { head: Math.min(16, (free * 0.6) / Math.max(1, heads)), entry: Math.min(7, (free * 0.4) / Math.max(1, items)) };
+      for (let n = 0; n < 4; n++) {
+        const r2 = await ResumePDF.render({ ...d, scale, spread: sp });
+        if (!r2.overflow && r2.slack >= 18) { r = r2; spread = sp; break; }
+        sp = { head: sp.head * 0.7, entry: sp.entry * 0.7 };
       }
     }
     const warnings = [];
     if (r.overflow) warnings.push("The resume still runs past one page. Remove a bullet in your profile's base layout.");
     else if (r.slack > SLACK_TARGET) warnings.push(`The page has ${r.slack}pt blank at the bottom (about ${Math.round(r.slack / 12)} lines). Your profile has no more fitting bullets.`);
-    return { spec: cur, pdf: r.bytes, slack: r.slack, overflow: r.overflow, startSlack, warnings, scale };
+    return { spec: cur, pdf: r.bytes, slack: r.slack, overflow: r.overflow, startSlack, warnings, scale, spread };
   }
 
   // ---------- form kit (the same shape content.js fills from) ----------

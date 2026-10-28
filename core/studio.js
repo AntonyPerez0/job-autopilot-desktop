@@ -6,8 +6,9 @@
 //   or result the user didn't give (checked below, not just asked for in the prompt);
 // - where a number or result would make a line stronger, it asks the user instead of guessing;
 // - nothing it writes is used until the user approves it.
-import { Profile, Tailor, aiSettings, approvedOnly } from "./engine.js";
+import { Profile, STEADY, Tailor, aiSettings, approvedOnly } from "./engine.js";
 import { isLocal } from "./llm.js";
+import { cacheKey, cached, remember } from "./aicache.js";
 
 const arr = (x) => (Array.isArray(x) ? x : []);
 const words = (s) => String(s || "").trim().split(/\s+/).filter(Boolean);
@@ -227,8 +228,8 @@ export function repeatedPhrase(text) {
   return "";
 }
 
-const DOWN = /\b(dropped|drop|down|fell|fewer|less|lower(ed)?|decreas\w*|reduc\w*|cut|shorter|faster|halved|from [^.;]*\d[^.;]* to [^.;]*\d)\b/i;
-const UP = /\b(up|rose|grew|more|higher|increas\w*|doubled|tripled|gained|raised)\b/i;
+const DOWN = /\b(dropp\w*|drop|down|fell|fewer|less|lower(ed|ing)?|decreas\w*|reduc\w*|cut|cuts|cutting|shorten\w*|shorter|faster|halv\w*|from [^.;]*\d[^.;]* to [^.;]*\d)\b/i;
+const UP = /\b(up|rose|grew|growing|more|higher|increas\w*|doubl\w*|tripl\w*|gain\w*|rais\w*|boost\w*)\b/i;
 export function changeVerbs(sources) {
   const out = [];
   for (const s of sources.map(String)) for (const part of s.split(/[.;\n]+/)) {
@@ -238,6 +239,11 @@ export function changeVerbs(sources) {
   }
   return [...new Set(out)];
 }
+
+// A line that states a change with its size ("duplicate tickets dropped 50%"), and one already written as
+// result, measure, method ("Cut duplicate tickets 50% by writing a refund guide").
+export const resultLine = (t) => changeVerbs([String(t)]).length > 0;
+export const xyzLine = (t) => RESULT.test(String(t).trim()) && /\bby [a-z]+ing\b/i.test(String(t));
 
 export function vet(text, sources, profile, allowed = [], original = null) {
   const t = String(text || "").trim();
@@ -309,16 +315,49 @@ function hedged(call, after) {
 }
 
 export async function ask(messages) {
+  // The same question gets the same answer: providers vary their wording even at temperature 0, so the
+  // answer is remembered (core/aicache.js) and the same facts make the same resume, run after run.
+  const key = cacheKey(settings(), messages, STEADY);
+  const hit = cached(key);
+  if (hit !== undefined) return hit;
   let last;
   for (let i = 0; i < 3; i++) {
     const t0 = Date.now();
     try {
-      const r = await hedged(() => Tailor.chat(settings(), messages), isLocal(settings()) ? 0 : 35000);
+      // The most likely answer every time (temperature 0, a fixed seed): the same facts give the same resume.
+      const r = await hedged(() => Tailor.chat(settings(), messages, STEADY), isLocal(settings()) ? 0 : 35000);
       if (process.env.JA_TIME) console.error(`[ai ${((Date.now() - t0) / 1000).toFixed(1)}s] ${String(messages[0].content).split("\n")[0].slice(0, 70)}`);
-      return r;
+      // A plain object either way: a fresh answer comes from the vendored code's sandbox, a remembered one from a file.
+      const plain = JSON.parse(JSON.stringify(r));
+      remember(key, plain);
+      return plain;
     } catch (e) { last = e; if (process.env.JA_TIME) console.error(`[ai fail ${((Date.now() - t0) / 1000).toFixed(1)}s] ${e.message.slice(0, 80)}`); if (/Model API 4(0[0-3]|04)/.test(e.message)) break; }
   }
   throw last;
+}
+
+// A line the fact check flagged ("on register and return procedures" when they only said they trained
+// cashiers): one more try without that part, through both checks again; it replaces the line only if both pass.
+// items: [{ b, text, source, flag, check(t) -> { ok } }] -> how many were fixed (their warnings are cleared).
+export async function refixFlagged(items) {
+  if (!items.length) return 0;
+  let r = {};
+  try {
+    r = await ask([{ role: "system", content: `Each resume line below has a part the person never said. Rewrite the line without that part: keep everything else, every number with its "about", and the professional wording. Never add anything new.\n${GUIDE}\nReturn JSON only: {"lines": [{"n": 0, "text": "..."}]}` },
+      { role: "user", content: items.map((x, n) => `${n}. LINE: ${x.text}\n   NOT IN THEIR WORDS: ${x.flag}\n   THEIR WORDS: ${x.source}`).join("\n") }]);
+  } catch { return 0; }
+  const cands = [];
+  for (const l of arr(r.lines)) {
+    const x = items[Number(l.n)];
+    if (!x || cands.some((c) => c.x === x)) continue;
+    const t = Profile.stripDashes(String(l.text || "")).trim().replace(/\.$/, "");
+    if (t && t !== x.text && x.check(t).ok) cands.push({ x, t });
+  }
+  if (!cands.length) return 0;
+  const verdict = await factCheck(cands.map((c) => ({ text: c.t, source: c.x.source })));
+  let fixed = 0;
+  cands.forEach((c, k) => { if (verdict && !verdict[k]) { c.x.b.text = c.t; delete c.x.b.warning; fixed++; } });
+  return fixed;
 }
 
 // A second, separate AI pass: is every claim in each line backed by the person's own words?

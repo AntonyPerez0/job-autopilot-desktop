@@ -103,8 +103,10 @@
         if (k === 0 && right) draw(right, W - M.right - rw, y, F.r, size);
       });
     };
+    // doc.spread: extra space before each heading and after each entry, for a short resume to fill the page.
+    const SP = { head: Math.max(0, Number((doc.spread || {}).head) || 0), entry: Math.max(0, Number((doc.spread || {}).entry) || 0) };
     const heading = (title) => {
-      y -= S.gap + S.head;
+      y -= S.gap + S.head + SP.head;
       draw(title.toUpperCase(), M.left, y, F.b, S.head);
       y -= 3;
       page.drawLine({ start: { x: M.left, y }, end: { x: W - M.right, y }, thickness: 0.6, color: black });
@@ -150,7 +152,7 @@
           leftRight([{ text: e.school, font: F.b }, { text: e.detail ? (/:$/.test(e.school) ? " " : " \u2013 ") + e.detail : "", font: F.r }], e.dates);
         }
         bullets(e.bullets || []);
-        y -= 1.5;
+        y -= 1.5 + SP.entry;
       }
     }
 

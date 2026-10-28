@@ -6,6 +6,8 @@ import path from "node:path";
 export function tempDataDir() {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), "ja-test-"));
   process.env.JA_DATA_DIR = d;
+  // The mock AIs answer the same question differently on purpose; remembered answers would hide that.
+  process.env.JA_NO_AI_CACHE = "1";
   return d;
 }
 

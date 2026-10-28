@@ -8,6 +8,9 @@ import { getAnswers, getPrefs, getProfile, getSecret, getSettings } from "./stor
 import { autopilotRules, candidateFacts, fullName, homeLocation, standardAnswers } from "./facts.js";
 import { truthGuard } from "./truth.js";
 import { PROVIDERS, aiFetch, isLocal, providerOf } from "./llm.js";
+// Every AI call asks for the most likely answer (temperature 0) with a fixed seed: the same facts and the
+// same posting give the same resume and answers, run after run.
+export const STEADY = { temperature: 0, seed: 7 };
 
 const VENDOR = new URL("../vendor/apply-helper/", import.meta.url);
 const read = (f) => fs.readFileSync(new URL(f, VENDOR), "utf8");
@@ -104,7 +107,7 @@ async function retry(fn, n = 3) {
 export async function plan(profile, posting, a = getAnswers(), prefs = getPrefs()) {
   const msgs = Tailor.prompt(profile, posting);
   msgs[0].content += "\n\n" + autopilotRules(a, profile, prefs);
-  return retry(() => Tailor.chat(aiSettings(), msgs));
+  return retry(() => Tailor.chat(aiSettings(), msgs, STEADY));
 }
 
 // A cheap first look from the posting text alone, before a browser opens.
@@ -131,7 +134,7 @@ ${f.wantsInternships ? "" : "- It is not an internship or co-op.\n"}${f.graduati
 - Citizenship: ${f.citizen === null ? "they haven't said whether they are a U.S. citizen, so a citizens-only posting is not a fail (the form asks them)" : f.citizen ? "they are a U.S. citizen" : "they are NOT a U.S. citizen: a posting open only to U.S. citizens is a fail"}.
 Otherwise "skip". Return JSON only: {"decision": "apply|skip", "reason": "one short sentence", "level": "entry|mid|senior|unclear"}`;
   const user = `CANDIDATE FACTS\n${JSON.stringify(facts)}\n\nPOSTING: ${job.title} at ${job.company} (${job.location})\n${String(description || "").slice(0, 16000)}`;
-  const r = await retry(() => Tailor.chat(aiSettings(), [{ role: "system", content: sys }, { role: "user", content: user }]));
+  const r = await retry(() => Tailor.chat(aiSettings(), [{ role: "system", content: sys }, { role: "user", content: user }], STEADY));
   return { ok: r.decision === "apply", reason: String(r.reason || "").slice(0, 300), level: r.level };
 }
 
@@ -165,7 +168,7 @@ Return JSON only: {"answers": [{"i": 0, "ok": true|false, "answer": "...", "prob
   const user = `FACTS\n${JSON.stringify(Tailor.catalog(profile))}\n\nSTANDARD ANSWERS\n${arr(profile.answers).map((x) => `${x.label}: ${x.value}`).join("\n")}\n\nANSWERS TO CHECK\n` +
     drafts.map((d, i) => `${i}. Question: ${d.label}\nAnswer: ${d.value}`).join("\n\n");
   let r;
-  try { r = await retry(() => Tailor.chat(aiSettings(), [{ role: "system", content: sys }, { role: "user", content: user }]), 2); }
+  try { r = await retry(() => Tailor.chat(aiSettings(), [{ role: "system", content: sys }, { role: "user", content: user }], STEADY), 2); }
   catch (e) {
     for (const d of drafts) { d.kind = "decide"; d.value = ""; d.note = "fact-check failed, so the AI answer was not used"; }
     return [`fact-check unavailable (${e.message}); AI-written answers were withheld`];

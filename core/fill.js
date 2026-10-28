@@ -4,8 +4,8 @@
 //   fillQuestions(profile)                 -> { jobs, certs, numbers }  what to ask
 //   applyFill(profile, input, answers)     -> { profile, added, rejected }
 import { Profile } from "./engine.js";
-import { GUIDE, ask, createFromInterview, factCheck, knownTerms, numbersIn, rewriteWithAnswer, specificTerms } from "./studio.js";
-import { POLISH_RULES, polishCreated, vet } from "./polish.js";
+import { GUIDE, ask, createFromInterview, factCheck, knownTerms, numbersIn, refixFlagged, rewriteWithAnswer, specificTerms } from "./studio.js";
+import { POLISH_RULES, polishCreated, vet, xyzOrder } from "./polish.js";
 
 const arr = (x) => (Array.isArray(x) ? x : []);
 const str = (x) => String(x == null ? "" : x).trim();
@@ -170,6 +170,7 @@ export async function applyFill(profile, input = {}, answers = {}) {
       if (verdict === null) x.b.warning = "This line wasn't double-checked. Read it carefully.";
       else if (verdict[k]) x.b.warning = `Check this: "${verdict[k]}" goes beyond what you said.`;
     });
+    if (verdict) await refixFlagged(toCheck.map((x, k) => ({ ...x, flag: verdict[k], check: (t) => vet(clean(t), [x.source], p, knownTerms(p, answers), x.text) })).filter((x) => x.flag));
   }
 
   // AI tools they used: at a job, one line first in that job (the strongest place for it); on their own, a
@@ -206,6 +207,10 @@ export async function applyFill(profile, input = {}, answers = {}) {
         for (const l of arr(r2.lines)) { const t = again[Number(l.n)]; if (!t) continue; const v = t.check(l.text); if (v.ok) { t.text = clean(l.text); t.v = v; } }
       } catch { /* reported below */ }
     }
+    // Result, measure, method, the same way as every other line; the tool has to stay in it.
+    const passed = tries.filter((t) => t.v.ok);
+    const reordered = await xyzOrder(passed.map((t) => ({ text: t.text, sources: t.src, original: t.text })), p, [...known, ...specificTerms(passed.map((t) => str(t.x.tool)).join(" "))]);
+    passed.forEach((t, k) => { if (reordered[k].toLowerCase().includes(str(t.x.tool).toLowerCase())) t.text = reordered[k]; });
     const toCheck = [];
     for (const t of tries) {
       if (!t.v.ok) { rejected.push({ job: t.e ? t.e.title : str(t.x.name), text: t.text || said(t.x), why: [...t.v.why, "type this one as a line yourself under All your resume pieces"] }); continue; }
@@ -239,6 +244,7 @@ export async function applyFill(profile, input = {}, answers = {}) {
       if (verdict === null) x.b.warning = "This line wasn't double-checked. Read it carefully.";
       else if (verdict[k]) x.b.warning = `Check this: "${verdict[k]}" goes beyond what you said.`;
     });
+    if (verdict) await refixFlagged(toCheck.map((x, k) => ({ ...x, flag: verdict[k], check: (t) => vet(clean(t), [x.source], p, knownTerms(p, answers), x.text) })).filter((x) => x.flag));
   }
 
   // School and courses, as they typed them.

@@ -2,7 +2,7 @@
 // read through GitHub's public API (no login; 60 requests an hour per network).
 // The AI writes lines only from what each project's own README and details say,
 // and the user says how it was built: on their own, mostly with AI coding tools, or with others.
-import { Profile, Tailor, aiSettings } from "./engine.js";
+import { Profile, Tailor, aiSettings, STEADY } from "./engine.js";
 import { factCheck, knownTerms, specificTerms, vet } from "./studio.js";
 
 const API = () => process.env.JA_GITHUB_API || "https://api.github.com";
@@ -89,7 +89,7 @@ const slug = (s, taken) => { let b = String(s || "p").toLowerCase().replace(/[^a
 
 async function ask(messages) {
   let last;
-  for (let i = 0; i < 3; i++) { try { return await Tailor.chat(aiSettings(), messages); } catch (e) { last = e; if (/Model API 4(0[0-3]|04)/.test(e.message)) break; } }
+  for (let i = 0; i < 3; i++) { try { return await Tailor.chat(aiSettings(), messages, STEADY); } catch (e) { last = e; if (/Model API 4(0[0-3]|04)/.test(e.message)) break; } }
   throw last;
 }
 
