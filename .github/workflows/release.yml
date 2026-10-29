@@ -54,14 +54,17 @@ jobs:
           codesign -dv "$RUNNER_TEMP/Job Autopilot.app" 2>&1 | head -5
           lipo -archs "$RUNNER_TEMP/Job Autopilot.app/Contents/MacOS/Job Autopilot"
           codesign --verify --deep --strict --verbose=2 "$RUNNER_TEMP/Job Autopilot.app"
-          # The app as shipped starts by itself (nothing below changes it yet): it records its launch.
-          mkdir -p "$RUNNER_TEMP/as-shipped"
-          JA_DATA_DIR="$RUNNER_TEMP/as-shipped" "$RUNNER_TEMP/Job Autopilot.app/Contents/MacOS/Job Autopilot" > "$RUNNER_TEMP/as-shipped.log" 2>&1 &
+          # The app as shipped starts by itself: it records its launch. (A copy of its own: macOS keeps a running
+          # binary's signature in memory, and the test copy below is changed in place.)
+          mkdir -p "$RUNNER_TEMP/as-shipped/data"
+          cp -R "$RUNNER_TEMP/Job Autopilot.app" "$RUNNER_TEMP/as-shipped/"
+          JA_DATA_DIR="$RUNNER_TEMP/as-shipped/data" "$RUNNER_TEMP/as-shipped/Job Autopilot.app/Contents/MacOS/Job Autopilot" > "$RUNNER_TEMP/as-shipped.log" 2>&1 &
           SHIPPED=$!
-          for i in $(seq 1 90); do [ -f "$RUNNER_TEMP/as-shipped/launches.json" ] && break; sleep 1; done
-          kill $SHIPPED 2>/dev/null || true; sleep 2
+          for i in $(seq 1 90); do [ -f "$RUNNER_TEMP/as-shipped/data/launches.json" ] && break; sleep 1; done
+          kill $SHIPPED 2>/dev/null || true; wait $SHIPPED 2>/dev/null || true
           tail -20 "$RUNNER_TEMP/as-shipped.log"
-          test -f "$RUNNER_TEMP/as-shipped/launches.json" || { echo "::error::the app as shipped did not start"; exit 1; }
+          test -f "$RUNNER_TEMP/as-shipped/data/launches.json" || { echo "::error::the app as shipped did not start"; exit 1; }
+          rm -rf "$RUNNER_TEMP/as-shipped/Job Autopilot.app"
           # The shipped app ignores --inspect (a fuse), and the tests drive it through Playwright, which needs it:
           # this installed test copy only gets it back (and a fresh ad-hoc signature). The .dmg stays as built.
           npx --no-install electron-fuses read --app "$RUNNER_TEMP/Job Autopilot.app" | grep -q "EnableNodeCliInspectArguments is Disabled"
@@ -96,7 +99,7 @@ jobs:
           $env:JA_DATA_DIR = $shipped
           $p = Start-Process -FilePath $app -PassThru
           for ($i = 0; $i -lt 90 -and !(Test-Path (Join-Path $shipped "launches.json")); $i++) { Start-Sleep 1 }
-          Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue; Start-Sleep 2
+          Get-Process "Job Autopilot" -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep 3
           Remove-Item Env:JA_DATA_DIR
           if (!(Test-Path (Join-Path $shipped "launches.json"))) { throw "the app as shipped did not start" }
           $fuses = npx --no-install electron-fuses read --app $app | Out-String

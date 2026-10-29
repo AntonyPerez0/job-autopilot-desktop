@@ -58,6 +58,22 @@ export async function installNow() {
   return updateState();
 }
 
+// Start a program and let it run on after the app quits. A freshly downloaded installer can be locked for a
+// moment (antivirus scanning it: EBUSY), so that is tried again for up to 30 seconds.
+async function launchDetached(file, args) {
+  for (let i = 0; ; i++) {
+    try {
+      const child = spawn(file, args, { detached: true, stdio: "ignore" });
+      await new Promise((resolve, reject) => { child.once("spawn", resolve); child.once("error", reject); });
+      child.unref();
+      return;
+    } catch (e) {
+      if (!/EBUSY|EPERM/.test(String(e.code || e.message)) || i >= 30) throw e;
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
+}
+
 async function run(bundle) {
   state.phase = "downloading"; state.progress = 0; state.error = null;
   const dir = path.join(app.getPath("userData"), "updates");
@@ -89,7 +105,7 @@ open "$APP"`;
     spawn("/bin/sh", ["-c", script], { detached: true, stdio: "ignore" }).unref();
   } else if (process.platform === "win32") {
     // The same switches electron-updater uses: silent, as an update, and start the app afterwards.
-    spawn(file, ["/S", "--updated", "--force-run"], { detached: true, stdio: "ignore" }).unref();
+    await launchDetached(file, ["/S", "--updated", "--force-run"]);
   } else throw new Error("Automatic updates are for macOS and Windows.");
   setTimeout(() => app.exit(0), 500);
 }
