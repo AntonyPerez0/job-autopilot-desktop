@@ -46,12 +46,12 @@ jobs:
       # Install the built app the way a user would, launch it, and walk the whole first-run setup.
       - name: Install from the .dmg and run the setup end to end
         if: runner.os == 'macOS'
+        timeout-minutes: 25
         run: |
-          # Each copy of the app here has its own ad-hoc signature, and macOS asks before a differently signed copy
-          # reads the key the first one kept in the keychain (safeStorage, read at startup): nobody answers on a CI
-          # machine, and the app waits. Stored up front with access for any app, it's read without asking.
-          K=$(openssl rand -base64 24)
-          for acct in "Job Autopilot" "Job Autopilot Key"; do security add-generic-password -U -a "$acct" -s "Job Autopilot Safe Storage" -w "$K" -A; done
+          # The app reads its safeStorage key from the keychain at startup, and macOS asks before a copy with another
+          # ad-hoc signature reads a key the first copy stored (nobody answers here, and the app waits). Each
+          # differently signed copy below gets a fresh keychain of its own, so it is always the first.
+          newkc() { kc="$RUNNER_TEMP/$1.keychain-db"; security create-keychain -p ci "$kc"; security set-keychain-settings "$kc"; security unlock-keychain -p ci "$kc"; security list-keychains -d user -s "$kc"; security default-keychain -d user -s "$kc"; }
           DMG=$(ls dist/*.dmg | head -1)
           hdiutil attach "$DMG" -nobrowse -mountpoint /tmp/ja-dmg
           cp -R "/tmp/ja-dmg/Job Autopilot.app" "$RUNNER_TEMP/"
@@ -59,14 +59,15 @@ jobs:
           codesign -dv "$RUNNER_TEMP/Job Autopilot.app" 2>&1 | head -5
           lipo -archs "$RUNNER_TEMP/Job Autopilot.app/Contents/MacOS/Job Autopilot"
           codesign --verify --deep --strict --verbose=2 "$RUNNER_TEMP/Job Autopilot.app"
-          # The app as shipped starts by itself: it records its launch. (A copy of its own: macOS keeps a running
-          # binary's signature in memory, and the test copy below is changed in place.)
+          # The app as shipped starts by itself: it records its launch (a copy of its own, in a keychain of its own).
+          newkc shipped
           mkdir -p "$RUNNER_TEMP/as-shipped/data"
           cp -R "$RUNNER_TEMP/Job Autopilot.app" "$RUNNER_TEMP/as-shipped/"
           JA_DATA_DIR="$RUNNER_TEMP/as-shipped/data" "$RUNNER_TEMP/as-shipped/Job Autopilot.app/Contents/MacOS/Job Autopilot" > "$RUNNER_TEMP/as-shipped.log" 2>&1 &
           SHIPPED=$!
           for i in $(seq 1 90); do [ -f "$RUNNER_TEMP/as-shipped/data/launches.json" ] && break; sleep 1; done
-          kill $SHIPPED 2>/dev/null || true; wait $SHIPPED 2>/dev/null || true
+          kill $SHIPPED 2>/dev/null || true; sleep 3; kill -9 $SHIPPED 2>/dev/null || true
+          pkill -9 -f "as-shipped/Job Autopilot.app" || true
           tail -20 "$RUNNER_TEMP/as-shipped.log"
           test -f "$RUNNER_TEMP/as-shipped/data/launches.json" || { echo "::error::the app as shipped did not start"; exit 1; }
           rm -rf "$RUNNER_TEMP/as-shipped/Job Autopilot.app"
@@ -75,10 +76,16 @@ jobs:
           npx --no-install electron-fuses read --app "$RUNNER_TEMP/Job Autopilot.app" | grep -q "EnableNodeCliInspectArguments is Disabled"
           npx --no-install electron-fuses write --app "$RUNNER_TEMP/Job Autopilot.app" EnableNodeCliInspectArguments=on
           codesign --sign - --force --deep --preserve-metadata=entitlements,requirements,flags,runtime "$RUNNER_TEMP/Job Autopilot.app"
+          newkc test
           JA_E2E_CHROMIUM=1 JA_APP_EXE="$RUNNER_TEMP/Job Autopilot.app/Contents/MacOS/Job Autopilot" node test/e2e/onboarding.mjs
       - name: Update now, end to end (macOS)
         if: runner.os == 'macOS'
-        run: JA_APP_EXE="$RUNNER_TEMP/Job Autopilot.app/Contents/MacOS/Job Autopilot" JA_UPDATE_FILE="$(ls dist/*-mac-universal.zip | head -1)" node test/e2e/update.mjs
+        timeout-minutes: 15
+        run: |
+          # The update offered is the test copy zipped (the same signature, so the same keychain key): the download,
+          # its checksum, the swap and the restart are what's tested. The shipped zip's app was started above.
+          ditto -c -k --keepParent "$RUNNER_TEMP/Job Autopilot.app" "$RUNNER_TEMP/Job-Autopilot-99.0.0-mac-universal.zip"
+          JA_APP_EXE="$RUNNER_TEMP/Job Autopilot.app/Contents/MacOS/Job Autopilot" JA_UPDATE_FILE="$RUNNER_TEMP/Job-Autopilot-99.0.0-mac-universal.zip" node test/e2e/update.mjs
       - name: What happened to the app (macOS, after a failure)
         if: failure() && runner.os == 'macOS'
         run: |
