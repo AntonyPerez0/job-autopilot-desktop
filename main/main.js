@@ -1,7 +1,7 @@
 // The desktop app: one window with the dashboard (or the first-run setup),
 // the autopilot loop running in this process, and everything stored in the
 // OS app-data folder. The window talks to the engine over IPC only.
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme, net, protocol, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, net, protocol, session, shell } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -16,13 +16,23 @@ const DATA = app.getPath("userData");
 process.env.JA_DATA_DIR = DATA;
 process.env.PLAYWRIGHT_BROWSERS_PATH = path.join(DATA, "browsers");
 
-protocol.registerSchemesAsPrivileged([{ scheme: "ap-file", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
+// The window's own pages come from app://ui/ (only the ui folder), never file://, so a page can't read other files.
+protocol.registerSchemesAsPrivileged([
+  { scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true } },
+  { scheme: "ap-file", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+]);
+const UI_URL = "app://ui/";
+const inside = (f, dir) => { if (!dir) return false; const r = path.relative(path.resolve(dir), path.resolve(f)); return !!r && !r.startsWith("..") && !path.isAbsolute(r); };
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
 let win = null, core = null;
 
-function page(name) { return path.join(UI, name); }
+function page(name) { return UI_URL + name; }
+// Only the app's own two pages, in the window's top frame, may call the engine.
+const PAGES = ["index.html", "onboarding.html"].map((n) => UI_URL + n);
+const trusted = (e) => { const f = e.senderFrame; return !!f && f.parent === null && PAGES.some((u) => f.url === u || f.url.startsWith(u + "?") || f.url.startsWith(u + "#")); };
+const handle = (channel, fn) => ipcMain.handle(channel, (e, ...args) => { if (!trusted(e)) throw new Error("not allowed from this page"); return fn(e, ...args); });
 
 // Light, dark, or whatever the computer uses ("system"). Pages follow it through prefers-color-scheme.
 const THEMES = ["system", "light", "dark"];
@@ -60,7 +70,7 @@ function createWindow() {
     e.preventDefault();
   });
   const s = core.store.getSettings();
-  win.loadFile(page(s.onboarded ? "index.html" : "onboarding.html"));
+  win.loadURL(page(s.onboarded ? "index.html" : "onboarding.html"));
   // Links to postings and help pages open in the user's own browser; the app window never leaves its own pages.
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//.test(url)) shell.openExternal(url);
@@ -71,7 +81,7 @@ function createWindow() {
     return { action: "deny" };
   });
   win.webContents.on("will-navigate", (e, url) => {
-    if (!url.startsWith(pathToFileURL(UI).href)) { e.preventDefault(); if (/^https?:\/\//.test(url)) shell.openExternal(url); }
+    if (!url.startsWith(UI_URL)) { e.preventDefault(); if (/^https?:\/\//.test(url)) shell.openExternal(url); }
   });
   win.on("closed", () => { win = null; });
 }
@@ -79,6 +89,16 @@ function createWindow() {
 app.on("second-instance", () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
 
 app.whenReady().then(async () => {
+  // The app's pages never need the camera, microphone, location, notifications or any other permission.
+  session.defaultSession.setPermissionRequestHandler((_wc, _permission, cb) => cb(false));
+  session.defaultSession.setPermissionCheckHandler(() => false);
+  protocol.handle("app", (req) => {
+    const u = new URL(req.url);
+    let file = "";
+    try { file = path.resolve(UI, "." + decodeURIComponent(u.pathname)); } catch { /* a malformed address */ }
+    if (u.hostname !== "ui" || !inside(file, UI) || !fs.existsSync(file) || !fs.statSync(file).isFile()) return new Response("not found", { status: 404 });
+    return net.fetch(pathToFileURL(file).href);
+  });
   const store = await import("../core/store.js");
   store.setDataDir(DATA);
   store.setSecretStore(await makeSecretStore(path.join(DATA, "secrets.json")));
@@ -96,7 +116,7 @@ app.whenReady().then(async () => {
   const history = await import("../core/history.js");
   history.setDefaultBackupDir(path.join(app.getPath("documents"), "Job Autopilot"));
   history.startBackups(app.getVersion());
-  ipcMain.handle("history-save", async () => {
+  handle("history-save", async () => {
     const day = new Date().toISOString().slice(0, 10);
     const r = await dialog.showSaveDialog(win, { title: "Save your application history", defaultPath: path.join(app.getPath("documents"), `job-autopilot-history-${day}.json.gz`),
       filters: [{ name: "Job Autopilot history", extensions: ["gz"] }] });
@@ -105,7 +125,7 @@ app.whenReady().then(async () => {
     return r.filePath;
   });
   // Save a resume PDF the app made (Resume page > Download) wherever the user likes.
-  ipcMain.handle("save-resume", async (_e, file, suggested) => {
+  handle("save-resume", async (_e, file, suggested) => {
     const src = path.join(DATA, "resumes", path.basename(String(file || "")));
     if (!fs.existsSync(src)) return null;
     const r = await dialog.showSaveDialog(win, { title: "Save your resume", defaultPath: path.join(app.getPath("downloads"), path.basename(String(suggested || "Resume.pdf"))), filters: [{ name: "PDF", extensions: ["pdf"] }] });
@@ -113,11 +133,17 @@ app.whenReady().then(async () => {
     fs.copyFileSync(src, r.filePath);
     return r.filePath;
   });
-  ipcMain.handle("pick-folder", async () => {
+  handle("pick-folder", async () => {
     const r = await dialog.showOpenDialog(win, { title: "Where to keep your application history", properties: ["openDirectory", "createDirectory"] });
     return r.canceled ? null : r.filePaths[0];
   });
-  ipcMain.handle("show-file", (_e, f) => { if (f && fs.existsSync(String(f))) shell.showItemInFolder(String(f)); });
+  // Only the history backup (or a file in its folder or the app's data folder); never a network (UNC) path.
+  handle("show-file", (_e, f) => {
+    const p = String(f || "");
+    if (!p || /^(\\\\|\/\/)/.test(p)) return;
+    const file = path.resolve(p);
+    if ((file === history.backupFile() || inside(file, history.backupDir()) || inside(file, DATA)) && fs.existsSync(file)) shell.showItemInFolder(file);
+  });
   const updater = await import("./updater.js");
   updater.initUpdater(worker);
   api.setUpdater({ state: updater.updateState, check: updater.checkNow, install: updater.installNow });
@@ -131,20 +157,20 @@ app.whenReady().then(async () => {
     return net.fetch(pathToFileURL(file).href);
   });
 
-  ipcMain.handle("api", (_e, route, body) => api.handle(route, body));
-  ipcMain.handle("open-external", (_e, url) => { if (/^https:\/\//.test(String(url))) shell.openExternal(String(url)); });
-  ipcMain.handle("show-data-folder", () => shell.openPath(DATA));
-  ipcMain.handle("set-theme", (_e, t) => { applyTheme(t); store.saveSettings({ theme: nativeTheme.themeSource }); return nativeTheme.themeSource; });
-  ipcMain.handle("set-text-size", (_e, f) => {
+  handle("api", (_e, route, body) => api.handle(route, body));
+  handle("open-external", (_e, url) => { if (/^https:\/\//.test(String(url))) shell.openExternal(String(url)); });
+  handle("show-data-folder", () => shell.openPath(DATA));
+  handle("set-theme", (_e, t) => { applyTheme(t); store.saveSettings({ theme: nativeTheme.themeSource }); return nativeTheme.themeSource; });
+  handle("set-text-size", (_e, f) => {
     const z = textSize(f);
     store.saveSettings({ textSize: z });
     for (const w of BrowserWindow.getAllWindows()) w.webContents.setZoomFactor(z);
     return z;
   });
-  ipcMain.handle("go", (_e, name) => {
+  handle("go", (_e, name) => {
     if (!win || !["index.html", "onboarding.html"].includes(name)) return;
     if (name === "index.html" && store.getSettings().onboarded) worker.run();
-    win.loadFile(page(name));
+    win.loadURL(page(name));
   });
 
   createWindow();

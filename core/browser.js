@@ -50,7 +50,9 @@ export const SANDBOX = process.env.JA_ALLOW_NO_SANDBOX !== "1";
 export async function launch({ headless = false, choice = "auto", onStatus = () => {} } = {}) {
   const order = choice === "auto" ? [preferred, "chrome", "msedge", "chromium"].filter((x, i, a) => x && a.indexOf(x) === i) : [choice];
   const userDataDir = dataDir("browser-profile");
-  const base = { headless, viewport: null, chromiumSandbox: SANDBOX, args: ["--window-size=1280,800", "--no-first-run", "--no-default-browser-check"], timeout: 60000 };
+  // Without Playwright's mock keychain and plain password store, the profile's cookies (the person's sign-ins on
+  // job sites) are encrypted with the computer's own keychain, as in their everyday Chrome.
+  const base = { headless, viewport: null, chromiumSandbox: SANDBOX, ignoreDefaultArgs: ["--use-mock-keychain", "--password-store=basic"], args: ["--window-size=1280,800", "--no-first-run", "--no-default-browser-check"], timeout: 60000 };
   let last;
   for (const ch of order) {
     try {
