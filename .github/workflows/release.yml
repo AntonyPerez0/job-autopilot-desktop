@@ -47,6 +47,11 @@ jobs:
       - name: Install from the .dmg and run the setup end to end
         if: runner.os == 'macOS'
         run: |
+          # Each copy of the app here has its own ad-hoc signature, and macOS asks before a differently signed copy
+          # reads the key the first one kept in the keychain (safeStorage, read at startup): nobody answers on a CI
+          # machine, and the app waits. Stored up front with access for any app, it's read without asking.
+          K=$(openssl rand -base64 24)
+          for acct in "Job Autopilot" "Job Autopilot Key"; do security add-generic-password -U -a "$acct" -s "Job Autopilot Safe Storage" -w "$K" -A; done
           DMG=$(ls dist/*.dmg | head -1)
           hdiutil attach "$DMG" -nobrowse -mountpoint /tmp/ja-dmg
           cp -R "/tmp/ja-dmg/Job Autopilot.app" "$RUNNER_TEMP/"
@@ -80,6 +85,7 @@ jobs:
           ls -la "$RUNNER_TEMP" | head -20
           ls -la "$RUNNER_TEMP/Job Autopilot.app/Contents/MacOS" 2>&1 | head
           codesign --verify --deep --strict --verbose=2 "$RUNNER_TEMP/Job Autopilot.app" 2>&1 | tail -5 || true
+          security find-generic-password -s "Job Autopilot Safe Storage" 2>&1 | grep -E '"acct"|"svce"' || true
           ls -t ~/Library/Logs/DiagnosticReports 2>/dev/null | head -5
           f=$(ls -t ~/Library/Logs/DiagnosticReports/*Job* 2>/dev/null | head -1); [ -n "$f" ] && head -60 "$f"
           log show --last 10m --style compact --predicate 'process == "Job Autopilot" OR eventMessage CONTAINS "Job Autopilot"' 2>/dev/null | tail -60 || true
