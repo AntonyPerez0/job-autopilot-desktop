@@ -21,10 +21,14 @@ asarUnpack:
   - node_modules/playwright-core/**
 publish: null
 
-# Electron's own switches, written into the app's binary at build time: no NODE_OPTIONS, the app only from its
-# own asar archive (checked against its hash on macOS and Windows), and no extra powers for file:// pages.
+# Electron's own switches, written into the app's binary at build time: no NODE_OPTIONS, no --inspect, the app only
+# from its own asar archive (checked against its hash on macOS and Windows), and no extra powers for file:// pages.
+# runAsNode stays on: Playwright's Chromium installer forks a child for every download, which Electron refuses
+# with that fuse off (also inside a utilityProcess). The release tests turn --inspect back on in their own
+# installed copy only (see release.yml).
 electronFuses:
   enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
   enableEmbeddedAsarIntegrityValidation: true
   onlyLoadAppFromAsar: true
   grantFileProtocolExtraPrivileges: false

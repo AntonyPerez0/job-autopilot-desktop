@@ -53,6 +53,11 @@ jobs:
           hdiutil detach /tmp/ja-dmg
           codesign -dv "$RUNNER_TEMP/Job Autopilot.app" 2>&1 | head -5
           lipo -archs "$RUNNER_TEMP/Job Autopilot.app/Contents/MacOS/Job Autopilot"
+          # The shipped app ignores --inspect (a fuse), and the tests drive it through Playwright, which needs it:
+          # this installed test copy only gets it back (and a fresh ad-hoc signature). The .dmg stays as built.
+          npx --no-install electron-fuses read --app "$RUNNER_TEMP/Job Autopilot.app" | grep -q "EnableNodeCliInspectArguments is Disabled"
+          npx --no-install electron-fuses write --app "$RUNNER_TEMP/Job Autopilot.app" EnableNodeCliInspectArguments=on
+          codesign --sign - --force --deep --preserve-metadata=entitlements,requirements,flags,runtime "$RUNNER_TEMP/Job Autopilot.app"
           JA_E2E_CHROMIUM=1 JA_APP_EXE="$RUNNER_TEMP/Job Autopilot.app/Contents/MacOS/Job Autopilot" node test/e2e/onboarding.mjs
       - name: Update now, end to end (macOS)
         if: runner.os == 'macOS'
@@ -65,6 +70,12 @@ jobs:
           Start-Process -FilePath $exe.FullName -ArgumentList "/S" -Wait
           $app = Join-Path $env:LOCALAPPDATA "Programs\Job Autopilot\Job Autopilot.exe"
           if (!(Test-Path $app)) { Get-ChildItem -Recurse (Join-Path $env:LOCALAPPDATA "Programs") -Filter "Job Autopilot.exe" | Select-Object -First 3; throw "installed app not found" }
+          # The shipped app ignores --inspect (a fuse), and the tests drive it through Playwright, which needs it:
+          # this runner's installed copy only gets it back. The Setup .exe stays as built.
+          $fuses = npx --no-install electron-fuses read --app $app | Out-String
+          if ($fuses -notmatch "EnableNodeCliInspectArguments is Disabled") { throw "the built app should ignore --inspect" }
+          npx --no-install electron-fuses write --app $app EnableNodeCliInspectArguments=on
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $env:JA_APP_EXE = $app
           $env:JA_E2E_CHROMIUM = "1"
           node test/e2e/onboarding.mjs
