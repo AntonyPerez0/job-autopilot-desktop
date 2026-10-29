@@ -16,6 +16,9 @@ export function chromiumPath() {
 }
 
 // Runs Playwright's own installer with this app's Node (Electron as Node), into PLAYWRIGHT_BROWSERS_PATH.
+// The Chromium it installs is the revision playwright-core pins in its browsers.json (1248, Chromium
+// 156.0.8078.4, for 1.64.1) and never updates on its own: after upgrading playwright-core, check that file and
+// the README's note on it. Until then this fallback browser has the security fixes of that revision only.
 export function installChromium(onLine = () => {}) {
   let cli = path.join(path.dirname(require.resolve("playwright-core/package.json")), "cli.js");
   cli = cli.replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`);

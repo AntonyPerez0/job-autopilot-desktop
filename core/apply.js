@@ -260,7 +260,7 @@ export async function verifyCombos(page, kit, fields) {
 // An "I acknowledge" or "I authorize" question can carry a waiver in the text printed under
 // it rather than in its label. Read the text around the question; if it gives up rights,
 // the answer is the user's to give.
-const WAIVER_RX = /arbitrat|waive|waiver|jury trial|class action|release (of )?(all |any )?(claims|liability)|hold harmless|indemnif/i;
+export const WAIVER_RX = /arbitrat|waive|waiver|jury trial|class action|release (of )?(all |any )?(claims|liability)|hold harmless|indemnif/i;
 const ACKISH = /acknowledg|authori[sz]|certif|attest|agree|consent|i (have )?read|terms/i;
 export const NEARBY_JS = `(label) => {
   const norm = (t) => String(t || '').replace(/[\\s\\u00a0]+/g, ' ').replace(/\\*\\s*$/, '').trim().toLowerCase();
@@ -341,7 +341,7 @@ async function showsValue(page, label) {
 }
 
 const ACK = /acknowledg|privacy (notice|policy)|i (have )?read|terms of (use|service)|consent to (the )?(processing|collection)/i;
-const BINDING_RX = /arbitration|waive|waiver|jury|non-?compete|non-?solicit|class action|release of (claims|liability)|background check|drug (test|screen)/i;
+export const BINDING_RX = /arbitration|waive|waiver|jury|non-?compete|non-?solicit|class action|release of (claims|liability)|background check|drug (test|screen)/i;
 // A plain arbitration agreement is accepted only when the user chose that in Settings
 // (for every employer, or only the ones on their list); anything that also waives a
 // jury trial, class actions or claims always waits for the user.

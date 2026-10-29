@@ -3,6 +3,7 @@
 // each company's Workday site is its own account. The confirmation email is read from the mailbox.
 import fs from "node:fs";
 import { dataDir, getSecret, getSettings } from "./store.js";
+import { BINDING_RX, WAIVER_RX } from "./apply.js"; // read only inside functions, so the circular import is fine
 
 const FILE = () => dataDir("site-accounts.json");
 const arr = (x) => (Array.isArray(x) ? x : []);
@@ -88,9 +89,31 @@ const SIGN_IN = {
 const CREATE = {
   link: [W("createAccountLink"), "button:has-text('Create Account')", "a:has-text('Create Account')", "[role=button]:has-text('Create Account')"],
   verify: [W("verifyPassword"), "input[autocomplete=new-password] >> nth=1", "input[name*=confirm i][type=password]", "input[name*=verify i][type=password]"],
-  terms: [W("createAccountCheckbox"), "input[type=checkbox]"],
+  terms: [W("createAccountCheckbox"), "input[type=checkbox]", "[role=checkbox]"],
   submit: [W("createAccountSubmitButton"), "button:has-text('Create Account')", "[role=button]:has-text('Create Account')"],
 };
+
+// The sign-up's terms box, chosen by what its label says, never by where it is: only ordinary terms of use or a
+// privacy policy, with nothing binding in it (arbitration, waived rights, a background check). { box, text } for
+// the one to tick; { binding } when the only terms on offer bind the person to more; null when there's no box.
+const TERMS_RX = /\b(terms|privacy|conditions|policy|policies)\b/i;
+export async function termsBox(page) {
+  let binding = null;
+  for (const sel of CREATE.terms) {
+    for (const el of await page.locator(sel).all().catch(() => [])) {
+      if (!(await el.isVisible().catch(() => false))) continue;
+      const text = await el.evaluate((e) => {
+        const byId = (ids) => (ids || "").split(/\s+/).map((id) => document.getElementById(id)).filter(Boolean).map((x) => x.innerText).join(" ");
+        const lab = (e.id && document.querySelector(`label[for="${CSS.escape(e.id)}"]`)) || e.closest("label");
+        return [e.getAttribute("aria-label"), byId(e.getAttribute("aria-labelledby")), lab && lab.innerText, !lab && e.parentElement ? e.parentElement.innerText : ""].filter(Boolean).join(" ").replace(/\s+/g, " ").trim().slice(0, 600);
+      }).catch(() => "");
+      if (!TERMS_RX.test(text)) continue;
+      if (WAIVER_RX.test(text) || BINDING_RX.test(text)) { binding = binding || text; continue; }
+      return { box: el, text };
+    }
+  }
+  return binding ? { binding } : null;
+}
 
 // The email and password are typed only into a Workday page: checked again after every click that can
 // navigate, and right before each box is filled.
@@ -137,9 +160,12 @@ export async function workdayAccount(page, creds, { waitLink, log = () => {} } =
     if (!(await visible(page, CREATE.verify))) return { ok: false, reason: `${host}: the sign-up form did not appear` };
     if (!(await fillOnWorkday(page, SIGN_IN.password, creds.password))) return { ok: false, reason: LEFT(page) };
     if (!(await fillOnWorkday(page, CREATE.verify, creds.password))) return { ok: false, reason: LEFT(page) };
-    const box = await firstVisible(page, CREATE.terms);
-    if (box) await box.check({ timeout: 5000 }).catch(() => box.click({ force: true }));
-    notes.push(`accepted ${host}'s terms of use to create the account, as your settings allow`);
+    const terms = await termsBox(page);
+    if (terms && terms.binding) return { ok: false, reason: `${host}'s sign-up asks you to accept "${terms.binding.slice(0, 160)}", which binds you to more than terms of use. Open it and decide yourself` };
+    if (terms) {
+      await terms.box.check({ timeout: 5000 }).catch(() => terms.box.click({ force: true }));
+      if (await terms.box.isChecked().catch(() => true)) notes.push(`accepted ${host}'s terms of use to create the account ("${terms.text.slice(0, 120)}"), as your settings allow`);
+    }
     await clickFirst(page, CREATE.submit);
     await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => {});
     await sleep(3000);

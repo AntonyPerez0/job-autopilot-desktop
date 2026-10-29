@@ -172,3 +172,18 @@ test("a Workday link that leads to another site never reaches the account step, 
   assert.deepStrictEqual(site.otherTyped, []);
   await page.close();
 });
+
+test("the sign-up's terms box is chosen by its label, and never one with binding terms (audit 6.4)", async () => {
+  const page = await ctx.newPage();
+  await page.setContent(`<label><input type="checkbox" id="mk">Send me news and job alerts</label>
+    <label><input type="checkbox" ${W("createAccountCheckbox")} id="tos">I agree to the Terms of Use and the Privacy Policy</label>`);
+  const t = await A.termsBox(page);
+  assert.strictEqual(await t.box.getAttribute("id"), "tos", "not the first box on the page");
+  await page.setContent(`<label><input type="checkbox" id="mk">Send me news and job alerts</label>
+    <input type="checkbox" id="arb" aria-labelledby="arbtext"><span id="arbtext">I agree to the Terms and to binding arbitration, and waive any jury trial</span>`);
+  const b = await A.termsBox(page);
+  assert.ok(b && !b.box && /arbitration/.test(b.binding), "binding terms: not ticked, and said why");
+  await page.setContent(`<label><input type="checkbox" id="mk">Send me news and job alerts</label>`);
+  assert.strictEqual(await A.termsBox(page), null, "no terms box: no box at all, not the marketing one");
+  await page.close();
+});

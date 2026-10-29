@@ -121,3 +121,12 @@ test("HiringCafe pay: the listed period, an hourly wage filed under the wrong pe
   assert.strictEqual(hc.salaryOf({ listed_compensation_frequency: "Hourly", hourly_min_compensation: 23.25, hourly_max_compensation: 23.25 }), "$23.25/hour");
   assert.strictEqual(hc.salaryOf({ listed_compensation_frequency: "Hourly" }), null);
 });
+
+test("a pasted HiringCafe link gets its own job's apply link, not the first one on the page (audit 6.17)", async () => {
+  const { hiringCafeApplyUrl } = await import("../core/addjob.js");
+  const raw = JSON.stringify({ props: { pageProps: { similar: [{ id: "zz9", apply_url: "https://other.example/apply/1" }],
+    job: { id: "abc123", objectID: "abc123", apply_url: "https://boards.greenhouse.io/globex/jobs/42" } } } });
+  assert.strictEqual(hiringCafeApplyUrl(raw, "https://hiring.cafe/viewjob/abc123"), "https://boards.greenhouse.io/globex/jobs/42");
+  assert.strictEqual(hiringCafeApplyUrl(raw, "https://hiring.cafe/viewjob/nope"), null, "no job with that id: no link");
+  assert.strictEqual(hiringCafeApplyUrl("not json", "https://hiring.cafe/viewjob/abc123"), null);
+});

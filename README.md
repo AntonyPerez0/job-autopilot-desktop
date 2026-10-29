@@ -661,6 +661,11 @@ have Chrome. With neither, the app downloads its own Chromium (about 150 MB,
 once). The app uses its own browser profile, separate from your everyday one,
 so it never sees your bookmarks, passwords or other logins.
 
+The downloaded Chromium doesn't update itself. It's the version this app's
+Playwright release names (Chromium 156.0.8078.4 in this version), and it only
+gets security fixes when a new version of the app moves to a newer one. Chrome
+and Edge keep themselves up to date, so install one of them if you can.
+
 The browser stays out of your way while it works, and it stays open between
 applications so it doesn't pop up for each one:
 

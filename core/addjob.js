@@ -59,6 +59,23 @@ function fromTitleTag(html, host) {
   return { title: title || "Job", company: company || og("site_name") || host.replace(/^(www|jobs|careers|boards|apply)\./, "").split(".")[0], location: "", description: "" };
 }
 
+// The apply link of the job the pasted HiringCafe address names (its id is the address's last part), read from the
+// page's data: never just the first apply link on the page, which may be another posting's ("similar jobs").
+export function hiringCafeApplyUrl(raw, pageUrl) {
+  let data, u;
+  try { data = JSON.parse(String(raw || "").slice(0, MAX_PAGE)); u = new URL(pageUrl); } catch { return null; }
+  const segs = u.pathname.split("/").filter(Boolean);
+  const ids = new Set([segs[segs.length - 1], u.searchParams.get("id")].filter(Boolean).map((x) => { try { return decodeURIComponent(x); } catch { return x; } }));
+  let found = null;
+  const walk = (o, depth) => {
+    if (found || !o || typeof o !== "object" || depth > 20) return;
+    if (!Array.isArray(o) && typeof o.apply_url === "string" && [o.id, o.objectID, o.requisition_id].some((x) => x != null && ids.has(String(x)))) { found = o.apply_url; return; }
+    for (const v of Array.isArray(o) ? o : Object.values(o)) walk(v, depth + 1);
+  };
+  walk(data, 0);
+  return found;
+}
+
 // ".../job/Austin-TX/Cashier---Front-End_R123" -> "Cashier - Front End"
 export function titleFromPath(url) {
   const segs = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
@@ -83,9 +100,9 @@ export async function resolveLink(raw, { browserPage } = {}) {
     try {
       await page.goto(url.href, { waitUntil: "domcontentloaded", timeout: 60000 });
       const raw = await page.evaluate(() => (document.getElementById("__NEXT_DATA__") || {}).textContent || "");
-      const m = raw.match(/"apply_url":"([^"]+)"/);
-      if (!m) throw new Error("no link");
-      url = new URL(JSON.parse(`"${m[1]}"`));
+      const link = hiringCafeApplyUrl(raw, url.href);
+      if (!link) throw new Error("no link");
+      url = new URL(link);
       c = classify(url.href);
     } catch { throw new Error("Couldn't read that HiringCafe job. Open it, press Apply, and paste the address of the page that opens."); }
     finally { await browserPage.done(page); }
