@@ -74,8 +74,8 @@ export const LINK_SUBJECT = /verify|activate|confirm|validate|complete your (acc
 export function findLink(html, text, hostHint = "") {
   const links = [];
   const h = String(html || "").slice(0, MAX_HTML), end = h.toLowerCase().lastIndexOf("</a>");
-  for (const m of h.slice(0, end + 4).matchAll(/<a\b[^<>]*href=["']([^"'<>]+)["'][^<>]*>([\s\S]*?)<\/a>/gi)) links.push({ url: m[1].replace(/&amp;/g, "&"), label: htmlToText(m[2]).trim() });
-  for (const m of String(text || "").matchAll(/https?:\/\/[^\s<>"')]+/g)) links.push({ url: m[0], label: "" });
+  for (const m of h.slice(0, end + 4).matchAll(/<a\b[^<>]*href=["']([^"'<>]+)["'][^<>]*>([\s\S]*?)<\/a>/gi)) { links.push({ url: m[1].replace(/&amp;/g, "&"), label: htmlToText(m[2]).trim() }); if (links.length >= 500) break; }
+  for (const m of String(text || "").slice(0, MAX_HTML).matchAll(/https?:\/\/[^\s<>"')]+/g)) { links.push({ url: m[0], label: "" }); if (links.length >= 500) break; }
   const host = (u) => { try { return new URL(u).hostname.toLowerCase(); } catch { return ""; } };
   const hint = String(hostHint || "").toLowerCase();
   const ok = links.filter((l) => /^https:\/\//i.test(l.url) && !/unsubscribe|privacy|terms|help|support|mailto:/i.test(l.url + " " + l.label));
