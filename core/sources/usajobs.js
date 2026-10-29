@@ -4,6 +4,7 @@
 // to "Apply yourself" with its link, its closing date and a tailored resume; the app never applies there.
 import { countryName } from "../geo.js";
 import { getSecret, getSettings } from "../store.js";
+import { thisCycle } from "./budget.js";
 
 const ENDPOINT = "https://data.usajobs.gov/api/Search";
 const strip = (h) => String(h || "").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
@@ -64,8 +65,9 @@ export async function search(prefs, { progress = () => {}, log = () => {} }) {
   const runs = [];
   for (const title of prefs.titles || []) for (const p of places) runs.push({ title, ...p });
   const out = [];
-  for (const [i, r] of runs.entries()) {
-    progress({ label: `USAJOBS: "${r.title}"${r.RemoteIndicator ? " remote" : ""}`, i, n: runs.length });
+  const now = thisCycle(runs, "usajobs");
+  for (const [i, r] of now.entries()) {
+    progress({ label: `USAJOBS: "${r.title}"${r.RemoteIndicator ? " remote" : ""}`, i, n: now.length });
     const { title, ...where } = r;
     // Jobs open to the public only: the others are for current federal employees and special groups.
     const q = new URLSearchParams({ Keyword: title, WhoMayApply: "public", DatePosted: String(days), ResultsPerPage: "50", Fields: "Full", ...where });

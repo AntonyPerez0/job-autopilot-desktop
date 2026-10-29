@@ -124,7 +124,28 @@ export const getAnswers = () => merge(ANSWERS_DEFAULTS, readJSON("answers.json")
 export const getProfile = () => readJSON("profile.json", null);
 
 export const saveSettings = (patch) => writeJSON("settings.json", merge(getSettings(), patch));
-export const savePrefs = (patch) => writeJSON("prefs.json", merge(getPrefs(), patch));
+// Preferences come from the window and reach the screening prompt and the job searches, so every list is
+// bounded where it's saved: so many entries, so many characters, strings only.
+const strs = (a, n, len) => (Array.isArray(a) ? a : []).filter((x) => typeof x === "string").map((x) => x.trim().slice(0, len)).filter(Boolean).slice(0, n);
+const num = (x) => typeof x === "number" && Number.isFinite(x);
+export function clampPrefs(patch = {}) {
+  const p = { ...(patch && typeof patch === "object" && !Array.isArray(patch) ? patch : {}) };
+  if ("titles" in p) p.titles = strs(p.titles, 25, 80);
+  if ("keywords" in p) p.keywords = strs(p.keywords, 40, 60);
+  if ("titleExclude" in p) p.titleExclude = strs(p.titleExclude, 100, 80);
+  if ("excludeCompanies" in p) p.excludeCompanies = strs(p.excludeCompanies, 100, 80);
+  if ("seniority" in p) p.seniority = strs(p.seniority, 10, 20);
+  if ("sources" in p) p.sources = strs(p.sources, 20, 40);
+  if ("notForMe" in p) p.notForMe = (Array.isArray(p.notForMe) ? p.notForMe : []).filter((x) => x && typeof x === "object" && typeof x.code === "string")
+    .map((x) => ({ code: x.code.slice(0, 80), title: String(typeof x.title === "string" ? x.title : x.code).slice(0, 80) })).slice(0, 100);
+  if ("cities" in p) p.cities = (Array.isArray(p.cities) ? p.cities : []).filter((c) => c && typeof c === "object" && num(c.lat) && num(c.lon))
+    .map((c) => Object.fromEntries(Object.entries(c).filter(([, v]) => typeof v === "string" || num(v)).map(([k, v]) => [k, typeof v === "string" ? v.slice(0, 100) : v]))).slice(0, 40);
+  if ("jobKind" in p && !["office", "hourly", "both"].includes(p.jobKind)) delete p.jobKind;
+  if ("moveToward" in p) p.moveToward = String(p.moveToward || "").slice(0, 300);
+  if ("alreadyApplied" in p) p.alreadyApplied = String(p.alreadyApplied || "").slice(0, 50000);
+  return p;
+}
+export const savePrefs = (patch) => writeJSON("prefs.json", merge(getPrefs(), clampPrefs(patch)));
 export const saveAnswers = (patch) => writeJSON("answers.json", merge(getAnswers(), patch));
 export const saveProfile = (p) => writeJSON("profile.json", p);
 

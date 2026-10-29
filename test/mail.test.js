@@ -2,6 +2,7 @@
 import test from "node:test";
 import assert from "node:assert";
 import { CODE_SUBJECT, CONFIRM, findCode, htmlToText, matchConfirmation, roleCore, PRESETS } from "../core/mail.js";
+import * as M from "../core/mail.js";
 
 test("Greenhouse security code", () => {
   const body = htmlToText(`<p>Hi Jordan,</p><p>Copy and paste this code into the security code field on your application: <b>Ab3dE9xQ</b></p><p>Thanks</p>`);
@@ -37,4 +38,29 @@ test("the confirmation link in a Workday sign-up email", async () => {
   assert.strictEqual(findLink(html, "", "globex.wd5.myworkdayjobs.com"), "https://globex.wd5.myworkdayjobs.com/en-US/careers/activate/abc123?x=1&y=2");
   assert.strictEqual(findLink("", "Confirm here: https://acme.example.com/confirm?t=9 thanks", ""), "https://acme.example.com/confirm?t=9");
   assert.strictEqual(findLink("<a href='https://acme.example.com/terms'>Terms</a>", "", ""), null);
+});
+
+// Security audit 2.8 and 2.9: whose email the app believes.
+const AR = (d, pass = true) => `Authentication-Results: mx.google.com;\r\n       dkim=${pass ? "pass" : "fail"} header.i=@${d} header.s=s1;\r\n       spf=pass smtp.mailfrom=${d}\r\nFrom: x\r\nSubject: y`;
+test("a code is taken only from Greenhouse, DKIM-signed, by arrival time; a newer code from anyone else is ignored", () => {
+  const since = 1_800_000_000;
+  const gh = { from: "no-reply@us.greenhouse-mail.io", headers: AR("us.greenhouse-mail.io"), internalDate: new Date((since + 30) * 1000), subject: "Security code for your application to Globex",
+    text: "Copy and paste this code into the security code field on your application: AbC12345" };
+  const other = { from: "codes@unrelated-site.test", headers: AR("unrelated-site.test"), internalDate: new Date((since + 90) * 1000), subject: "Your verification code", text: "Your verification code: ZZZ99999" };
+  assert.strictEqual(M.pickCode([other, gh], since), "AbC12345", "the employer's, not the newer one");
+  assert.strictEqual(M.pickCode([other], since), null);
+  assert.strictEqual(M.pickCode([{ ...gh, headers: AR("us.greenhouse-mail.io", false) }], since), null, "DKIM must pass");
+  assert.strictEqual(M.pickCode([{ ...gh, headers: AR("evil.test") + "\r\n" + AR("greenhouse.io") }], since), null, "only the provider's own, topmost verdict counts");
+  assert.strictEqual(M.pickCode([{ ...gh, internalDate: new Date((since - 3600) * 1000) }], since), null, "arrived before the submit, by the server's clock");
+});
+
+test("a confirmation link is opened only from the site that asked, pointing to that site", () => {
+  const since = 1_800_000_000, at = new Date((since + 20) * 1000);
+  const wd = { from: "globex@myworkday.com", internalDate: at, subject: "Verify your account", html: '<a href="https://globex.wd5.myworkdayjobs.com/verify?u=x">Verify</a>', plain: "" };
+  assert.strictEqual(M.pickLink([wd], since, "globex.wd5.myworkdayjobs.com"), "https://globex.wd5.myworkdayjobs.com/verify?u=x");
+  const evil = { from: "accounts@unrelated-site.test", internalDate: at, subject: "Confirm your account", html: '<a href="https://unrelated-site.test/confirm">Confirm</a>', plain: "" };
+  assert.strictEqual(M.pickLink([evil], since, "globex.wd5.myworkdayjobs.com"), null, "unrelated-site.test is not opened");
+  const spoof = { ...wd, html: '<a href="https://unrelated-site.test/verify">Verify</a>' };
+  assert.strictEqual(M.pickLink([spoof], since, "globex.wd5.myworkdayjobs.com"), null, "from Workday, but pointing elsewhere");
+  assert.strictEqual(M.siteOf("jobs.acme.co.uk"), "acme.co.uk");
 });

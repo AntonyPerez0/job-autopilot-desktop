@@ -397,9 +397,13 @@ async function waitOutcome(page, before, wantsCode) {
 
 const emailCode = (mailbox, since) => (mailbox ? waitForCode(mailbox, since, 180) : Promise.resolve(null));
 
-// Type the code into the code box (one input, or one box per character), then confirm.
-async function enterCode(page, code) {
-  for (const f of page.frames()) {
+// Greenhouse is the only site whose emailed code the app reads; the code goes only into its frame.
+export const isGreenhouse = (u) => { const h = canonHost((() => { try { return new URL(u).hostname; } catch { return ""; } })()); return h === "greenhouse.io" || h.endsWith(".greenhouse.io"); };
+
+// Type the code into the code box (one input, or one box per character) of the frame where Submit was
+// pressed, then confirm. No other frame sees it.
+export async function enterCode(frame, code) {
+  for (const f of [frame]) {
     const boxes = f.locator("input[maxlength='1']:visible");
     const n = await boxes.count().catch(() => 0);
     if (n >= 4) {
@@ -709,6 +713,10 @@ export async function applyTo(job, hooks = {}, opts = {}) {
   const a = opts.answers || getAnswers();
   const prefs = opts.prefs || getPrefs();
   const dryRun = opts.dryRun ?? settings.dryRun;
+  // "Back to dry run" or Pause pressed while this application runs stops it before anything is sent: the
+  // settings are read again right before Submit, the emailed code and the confirmation wait.
+  const at0 = getSettings();
+  const halted = () => { const s = getSettings(); return (s.dryRun && !at0.dryRun) ? "you switched back to dry run" : (s.paused && !at0.paused) ? "you paused the autopilot" : ""; };
   allowArbitration = arbitrationAllowed(a, job.company);
   COMBO_FALLBACK = comboFallback(a);
   const jobLocal = withinRadius(job.location, prefs);
@@ -877,14 +885,22 @@ export async function applyTo(job, hooks = {}, opts = {}) {
     const before = page.url();
     let got428 = false;
     page.on("response", (r) => { if (r.status() === 428 && r.request().method() === "POST") got428 = true; });
+    if (halted()) return manual(`${halted()} while this application was being filled, so it was not submitted. It's filled in and waiting: check it and submit it yourself, or try again later`);
     log(job.slug, `pressing "${label}"`);
     await frame.locator("[data-ap-submit]").first().scrollIntoViewIfNeeded().catch(() => {});
     await frame.locator("[data-ap-submit]").first().click({ timeout: 15000 });
 
     step("confirm");
     const submittedAt = Date.now() / 1000;
+    if (halted()) return manual(`${halted()} just as Submit was pressed: it may have gone through. Check your email or the site before applying again`);
     let outcome = await waitOutcome(page, before, () => got428);
     if (outcome === "code") {
+      // Only on Greenhouse's own form: a code box anywhere else (a widget, another site's frame) gets nothing.
+      if (!isGreenhouse(frame.url())) {
+        result.screenshot = await shot(page, job.slug, "after");
+        return { ...result, status: "failed", reason: "security code: the form asks for an emailed code, and the app only reads codes on Greenhouse forms. Open the application and enter it yourself" };
+      }
+      if (halted()) return manual(`${halted()} before the emailed code was entered, so the application wasn't finished. Open it and enter the code yourself`);
       step("code");
       log(job.slug, "the employer emailed a security code; reading it from the inbox");
       const code = await emailCode(opts.mailbox, submittedAt);
@@ -894,7 +910,7 @@ export async function applyTo(job, hooks = {}, opts = {}) {
       }
       got428 = false;
       step("confirm");
-      await enterCode(page, code);
+      await enterCode(frame, code);
       outcome = await waitOutcome(page, page.url(), () => got428);
       if (outcome === "code") outcome = null;
     }

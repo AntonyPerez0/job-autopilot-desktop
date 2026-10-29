@@ -107,7 +107,8 @@ export async function search(prefs, { browser, progress = () => {}, log = () => 
   try {
     await page.goto(BASE + "/classic", { waitUntil: "domcontentloaded", timeout: 60000 });
     const places = [];
-    for (const c of prefs.cities || []) { const p = await placeFor(page, c, prefs).catch(() => null); if (p) places.push(p); else log(`HiringCafe does not know ${c.name}; skipped`); }
+    // At most 40 place lookups a cycle (the most citiesNear ever returns).
+    for (const c of (prefs.cities || []).slice(0, 40)) { const p = await placeFor(page, c, prefs).catch(() => null); if (p) places.push(p); else log(`HiringCafe does not know ${c.name}; skipped`); }
     if (prefs.remote) places.push(countryPlace(prefs.remoteCountry || "US", countryName(prefs.remoteCountry || "US")));
     const runs = [];
     for (const title of prefs.titles || []) for (const p of places) runs.push([title, p]);

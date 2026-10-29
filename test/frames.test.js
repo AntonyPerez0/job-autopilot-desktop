@@ -81,3 +81,18 @@ test("only the form's own origin or a known ATS embed", () => {
   assert.ok(!A.frameAllowed("https://acme.example/jobs/1", "about:blank"));
   assert.ok(!A.frameAllowed("https://acme.example/jobs/1", "http://acme.example/frame"), "same host, other scheme: another origin");
 });
+
+test("an emailed code goes only into the frame where Submit was pressed, and only on Greenhouse (audit 2.8)", async () => {
+  const page = await browser.newPage();
+  await page.goto(`http://127.0.0.1:${server.address().port}/`);
+  await page.waitForTimeout(300);
+  await page.evaluate(() => { document.body.insertAdjacentHTML("beforeend", '<label for="sc">Security code</label><input id="sc" name="security_code"><button type="button">Verify</button>'); });
+  const ad = page.frames().find((f) => f !== page.mainFrame());
+  await ad.evaluate(() => { document.body.insertAdjacentHTML("beforeend", '<input id="adcode" name="code"><button>Submit</button>'); });
+  await A.enterCode(page.mainFrame(), "AbC12345");
+  assert.strictEqual(await page.inputValue("#sc"), "AbC12345");
+  assert.strictEqual(await ad.inputValue("#adcode"), "", "the other frame got nothing");
+  assert.ok(A.isGreenhouse("https://job-boards.greenhouse.io/globex/jobs/1"));
+  assert.ok(!A.isGreenhouse("https://greenhouse.io.evil.test/x") && !A.isGreenhouse("https://evilgreenhouse.io/x"));
+  await page.close();
+});

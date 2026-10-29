@@ -97,6 +97,59 @@ export function matchConfirmation(hits, company, title) {
   return null;
 }
 
+// ---------- who an email is really from ----------
+// Employers' application systems, and the domains they send mail from.
+export const ATS_SITES = ["greenhouse.io", "greenhouse-mail.io", "myworkdayjobs.com", "myworkday.com", "workday.com", "lever.co", "ashbyhq.com", "smartrecruiters.com", "workable.com"];
+export const GREENHOUSE_MAIL = ["greenhouse.io", "greenhouse-mail.io"];
+const canon = (h) => String(h || "").trim().toLowerCase().replace(/\.+$/, "");
+const under = (h, d) => { h = canon(h); d = canon(d); return !!h && !!d && (h === d || h.endsWith("." + d)); };
+export const senderDomain = (from) => canon((String(from || "").match(/@([A-Za-z0-9.-]+)\s*>?\s*$/) || String(from || "").match(/@([A-Za-z0-9.-]+)/) || [])[1]);
+// The site a host belongs to: "globex.wd5.myworkdayjobs.com" -> "myworkdayjobs.com", "jobs.acme.co.uk" -> "acme.co.uk".
+export function siteOf(host) {
+  const parts = canon(host).split(".").filter(Boolean);
+  if (parts.length <= 2) return parts.join(".");
+  const two = parts.slice(-2);
+  return (two[1].length === 2 && /^(co|com|org|net|gov|ac|edu)$/.test(two[0]) ? parts.slice(-3) : two).join(".");
+}
+// The mailbox provider's own verdict, which it adds at the top of the message: a DKIM signature that passed,
+// from one of these domains. Headers lower down could have been written by anyone, so only the first counts.
+export function dkimPassFor(headers, domains) {
+  const unfolded = String(headers || "").replace(/\r?\n[ \t]+/g, " ");
+  const first = (unfolded.match(/^Authentication-Results:.*$/im) || [""])[0];
+  return [...first.matchAll(/\bdkim=pass\b[^;]*?header\.(?:d|i)=@?([A-Za-z0-9.-]+)/gi)].some((m) => domains.some((d) => under(m[1], d)));
+}
+const headersOf = (source) => String(source || "").split(/\r?\n\r?\n/)[0];
+
+// Of the emails that arrived after `since` (seconds, by the server's own clock), the code Greenhouse sent:
+// from a Greenhouse address, DKIM-signed by Greenhouse; its own wording first. A code from anyone else is never used.
+// mails: [{ from, headers, internalDate (Date or seconds), subject, text }], newest first.
+export function pickCode(mails, since) {
+  const fromGreenhouse = (m) => GREENHOUSE_MAIL.some((d) => under(senderDomain(m.from), d)) && dkimPassFor(m.headers, GREENHOUSE_MAIL);
+  const ok = mails.filter((m) => {
+    const at = m.internalDate instanceof Date ? m.internalDate.getTime() / 1000 : Number(m.internalDate) || 0;
+    return at >= since - 60 && CODE_SUBJECT.test(m.subject || "") && fromGreenhouse(m);
+  });
+  for (const m of ok) { const x = String(m.text || "").match(GREENHOUSE); if (x) return x[1]; }
+  for (const m of ok) { const c = findCode(m.text); if (c) return c; }
+  return null;
+}
+
+// The confirmation link for the site that asked (hostHint): sent from that site or a known ATS, and pointing
+// to that host or a known ATS. A link from anyone else, or to anywhere else, is never opened.
+export function pickLink(mails, since, hostHint) {
+  const site = siteOf(hostHint);
+  const senderOk = (m) => { const d = senderDomain(m.from); return (!!site && siteOf(d) === site) || ATS_SITES.some((x) => under(d, x)); };
+  for (const m of mails) {
+    const at = m.internalDate instanceof Date ? m.internalDate.getTime() / 1000 : Number(m.internalDate) || 0;
+    if (at < since - 60 || !LINK_SUBJECT.test(m.subject || "") || !senderOk(m)) continue;
+    const link = findLink(m.html, m.plain, hostHint);
+    if (!link) continue;
+    const h = (() => { try { return new URL(link).hostname; } catch { return ""; } })();
+    if (under(h, hostHint) || ATS_SITES.some((x) => under(h, x))) return link;
+  }
+  return null;
+}
+
 // ---------- IMAP ----------
 
 async function connect(cfg) {
@@ -127,7 +180,22 @@ export async function testMailbox(cfg) {
   try { await c.mailboxOpen("INBOX", { readOnly: true }); return true; } finally { await c.logout().catch(() => {}); }
 }
 
-// Wait for an emailed code that arrived after `since` (seconds). Returns the code or null.
+// The newest emails in INBOX (never Spam) since a day before `since`, with what pickCode and pickLink need.
+async function recentMail(c, since) {
+  await c.mailboxOpen("INBOX", { readOnly: true });
+  const uids = (await c.search({ since: new Date((since - 86400) * 1000) }, { uid: true })) || [];
+  const out = [];
+  for (const uid of uids.slice(-30).reverse()) {
+    const msg = await c.fetchOne(String(uid), { source: true, envelope: true, internalDate: true }, { uid: true });
+    if (!msg) continue;
+    const t = await textOf(msg.source);
+    const from = ((msg.envelope && msg.envelope.from) || []).map((x) => x.address || "").join(" ") || t.from;
+    out.push({ from, headers: headersOf(msg.source), internalDate: msg.internalDate, subject: (msg.envelope && msg.envelope.subject) || t.subject, text: t.text, html: t.html, plain: t.plain });
+  }
+  return out;
+}
+
+// Wait for the code Greenhouse emailed after `since` (seconds). Returns the code or null.
 export async function waitForCode(cfg, since, timeoutSec = 180) {
   const deadline = Date.now() + timeoutSec * 1000;
   while (Date.now() < deadline) {
@@ -135,18 +203,8 @@ export async function waitForCode(cfg, since, timeoutSec = 180) {
     try {
       c = await connect(cfg);
       if (!c) return null;
-      for (const box of await folders(c)) {
-        try { await c.mailboxOpen(box, { readOnly: true }); } catch { continue; }
-        const uids = (await c.search({ since: new Date((since - 86400) * 1000) }, { uid: true })) || [];
-        for (const uid of uids.slice(-30).reverse()) {
-          const msg = await c.fetchOne(String(uid), { source: true, envelope: true }, { uid: true });
-          if (!msg) continue;
-          const when = msg.envelope && msg.envelope.date ? msg.envelope.date.getTime() / 1000 : 0;
-          if (when < since - 60 || !CODE_SUBJECT.test((msg.envelope && msg.envelope.subject) || "")) continue;
-          const code = findCode((await textOf(msg.source)).text);
-          if (code) return code;
-        }
-      }
+      const code = pickCode(await recentMail(c, since), since);
+      if (code) return code;
     } catch { /* try again until the deadline */ } finally { if (c) await c.logout().catch(() => {}); }
     await new Promise((r) => setTimeout(r, 8000));
   }
@@ -161,19 +219,8 @@ export async function waitForLink(cfg, since, hostHint = "", timeoutSec = 180) {
     try {
       c = await connect(cfg);
       if (!c) return null;
-      for (const box of await folders(c)) {
-        try { await c.mailboxOpen(box, { readOnly: true }); } catch { continue; }
-        const uids = (await c.search({ since: new Date((since - 86400) * 1000) }, { uid: true })) || [];
-        for (const uid of uids.slice(-30).reverse()) {
-          const msg = await c.fetchOne(String(uid), { source: true, envelope: true }, { uid: true });
-          if (!msg) continue;
-          const when = msg.envelope && msg.envelope.date ? msg.envelope.date.getTime() / 1000 : 0;
-          if (when < since - 60 || !LINK_SUBJECT.test((msg.envelope && msg.envelope.subject) || "")) continue;
-          const t = await textOf(msg.source);
-          const link = findLink(t.html, t.plain, hostHint);
-          if (link) return link;
-        }
-      }
+      const link = pickLink(await recentMail(c, since), since, hostHint);
+      if (link) return link;
     } catch { /* try again until the deadline */ } finally { if (c) await c.logout().catch(() => {}); }
     await new Promise((r) => setTimeout(r, 8000));
   }

@@ -29,6 +29,10 @@ import { monthUse, testKey as testSerpKey } from "./sources/google.js";
 import { testKey as testUsajobsKey } from "./sources/usajobs.js";
 import { backupFile, collect, exportHistory, importHistory, peekBackup, writeBackup } from "./history.js";
 
+// Where a stored secret may go: the same origin (AI) or the same host (mail) it was saved with.
+const originOfUrl = (u) => { try { const x = new URL(String(u || "")); return x.origin.toLowerCase().replace(/\.(?=:|$)/, ""); } catch { return ""; } };
+const sameOrigin = (a, b) => !!originOfUrl(a) && originOfUrl(a) === originOfUrl(b);
+const sameHost = (a, b) => !!a && String(a).trim().toLowerCase().replace(/\.+$/, "") === String(b || "").trim().toLowerCase().replace(/\.+$/, "");
 const EDITABLE = ["paused", "acceptedTerms", "windowMode", "historyBackup", "historyFolder", "dailyCap", "dayStartsAtHour", "minutesBetweenApplies", "postedWithinDays", "searchEveryMinutes", "headless", "browser", "maxAttempts", "uiMode"];
 const bad = (msg, code = 400) => ({ error: plainAiError(msg), code });
 // main.js plugs in the updater (it needs Electron); without it (tests, scripts) updates are off.
@@ -142,8 +146,10 @@ const ROUTES = {
   }),
   "POST /api/ai/test": async (b) => {
     const s = getSettings().ai;
-    const cfg = { provider: b.provider || s.provider, apiBase: b.apiBase || s.apiBase, apiKey: b.apiKey || getSecret("apiKey"), model: b.model || s.model, contextLength: b.contextLength || s.contextLength };
-    if (!cfg.apiKey && !isLocal(cfg)) return bad("Paste your API key first.");
+    const apiBase = b.apiBase || s.apiBase;
+    // The stored key goes only to the address it was saved with; another address needs the key typed again.
+    const cfg = { provider: b.provider || s.provider, apiBase, apiKey: b.apiKey || (sameOrigin(apiBase, s.apiBase) ? getSecret("apiKey") : ""), model: b.model || s.model, contextLength: b.contextLength || s.contextLength };
+    if (!cfg.apiKey && !isLocal(cfg)) return bad(sameOrigin(apiBase, s.apiBase) ? "Paste your API key first." : "Paste the API key for this address: your saved key is only sent to the address it was saved with.");
     try { return await testAI(cfg); }
     catch (e) {
       if (isLocal(cfg) && /fetch failed|ECONNREFUSED/i.test(e.message)) return bad(`Nothing is answering at ${cfg.apiBase}. Start ${PROVIDERS[providerOf(cfg)].name.replace(/ \(.*/, "")} and try again.`);
@@ -151,11 +157,15 @@ const ROUTES = {
     }
   },
   "POST /api/ai/models": async (b) => {
-    try { return await listModels({ apiBase: b.apiBase || getSettings().ai.apiBase, apiKey: b.apiKey || getSecret("apiKey") }); } catch (e) { return bad(e.message); }
+    const saved = getSettings().ai.apiBase, apiBase = b.apiBase || saved;
+    const apiKey = b.apiKey || (sameOrigin(apiBase, saved) ? getSecret("apiKey") : "");
+    try { return await listModels({ apiBase, apiKey }); } catch (e) { return bad(e.message); }
   },
   "POST /api/ai/save": async (b) => {
-    if (b.apiKey) await setSecret("apiKey", String(b.apiKey).trim());
     const ai = { ...getSettings().ai };
+    // A new address without a new key: the old key is cleared rather than paired with somewhere it wasn't meant for.
+    if (b.apiBase && !sameOrigin(String(b.apiBase).trim(), ai.apiBase) && !b.apiKey) await setSecret("apiKey", "");
+    if (b.apiKey) await setSecret("apiKey", String(b.apiKey).trim());
     if (b.apiBase) ai.apiBase = String(b.apiBase).trim();
     if (b.model) ai.model = String(b.model).trim();
     if (b.provider && PROVIDERS[b.provider]) ai.provider = b.provider;
@@ -366,15 +376,25 @@ const ROUTES = {
     if (!String(b.text || "").trim()) return bad("The line is empty.");
     try { const p = applySuggestion(getProfile(), b); saveProfile(p); return { ok: true, profile: p }; } catch (e) { return bad(e.message); }
   },
-  "POST /api/prefs/save": (b) => savePrefs(b.prefs || {}),
+  "POST /api/prefs/save": (b) => {
+    const saved = savePrefs(b.prefs || {});
+    // On the Activity list, so a change nobody made on purpose can be seen.
+    log(null, `preferences saved: titles ${JSON.stringify(saved.titles || []).slice(0, 300)}, keywords ${JSON.stringify(saved.keywords || []).slice(0, 200)}`);
+    return saved;
+  },
   "GET /api/cities": (_, q) => searchCities(q.get("q") || ""),
   "GET /api/countries": () => countries(),
   "POST /api/mail/test": async (b) => {
-    const pass = b.pass || getSecret("mailPassword");
+    // The saved app password goes only to the mail server it was saved for.
+    const savedHost = (getSettings().mailbox || {}).host;
+    const pass = b.pass || (sameHost(b.host, savedHost) ? getSecret("mailPassword") : "");
+    if (!pass) return bad(savedHost && !sameHost(b.host, savedHost) ? "Type the app password for this mail server: your saved password is only sent to the server it was saved for." : "Type your app password first.");
     try { await testMailbox({ host: b.host, port: Number(b.port) || 993, user: b.user, pass }); return { ok: true }; }
     catch (e) { return bad(/auth|login|credentials|invalid/i.test(e.message) ? "The mailbox refused the email or app password. Check both, and that it is an app password, not your normal password." : e.message); }
   },
   "POST /api/mail/save": async (b) => {
+    const savedHost = (getSettings().mailbox || {}).host;
+    if (savedHost && !sameHost(b.host, savedHost) && !b.pass) await setSecret("mailPassword", "");
     if (b.pass) await setSecret("mailPassword", String(b.pass).replace(/\s+/g, ""));
     saveSettings({ mailbox: { preset: b.preset, host: b.host, port: Number(b.port) || 993, user: b.user } });
     return { ok: true };

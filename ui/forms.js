@@ -8,7 +8,7 @@
   const uid = () => Math.random().toString(36).slice(2, 9);
   const msg = (el, kind, text) => { el.innerHTML = text ? `<div class="msg ${kind}">${esc(text)}</div>` : ""; };
   const fld = (label, inner, hint) => `<div class="fld"><span>${label}</span>${inner}${hint ? `<small>${hint}</small>` : ""}</div>`;
-  const inp = (name, value, attrs = "") => `<input name="${name}" value="${esc(value)}" ${attrs}>`;
+  const inp = (name, value, attrs = "") => `<input name="${esc(name)}" value="${esc(value)}" ${attrs}>`;
   // A month and a year, so every date on the resume is written the same way ("Sep 2023"). The hidden field
   // holds "Sep 2023", or just "2023" when they don't remember the month.
   const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -385,7 +385,7 @@
       <div class="section-t">Licenses and training</div><p class="hint" style="margin:-4px 0 0">${esc(q.prompts.certs)}</p>
       <div class="sub-list" data-fcerts>${q.certs.map(certRow).join("")}${certRow()}</div><div><button type="button" class="btn sm" data-fadd="cert">${icon("plus")}Add another</button></div>
       ${q.jobs.length ? `<div class="section-t">Records and recognition</div><p class="hint" style="margin:-4px 0 0">${esc(q.prompts.records)}</p>
-        ${q.jobs.map((j) => fld(esc(`${j.title}${j.org ? ", " + j.org : ""}`), inp(`f_rec_${j.id}`, "", 'placeholder="e.g. 3 years with no damage claims, employee of the month 2023"'))).join("")}` : ""}
+        ${q.jobs.map((j, i) => fld(esc(`${j.title}${j.org ? ", " + j.org : ""}`), inp(`f_rec_${i}`, "", 'placeholder="e.g. 3 years with no damage claims, employee of the month 2023"'))).join("")}` : ""}
       <div class="section-t">AI tools you've used</div><p class="hint" style="margin:-4px 0 0">${esc(q.prompts.ai)}</p>
       <div class="sub-list" data-fais>${aiCard()}</div><div><button type="button" class="btn sm" data-fadd="ai">${icon("plus")}Add another</button></div>
       <div class="section-t">Volunteering and outside work</div><p class="hint" style="margin:-4px 0 0">${esc(q.prompts.volunteer)}</p>
@@ -413,7 +413,8 @@
       const btn = e.currentTarget, m = el.querySelector("[data-fmsg]");
       const input = { jobs: work("job"), volunteer: work("vol"),
         certs: [...el.querySelectorAll("[data-fcert]")].map((c) => ({ name: val(c, "f_cname"), issuer: val(c, "f_issuer"), year: val(c, "f_year") })).filter((c) => c.name && (c.issuer || c.year || !q.certs.includes(c.name))),
-        records: q.jobs.map((j) => ({ id: j.id, text: val(el, `f_rec_${j.id}`) })).filter((x) => x.text),
+        // named by position, mapped back to the job here: a job's id never goes into the page's markup
+        records: q.jobs.map((j, i) => ({ id: j.id, text: val(el, `f_rec_${i}`) })).filter((x) => x.text),
         school: [...el.querySelectorAll("[data-fschool]")].map((c) => ({ school: val(c, "f_school"), earned: val(c, "f_earned"), year: val(c, "f_syear") })).filter((x) => x.school),
         numbers: q.numbers.map((x, i) => ({ ...x, answer: val(el.querySelector(`[data-fnum="${i}"]`), "f_num") })).filter((x) => x.answer),
         ai: [...el.querySelectorAll("[data-fai]")].map((c) => ({ where: val(c, "f_aiwhere"), tool: val(c, "f_aitool"), problem: c.querySelector("[name=f_aiprob]").value.trim(),

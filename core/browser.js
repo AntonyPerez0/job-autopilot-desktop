@@ -34,7 +34,7 @@ export function installChromium(onLine = () => {}) {
 export async function detectBrowsers() {
   const out = {};
   for (const ch of ["chrome", "msedge"]) {
-    try { const b = await chromium.launch({ channel: ch, headless: true, timeout: 20000 }); await b.close(); out[ch] = true; } catch { out[ch] = false; }
+    try { const b = await chromium.launch({ channel: ch, headless: true, chromiumSandbox: SANDBOX, timeout: 20000 }); await b.close(); out[ch] = true; } catch { out[ch] = false; }
   }
   out.chromium = !!chromiumPath();
   return out;
@@ -42,10 +42,15 @@ export async function detectBrowsers() {
 
 let preferred = null; // the channel that worked last time
 
+// Chromium's sandbox stays on: a job page that broke the renderer would otherwise run as the user's own account.
+// Some Linux machines (containers, kernels without unprivileged user namespaces) can't start it; there, and
+// only when someone sets JA_ALLOW_NO_SANDBOX=1 on purpose, it may run without.
+export const SANDBOX = process.env.JA_ALLOW_NO_SANDBOX !== "1";
+
 export async function launch({ headless = false, choice = "auto", onStatus = () => {} } = {}) {
   const order = choice === "auto" ? [preferred, "chrome", "msedge", "chromium"].filter((x, i, a) => x && a.indexOf(x) === i) : [choice];
   const userDataDir = dataDir("browser-profile");
-  const base = { headless, viewport: null, args: ["--window-size=1280,800", "--no-first-run", "--no-default-browser-check"], timeout: 60000 };
+  const base = { headless, viewport: null, chromiumSandbox: SANDBOX, args: ["--window-size=1280,800", "--no-first-run", "--no-default-browser-check"], timeout: 60000 };
   let last;
   for (const ch of order) {
     try {

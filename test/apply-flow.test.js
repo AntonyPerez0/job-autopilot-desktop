@@ -34,6 +34,10 @@ const PAGES = {
     <label for="st">Are you currently enrolled in full-time studies? *</label><select id="st" required><option value="">Select...</option><option>Yes</option><option>No</option></select>
     <label for="yr">How many years of professional experience do you have? *</label><input id="yr" required>
     <button type="submit" onclick="if(!fn.value||!st.value||!yr.value)return;window.SUBMITTED=1;document.body.innerHTML='<h2>Thank you for applying!</h2>'">Submit application</button></form>`,
+  // One page, whose Submit tells the server (audit 2.10).
+  "/form-ping": `<form id="f" onsubmit="return false"><label for="fn">First name *</label><input id="fn" required><label for="ln">Last name *</label><input id="ln" required>
+    <label for="em">Email *</label><input id="em" type="email" required>
+    <button type="submit" onclick="fetch('/done',{method:'POST',body:'sent'}).then(()=>{document.body.innerHTML='<h2>Thank you for applying!</h2>'})">Submit application</button></form>`,
   // A window left open by an earlier posting that keeps opening pages (audit 1.2).
   "/leftover": `<h1>Old posting</h1><script>let n = 0; const t = setInterval(() => { window.open("/stray?" + (++n), "_blank"); if (n >= 20) clearInterval(t); }, 300);</script>`,
   "/stray": `<h1>Sign in</h1><label for="u">Email</label><input id="u"><label for="pw">Password</label><input id="pw" type="password">`,
@@ -120,4 +124,18 @@ test("a window left open by another posting never becomes this job's form, and n
   assert.deepStrictEqual(after.map((pg) => pg.url()), [], "no page opened during the job is left");
   await leftover.close();
   for (const pg of ctx.pages().filter((x) => /\/stray/.test(x.url()))) await pg.close();
+});
+
+test("'Back to dry run' or Pause pressed during a live run stops the Submit (audit 2.10)", async () => {
+  for (const [label, change] of [["dry run", { dryRun: true }], ["pause", { paused: true }]]) {
+    store.saveSettings({ dryRun: false, paused: false });
+    submitted = null;
+    const t = setTimeout(() => store.saveSettings(change), 10000);
+    const r = await applyTo(job("/form-ping", "t-halt-" + label.replace(" ", "")), {}, { dryRun: false, browser: ctx });
+    clearTimeout(t);
+    assert.strictEqual(r.status, "manual", `${label}: ${r.reason}`);
+    assert.match(r.reason, label === "pause" ? /paused the autopilot/ : /switched back to dry run/);
+    assert.strictEqual(submitted, null, `${label}: Submit never fired`);
+  }
+  store.saveSettings({ dryRun: true, paused: false });
 });

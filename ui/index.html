@@ -138,7 +138,7 @@ function renderNav() {
   const total = Object.values(c).reduce((a, b) => a + b, 0);
   const count = (v) => v.id === "all" ? total : v.status ? (c[v.status] || 0) + (v.id === "queued" ? (c.working || 0) : 0) : null;
   const html = (mobile) => VIEWS.map((v, i) => `${!mobile && v.id === "applied" ? '<div class="nav-label">Applications</div>' : ""}${!mobile && v.id === "all" ? '<div class="nav-label adv">More</div>' : ""}
-    <a class="nav ${view === v.id ? "on" : ""} ${v.adv ? "adv" : ""}" href="#${v.id}" ${view === v.id ? 'aria-current="page"' : ""} onclick="go('${v.id}');return false">${icon(v.icon)}<span>${v.label}</span>${count(v) !== null && !mobile ? `<span class="count ${count(v) > 0 ? NAV_TONE[v.id] || "" : ""}">${count(v)}</span>` : ""}</a>`).join("");
+    <a class="nav ${view === v.id ? "on" : ""} ${v.adv ? "adv" : ""}" href="#${v.id}" ${view === v.id ? 'aria-current="page"' : ""} data-go="${v.id}">${icon(v.icon)}<span>${v.label}</span>${count(v) !== null && !mobile ? `<span class="count ${count(v) > 0 ? NAV_TONE[v.id] || "" : ""}">${count(v)}</span>` : ""}</a>`).join("");
   $("nav").innerHTML = html(false);
   $("mnav").innerHTML = html(true);
 }
@@ -190,7 +190,7 @@ function updateCard() {
   const busy = ["checking", "downloading", "waiting", "installing"].includes(u.phase);
   btn = `<button class="btn sm primary" onclick="installUpdate()" ${canInstall ? "" : "disabled"} title="${canInstall ? "" : "No new version to install right now"}">${icon("upload")}${u.phase === "error" ? "Try again" : "Update now"}</button>
     <button class="btn sm" onclick="checkUpdate(this)" ${busy ? "disabled" : ""}>${icon("refresh")}Check for updates</button>
-    ${u.info && u.info.url ? `<button class="btn sm ghost" onclick="window.ja.openExternal('${esc(u.info.url)}')">${icon("ext")}${u.info.newer ? "What's new" : "Releases page"}</button>` : ""}`;
+    ${u.info && u.info.url ? `<button class="btn sm ghost" data-open-url="${esc(u.info.url)}">${icon("ext")}${u.info.newer ? "What's new" : "Releases page"}</button>` : ""}`;
   return `<p style="margin:0 0 12px">${line}</p><div class="row-actions">${btn}</div>`;
 }
 function liveChip() {
@@ -317,10 +317,10 @@ async function renderOverview() {
   </div>`;
 }
 const KPI_TONE = { applied: "done", queued: "work", failed: "attn" };
-const kpi = (to, label, val, foot) => `<a class="kpi ${KPI_TONE[to] || ""}" href="#${to}" onclick="go('${to}');return false"><div class="lbl">${label}</div><div class="val">${val}</div><div class="foot">${esc(foot)}</div></a>`;
+const kpi = (to, label, val, foot) => `<a class="kpi ${KPI_TONE[to] || ""}" href="#${to}" data-go="${to}"><div class="lbl">${label}</div><div class="val">${val}</div><div class="foot">${esc(foot)}</div></a>`;
 // A job's title is a link, so the keyboard reaches it; the whole row still opens it with a click.
-const jobLink = (j) => `<a href="#" class="job-link" data-job="${esc(j.slug)}" onclick="event.stopPropagation();openJob('${esc(j.slug)}');return false">${esc(cleanTitle(j.title))}</a>`;
-const item = (j) => `<div class="list-item" onclick="openJob('${esc(j.slug)}')">${avatar(j.company)}<div class="li-main"><div class="t">${jobLink(j)}</div><div class="s">${meta(esc(j.company), esc(j.location))}</div></div>
+const jobLink = (j) => `<a href="#" class="job-link" data-job="${esc(j.slug)}" data-open-job="${esc(j.slug)}">${esc(cleanTitle(j.title))}</a>`;
+const item = (j) => `<div class="list-item" data-open-job="${esc(j.slug)}">${avatar(j.company)}<div class="li-main"><div class="t">${jobLink(j)}</div><div class="s">${meta(esc(j.company), esc(j.location))}</div></div>
   ${badge(category(j))}<span class="time hide-md">${ago(j.applied_at || j.updated_at)}</span></div>`;
 const empty = (ic, t, s) => `<div class="empty"><div class="ico">${icon(ic)}</div><h3>${t}</h3><div>${s}</div></div>`;
 const important = (e) => !/^(queued|skipped): /.test(e.message) || /^queued/.test(e.message);
@@ -350,7 +350,7 @@ function renderList() {
   if (!rows.length) { host.innerHTML = empty("list", needle ? "No matches" : "Nothing here yet", needle ? "Try another search." : "Jobs show up here as the autopilot works."); return; }
   const whenLabel = view === "applied" ? "Applied" : "Updated";
   host.innerHTML = `<table><thead><tr><th>Role</th><th class="hide-md">Location</th><th class="hide-md">Board</th><th>Status</th><th class="hide-md">${whenLabel}</th></tr></thead><tbody>
-    ${rows.map((j) => `<tr onclick="openJob('${esc(j.slug)}')">
+    ${rows.map((j) => `<tr data-open-job="${esc(j.slug)}">
       <td><div class="co-cell">${avatar(j.company)}<div><div class="t">${jobLink(j)}</div><div class="s">${meta(esc(j.company), j.salary ? esc(j.salary.replace(/^USD /, "$").replace(/\/year$/, "")) : "")}</div></div></div></td>
       <td class="hide-md muted">${esc(j.location)}${j.work_mode ? `<div class="reason">${esc(j.work_mode)}</div>` : ""}</td>
       <td class="hide-md"><span class="tag">${esc(SOURCE[j.source] || j.source)}</span></td>
@@ -363,7 +363,7 @@ function renderList() {
 async function renderLog() {
   const ev = await api("/api/events");
   $("main").innerHTML = header() + `<div class="card">${ev.length ? ev.map((e) => `<div class="log-row"><span class="when">${fmtTime(e.at)}</span><span class="dot ${evTone(e)}"></span>
-    <span class="msg">${e.slug ? `<a href="#" onclick="openJob('${esc(e.slug)}');return false">${esc(e.slug.replace(/-[a-z0-9]{8}$/, "").replace(/-/g, " "))}</a>: ` : ""}${evText(e)}</span></div>`).join("") : empty("act", "No activity yet", "")}</div>`;
+    <span class="msg">${e.slug ? `<a href="#" data-open-job="${esc(e.slug)}">${esc(e.slug.replace(/-[a-z0-9]{8}$/, "").replace(/-/g, " "))}</a>: ` : ""}${evText(e)}</span></div>`).join("") : empty("act", "No activity yet", "")}</div>`;
 }
 
 // ---------- drawer ----------
@@ -388,6 +388,16 @@ function focusSoon(get, tries = 10) {
   if (document.activeElement !== el && tries > 0) requestAnimationFrame(() => focusSoon(get, tries - 1));
 }
 let opener = null;
+// Clicks on what carries a job, a link, a page or a tab: one listener, and no value ever inside inline
+// JavaScript (an apostrophe in a job's slug or link can't break out of anything).
+document.addEventListener("click", (e) => {
+  const t = e.target.closest && e.target.closest("[data-open-job], [data-open-url], [data-go], [data-tab]");
+  if (!t) return;
+  if (t.hasAttribute("data-open-job")) { e.preventDefault(); e.stopPropagation(); openJob(t.getAttribute("data-open-job")); }
+  else if (t.hasAttribute("data-open-url")) { e.preventDefault(); window.ja.openExternal(t.getAttribute("data-open-url")); }
+  else if (t.hasAttribute("data-go")) { e.preventDefault(); go(t.getAttribute("data-go")); }
+  else if (t.hasAttribute("data-tab")) { dtab = t.getAttribute("data-tab"); renderDrawer(); $("tab-" + dtab).focus(); }
+});
 function closeDrawer() {
   const was = $("drawer").classList.contains("open");
   $("drawer").classList.remove("open"); $("scrim").classList.remove("open"); $("drawer").setAttribute("aria-hidden", "true"); open = null;
@@ -410,7 +420,7 @@ function renderDrawer() {
     j.status === "filled" && !j.reviewed ? `<button class="btn sm primary" onclick="act('reviewed')">${icon("check")}I checked these answers</button>` : "",
     j.status === "filled" && j.reviewed ? `<span class="tag">${icon("check")}You checked this one</span>` : "",
     j.status === "manual" && !j.resume_file ? `<button class="btn sm" onclick="makeResume(this)">${icon("file")}Make my resume for this job</button>` : "",
-    j.status === "manual" ? `<button class="btn sm primary" onclick="window.ja.openExternal('${esc(j.apply_url || j.url)}')">${icon("ext")}Open the application</button>
+    j.status === "manual" ? `<button class="btn sm primary" data-open-url="${esc(j.apply_url || j.url)}">${icon("ext")}Open the application</button>
       <button class="btn sm" onclick="act('applied-myself')">${icon("check")}I applied</button>` : "",
     ["queued", "manual"].includes(j.status) ? `<button class="btn sm danger" onclick="act('skip')">${icon("skip")}Skip</button>` : "",
     ["failed", "skipped", "filled"].includes(j.status) ? `<button class="btn sm ${(j.status === "filled" && !j.reviewed) || (j.asks || []).length ? "" : "primary"}" onclick="act('retry')">${icon("retry")}${j.status === "skipped" ? "Queue it" : "Try again"}</button>` : "",
@@ -425,7 +435,7 @@ function renderDrawer() {
       <div class="callout ${toneCallout}"><div><b>${esc(c.label)}${j.applied_at ? ", " + fmtTime(j.applied_at) : ""}</b>${esc(humanReason(j))}</div></div>
       <div class="dr-actions">${actions}</div>
     </div>
-    <div class="tabs" role="tablist" aria-label="About this application">${tabs.map(([k, l]) => `<button type="button" role="tab" id="tab-${k}" aria-selected="${dtab === k}" class="${dtab === k ? "on" : ""}" onclick="dtab='${k}';renderDrawer();$('tab-${k}').focus()">${l}</button>`).join("")}</div>
+    <div class="tabs" role="tablist" aria-label="About this application">${tabs.map(([k, l]) => `<button type="button" role="tab" id="tab-${k}" aria-selected="${dtab === k}" class="${dtab === k ? "on" : ""}" data-tab="${k}">${l}</button>`).join("")}</div>
     <div class="dr-body" role="tabpanel" aria-labelledby="tab-${dtab}">${drawerTab(j, d)}</div>`;
 }
 // Questions the app stopped on: the user answers them here and the job goes back in the queue.
@@ -591,7 +601,7 @@ function updateBanner() {
   if (!u || !u.info || !["available", "downloading", "waiting", "installing", "error"].includes(u.phase)) return "";
   if (u.phase === "error" && !u.info.newer) return "";
   const v = esc(u.info.latest);
-  const page = `<button class="btn sm" onclick="window.ja.openExternal('${esc(u.info.url)}')">${icon("ext")}What's new</button>`;
+  const page = `<button class="btn sm" data-open-url="${esc(u.info.url)}">${icon("ext")}What's new</button>`;
   let body, actions = "";
   if (u.phase === "available") {
     body = `<b>Version ${v} is available</b>You have ${esc(u.info.current)}. Updating keeps all your data and settings, and the app restarts by itself.`;
@@ -604,7 +614,7 @@ function updateBanner() {
     body = `<b>Installing version ${v}</b>The app closes and opens again in a moment.`;
   } else {
     body = `<b>The update did not install</b>${esc(u.error || "")}`;
-    actions = `<button class="btn sm" onclick="window.ja.openExternal('${esc(u.info.url)}')">${icon("ext")}Download it instead</button>${u.packaged ? `<button class="btn sm primary" onclick="installUpdate()">Try again</button>` : ""}`;
+    actions = `<button class="btn sm" data-open-url="${esc(u.info.url)}">${icon("ext")}Download it instead</button>${u.packaged ? `<button class="btn sm primary" onclick="installUpdate()">Try again</button>` : ""}`;
   }
   return `<div class="banner ${u.phase === "error" ? "amber" : "blue"}">${icon("upload")}<div style="flex:1">${body}</div>${actions ? `<div class="right">${actions}</div>` : ""}</div>`;
 }
@@ -626,7 +636,7 @@ function banners() {
   let h = updateBanner();
   const waiting = st.toAnswer || { count: 0 };
   if (waiting.count && waiting.first) h += `<div class="banner amber">${icon("alert")}<div><b>${waiting.count} application${waiting.count === 1 ? " is" : "s are"} waiting for your answer</b>The app stopped on questions only you can answer. Answer them and it carries on with your answers.</div>
-    <div class="right"><button class="btn sm primary" onclick="openJob('${esc(waiting.first.slug)}')">Answer now</button></div></div>`;
+    <div class="right"><button class="btn sm primary" data-open-job="${esc(waiting.first.slug)}">Answer now</button></div></div>`;
   // A search that found nothing because a site would not open, said plainly instead of "queue empty".
   const sr = st.search;
   if (sr && sr.aiProblem && view === "overview") {
@@ -656,7 +666,7 @@ function banners() {
   if (s.dryRun && !s.reviewedDryRun) {
     h += st.firstFilled
       ? `<div class="banner violet">${icon("eye")}<div><b>Your first application is filled in, not sent</b>Check every answer, the resume and the screenshot for ${esc(String(st.firstFilled.company).replace(/\.$/, ""))}. The autopilot waits until you do.</div>
-          <div class="right"><button class="btn sm primary" onclick="openJob('${esc(st.firstFilled.slug)}')">Review it</button></div></div>`
+          <div class="right"><button class="btn sm primary" data-open-job="${esc(st.firstFilled.slug)}">Review it</button></div></div>`
       : `<div class="banner violet">${icon("eye")}<div><b>Dry run</b>The first good match will be filled in but not submitted, so you can check it before anything goes out.</div></div>`;
   } else if (s.dryRun) {
     h += `<div class="banner amber">${icon("alert")}<div><b>Dry run is on</b>Forms are filled and checked but never submitted. Turn on Go live in the sidebar to start applying.</div>

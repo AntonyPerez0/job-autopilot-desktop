@@ -58,8 +58,11 @@ export function mergeProfiles(a, b) {
       const same = out.skills.find((y) => norm(y.label) === norm(s.label));
       if (same) {
         const items = String(same.items || "").split(/,\s*/).filter(Boolean);
-        for (const it of String(s.items || "").split(/,\s*/)) if (it && !items.some((x) => norm(x) === norm(it))) items.push(it);
+        let added = false;
+        for (const it of String(s.items || "").split(/,\s*/)) if (it && !items.some((x) => norm(x) === norm(it))) { items.push(it); added = true; }
         same.items = items.join(", ");
+        // New items from a resume the person hasn't reviewed: the group waits for their approval again.
+        if (added) same.approved = false;
         map.skills[s.id] = same.id;
       } else { const id = freeId(s.id, taken); map.skills[s.id] = id; out.skills.push({ ...s, id }); }
     }
@@ -121,10 +124,14 @@ export async function importResumes(files, onStep = () => {}, settings = aiSetti
     texts.push(text);
     onStep(`Turning ${f.name} into a profile (${i + 1} of ${files.length})`);
     const p = await Tailor.profileFromText(settings, text);
-    merged = merged ? mergeProfiles(merged, p) : p;
+    // The first one gets the same safe ids as a merge (the model chooses them; they end up in the page).
+    merged = merged ? mergeProfiles(merged, p) : mergeProfiles({ ...p, name: "", contact: {}, summaries: [], headers: [], skills: [], experience: [], projects: [], education: [], bases: [], cannotClaim: [] }, p);
   }
   // The "own voice" paragraph is for words the person wrote themselves; the AI copies the example's and invents one.
   if (merged) delete merged.essaySample;
+  // Instructions and title variants the model wrote would steer every later prompt and the resume's title
+  // without anyone reviewing them: they're not kept.
+  if (merged) { delete merged.titleVariants; if (merged.rules) delete merged.rules.instructions; }
   // Dates one way ("Jun 2021 – Present"), whatever style the uploaded resume used.
   if (merged) for (const k of ["experience", "projects"]) for (const e of merged[k] || []) if (e.dates) e.dates = fmtRange(e.dates);
   return { profile: unapproved(merged), texts };

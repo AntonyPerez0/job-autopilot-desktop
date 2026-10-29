@@ -3,6 +3,7 @@
 import { call } from "../freehire.js";
 import { classify } from "../ats.js";
 import { citiesNear } from "../geo.js";
+import { thisCycle } from "./budget.js";
 
 // The boards freehire collects from whose forms the app can fill without an account.
 export const BOARDS = ["greenhouse", "lever", "ashby", "smartrecruiters", "workable"];
@@ -33,8 +34,9 @@ export async function search(prefs, { progress = () => {}, log = () => {} }) {
     if (prefs.remote) runs.push({ query, countries: [prefs.remoteCountry], work_mode: ["remote"], sources: BOARDS, posted_within_days: prefs.postedWithinDays, limit: 50 });
   }
   const out = [];
-  for (const [i, args] of runs.entries()) {
-    progress({ label: `freehire: "${args.query}"${args.cities ? "" : " remote"}`, i, n: runs.length });
+  const now = thisCycle(runs, "freehire");
+  for (const [i, args] of now.entries()) {
+    progress({ label: `freehire: "${args.query}"${args.cities ? "" : " remote"}`, i, n: now.length });
     try { for (const j of (await call("search_jobs", args)).jobs || []) out.push(normalize(j)); }
     catch (e) { log(`freehire search "${args.query}" failed: ${e.message}`); }
   }

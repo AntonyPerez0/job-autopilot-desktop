@@ -87,3 +87,29 @@ test("government job sites are the person's to apply to, and GovernmentJobs.com 
     assert.match(manualReason(j), /GovernmentJobs.com: it needs a free account there, and the app doesn't open that site/);
   } finally { globalThis.fetch = real; }
 });
+
+test("many titles and places: at most 12 searches a cycle, each source taking turns (audit 2.5)", async () => {
+  await store.setSecret("usajobsKey", "k123");
+  store.saveSettings({ usajobsEmail: "jordan@example.com", rotate: {} });
+  const real = globalThis.fetch;
+  const asked = [];
+  globalThis.fetch = async (url, opts) => {
+    const u = String(url);
+    if (/freehire/.test(u)) { const a = JSON.parse(opts.body).params.arguments; asked.push("fh:" + a.query + (a.cities ? "" : " remote")); return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { structuredContent: { jobs: [] } } }), { status: 200 }); }
+    asked.push("us:" + new URL(u).searchParams.get("Keyword") + (new URL(u).searchParams.get("RemoteIndicator") ? " remote" : ""));
+    return new Response(JSON.stringify({ SearchResult: { SearchResultItems: [] } }), { status: 200 });
+  };
+  try {
+    const prefs = { titles: [...Array(20)].map((_, i) => "Title " + i), cities: [{ name: "Sacramento", region: "CA", country: "US", lat: 38.58, lon: -121.49 }], radius: 25, remote: true, remoteCountry: "US" };
+    await U.search(prefs, {});
+    assert.strictEqual(asked.length, 12, "one cycle: 12 of the 40 searches");
+    const first = asked.splice(0);
+    await U.search(prefs, {});
+    assert.strictEqual(asked.length, 12);
+    assert.ok(!asked.some((x) => first.includes(x)), "the next cycle takes the next ones");
+    asked.length = 0;
+    const F = await import("../core/sources/freehire.js");
+    await F.search(prefs, {});
+    assert.ok(asked.length <= 12 && asked.every((x) => x.startsWith("fh:")), `freehire: ${asked.length}`);
+  } finally { globalThis.fetch = real; }
+});
