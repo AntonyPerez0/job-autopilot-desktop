@@ -57,7 +57,7 @@ const startHour = () => Math.max(0, Math.min(23, Number(getSettings().dayStartsA
 // An application "day" runs from dayStartsAtHour to the same hour the next day (local time).
 export function appliedToday() {
   const shift = `-${startHour()} hours`;
-  return getDb().prepare("SELECT COUNT(*) n FROM jobs WHERE status IN ('applied', 'submitting') AND date(applied_at, 'localtime', ?) = date('now', 'localtime', ?)").get(shift, shift).n;
+  return getDb().prepare("SELECT COUNT(*) n FROM jobs WHERE status IN ('applied', 'submitting') AND applied_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(applied_at, 'localtime', ?) = date('now', 'localtime', ?)").get(shift, shift).n;
 }
 
 // When the current application day ends, as a timestamp.

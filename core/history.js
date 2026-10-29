@@ -47,6 +47,15 @@ export function parseHistory(buf) {
 
 // Merge a history into this computer's jobs. A job already here as queued, skipped or filled
 // becomes applied; nothing already applied changes.
+// When it was applied to, as an ISO instant, or null: a date that can't be read ("now") or lies in the future
+// would otherwise count toward today's limit forever. SQLite's own "YYYY-MM-DD HH:MM:SS" is UTC.
+export function isoAt(x) {
+  const s = String(x || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?(Z|[+-]\d{2}:?\d{2})?)?$/.test(s)) return null;
+  const t = Date.parse(/[ T]\d/.test(s) && !/(Z|[+-]\d{2}:?\d{2})$/.test(s) ? s.replace(" ", "T") + "Z" : s);
+  return Number.isFinite(t) && t <= Date.now() + 5 * 60000 ? new Date(t).toISOString() : null;
+}
+
 export function importHistory(buf) {
   const doc = parseHistory(buf);
   const db = getDb();
@@ -62,9 +71,9 @@ export function importHistory(buf) {
       const status = j.maybe ? "failed" : "applied";
       const reason = j.maybe ? "imported: it may have gone through on your other computer. Check your email before using Try again." : "applied (imported from your history)";
       const cur = get.get(j.s);
-      if (!cur) { ins.run(j.s, jobKey(j.c, j.t), j.t, j.c, j.l || "", j.u || "", j.a || j.u || "", status, reason, j.at || null); added++; }
+      if (!cur) { ins.run(j.s, jobKey(j.c, j.t), j.t, j.c, j.l || "", j.u || "", j.a || j.u || "", status, reason, isoAt(j.at)); added++; }
       else if (cur.status === "applied" || cur.status === "submitting" || (cur.status === "failed" && j.maybe)) already++;
-      else { upd.run(status, reason, j.at || null, j.s); updated++; }
+      else { upd.run(status, reason, isoAt(j.at), j.s); updated++; }
     }
     db.exec("COMMIT");
   } catch (e) { db.exec("ROLLBACK"); throw e; }

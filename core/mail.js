@@ -27,9 +27,23 @@ export const PRESETS = {
 
 // ---------- pure parts (unit tested) ----------
 
+// An email's HTML is read up to 200,000 characters, with patterns that stop at the next tag.
+const MAX_HTML = 200000;
+// Script and style blocks out, in one pass: once a block has no end, nothing after it can end either.
+function dropBlocks(h) {
+  const low = h.toLowerCase(), rx = /<(script|style)\b[^<>]*>/gi;
+  let out = "", at = 0, m;
+  while ((m = rx.exec(h))) {
+    const close = low.indexOf("</" + m[1].toLowerCase() + ">", rx.lastIndex);
+    if (close < 0) break;
+    out += h.slice(at, m.index) + " ";
+    at = rx.lastIndex = close + m[1].length + 3;
+  }
+  return out + h.slice(at);
+}
 export function htmlToText(html) {
-  return String(html || "").replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, " ")
-    .replace(/<br\s*\/?>|<\/p>|<\/div>|<\/td>|<\/h\d>/gi, "\n").replace(/<[^>]+>/g, " ")
+  return dropBlocks(String(html || "").slice(0, MAX_HTML))
+    .replace(/<br\s*\/?>|<\/p>|<\/div>|<\/td>|<\/h\d>/gi, "\n").replace(/<[^<>]*>/g, " ")
     .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&#39;|&apos;/g, "'").replace(/&quot;/g, '"');
 }
 
@@ -59,7 +73,8 @@ export function findCode(text) {
 export const LINK_SUBJECT = /verify|activate|confirm|validate|complete your (account|registration)|welcome/i;
 export function findLink(html, text, hostHint = "") {
   const links = [];
-  for (const m of String(html || "").matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) links.push({ url: m[1].replace(/&amp;/g, "&"), label: htmlToText(m[2]).trim() });
+  const h = String(html || "").slice(0, MAX_HTML), end = h.toLowerCase().lastIndexOf("</a>");
+  for (const m of h.slice(0, end + 4).matchAll(/<a\b[^<>]*href=["']([^"'<>]+)["'][^<>]*>([\s\S]*?)<\/a>/gi)) links.push({ url: m[1].replace(/&amp;/g, "&"), label: htmlToText(m[2]).trim() });
   for (const m of String(text || "").matchAll(/https?:\/\/[^\s<>"')]+/g)) links.push({ url: m[0], label: "" });
   const host = (u) => { try { return new URL(u).hostname.toLowerCase(); } catch { return ""; } };
   const hint = String(hostHint || "").toLowerCase();

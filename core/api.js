@@ -22,12 +22,31 @@ import { plainAiError } from "./llm.js";
 import { applyFill, fillQuestions } from "./fill.js";
 import { listAccounts, passwordProblems } from "./accounts.js";
 import { addJob } from "./addjob.js";
-import { addRecalled, applySuggestion, checklist, createFromInterview, progress as writing, recallFor, rewriteWithAnswer, setProgress, suggestImprovements } from "./studio.js";
+import { addRecalled, applySuggestion, checklist, createFromInterview, progress as writing, recallFor, resetAskBudget, rewriteWithAnswer, setProgress, suggestImprovements } from "./studio.js";
 import { importProjects, listRepos, placeProjects, usernameOf } from "./github.js";
 import { asksFor, removeYourAnswer, saveYourAnswers } from "./asked.js";
 import { monthUse, testKey as testSerpKey } from "./sources/google.js";
 import { testKey as testUsajobsKey } from "./sources/usajobs.js";
 import { backupFile, collect, exportHistory, importHistory, peekBackup, writeBackup } from "./history.js";
+
+// What the window sends is bounded before it reaches a paid model call: so many entries, so many characters.
+const cut = (v, n) => (typeof v === "string" ? v.slice(0, n) : v);
+const upTo = (a, n) => (Array.isArray(a) ? a : []).slice(0, n);
+const strings = (o, n) => { const x = { ...(o && typeof o === "object" && !Array.isArray(o) ? o : {}) }; for (const k of Object.keys(x)) x[k] = cut(x[k], n); return x; };
+export function capInterview(iv) {
+  const o = strings(iv, 5000);
+  o.jobs = upTo(o.jobs, 50).map((j) => { const x = strings(j, 5000); if ("confirmed" in x) x.confirmed = upTo(x.confirmed, 30).map((c) => strings(c, 5000)); return x; });
+  if ("education" in o) o.education = upTo(o.education, 50).map((e) => strings(e, 5000));
+  return o;
+}
+export function capFill(input) {
+  const o = { ...(input && typeof input === "object" ? input : {}) };
+  for (const k of ["jobs", "volunteer", "certs", "records", "school", "ai"]) if (k in o) o[k] = upTo(o[k], 20).map((x) => strings(x, 5000));
+  const seen = new Set();
+  // the numbers questions route asks at most 5; the same line once
+  o.numbers = upTo(o.numbers, 50).map((x) => strings(x, 500)).filter((x) => x.path && !seen.has(x.path) && seen.add(x.path)).slice(0, 5);
+  return o;
+}
 
 // Where a stored secret may go: the same origin (AI) or the same host (mail) it was saved with.
 const originOfUrl = (u) => { try { const x = new URL(String(u || "")); return x.origin.toLowerCase().replace(/\.(?=:|$)/, ""); } catch { return ""; } };
@@ -174,7 +193,12 @@ const ROUTES = {
     return { ok: true, hasKey: !!getSecret("apiKey") };
   },
   "POST /api/resumes/import": async (b) => {
-    const files = (b.files || []).map((f) => ({ name: f.name, bytes: Buffer.from(f.b64, "base64") }));
+    // At most 10 files of 2 MB each (checked before decoding).
+    if ((b.files || []).length > 10) return bad("Add at most 10 resumes at a time.");
+    const big = (b.files || []).find((f) => String(f.b64 || "").length * 0.75 > 2 * 1024 * 1024);
+    if (big) return bad(`${String(big.name || "A file").slice(0, 80)} is larger than 2 MB. Save it as a smaller PDF or DOCX and try again.`);
+    const files = (b.files || []).map((f) => ({ name: String(f.name || "").slice(0, 200), bytes: Buffer.from(String(f.b64 || ""), "base64") }));
+    if (b.text) b.text = String(b.text).slice(0, 200000);
     if (!files.length && !b.text) return bad("Add at least one resume.");
     if (!aiSettings().apiKey) return bad("Add your AI key first (step 1).");
     let profile;
@@ -268,7 +292,7 @@ const ROUTES = {
   "GET /api/resume/progress": () => ({ ...writing }),
   "POST /api/resume/create": async (b) => {
     if (!aiSettings().apiKey) return bad("Connect an AI first (Settings > AI).");
-    const iv = b.interview || {};
+    const iv = capInterview(b.interview || {});
     if (!(iv.jobs || []).some((j) => j.title || j.employer) && !(iv.education || []).some((e) => e.school)) return bad("Add at least one job or school.");
     try {
       setProgress(0, 4, "Starting");
@@ -305,7 +329,9 @@ const ROUTES = {
   },
   // Jog the memory: "Did you also ...?" from the official task list for that kind of job.
   "POST /api/resume/recall": async (b) => {
-    const job = b.job || {};
+    const j0 = b.job || {};
+    const job = { ...j0, title: cut(j0.title, 300), employer: cut(j0.employer, 300), daily: cut(j0.daily, 4000), proud: cut(j0.proud, 4000), tools: cut(j0.tools, 4000),
+      ...("existing" in j0 ? { existing: upTo(j0.existing, 20).map((x) => cut(String(x), 4000)) } : {}) };
     if (!job.entryId && !String(job.title || "").trim()) return bad("Type the job title first.");
     if (job.entryId) {
       const e = [...(getProfile().experience || []), ...(getProfile().projects || [])].find((x) => x.id === job.entryId);
@@ -316,11 +342,11 @@ const ROUTES = {
   },
   "POST /api/resume/recall/add": async (b) => {
     if (!(b.confirmed || []).length) return bad("Say yes to at least one thing first.");
-    try { const r = await addRecalled(getProfile(), b.entryId, b.confirmed, getAnswers()); saveProfile(r.profile); return r; } catch (e) { return bad(e.message); }
+    try { const r = await addRecalled(getProfile(), b.entryId, upTo(b.confirmed, 15).map((c) => strings(c, 500)), getAnswers()); saveProfile(r.profile); return r; } catch (e) { return bad(e.message); }
   },
   // A version of the resume for one kind of job, and a recruiter's read of a version.
   "POST /api/resume/version": async (b) => {
-    const target = String(b.target || "").trim();
+    const target = String(b.target || "").trim().slice(0, 200);
     if (!target) return bad("Type the kind of job, e.g. CDL driving or IT support.");
     if (!aiSettings().apiKey) return bad("Connect an AI first (Settings > AI).");
     try { const r = await makeVersion(getProfile(), target, getAnswers()); saveProfile(r.profile); return r; } catch (e) { return bad(e.message); }
@@ -329,7 +355,7 @@ const ROUTES = {
     if (!aiSettings().apiKey) return bad("Connect an AI first (Settings > AI).");
     try {
       const raw = getProfile();
-      const review = await recruiterReview(raw, { base: b.base, target: b.target, posting: String(b.posting || "").trim() });
+      const review = await recruiterReview(raw, { base: b.base, target: String(b.target || "").slice(0, 120), posting: String(b.posting || "").trim().slice(0, 12000) });
       // Stage 1, before any person reads it: the screening software.
       try { review.screening = await screening(loadProfile(raw), review.base); } catch { review.screening = null; }
       return review;
@@ -344,7 +370,7 @@ const ROUTES = {
   "POST /api/resume/fill/apply": async (b) => {
     if (!getProfile()) return bad("Make your resume first.");
     if (!aiSettings().apiKey) return bad("Connect an AI first (Settings > AI).");
-    try { const r = await applyFill(getProfile(), b.input || {}, getAnswers()); placeProjects(r.profile); saveProfile(r.profile); return r; } catch (e) { return bad(e.message); }
+    try { const r = await applyFill(getProfile(), capFill(b.input || {}), getAnswers()); placeProjects(r.profile); saveProfile(r.profile); return r; } catch (e) { return bad(e.message); }
   },
   "POST /api/resume/check": async () => {
     const raw = getProfile();
@@ -370,7 +396,8 @@ const ROUTES = {
   },
   "POST /api/resume/answer": async (b) => {
     if (!String(b.answer || "").trim()) return bad("Type your answer first.");
-    try { return await rewriteWithAnswer(getProfile(), getAnswers(), b); } catch (e) { return bad(e.message); }
+    const q = { ...b, original: cut(b.original, 12000), question: cut(b.question, 12000), answer: cut(b.answer, 12000), current: cut(b.current, 12000) };
+    try { return await rewriteWithAnswer(getProfile(), getAnswers(), q); } catch (e) { return bad(e.message); }
   },
   "POST /api/resume/apply": (b) => {
     if (!String(b.text || "").trim()) return bad("The line is empty.");
@@ -499,6 +526,7 @@ export function yearsFromInterview(iv, a, now = new Date()) {
 }
 
 export async function handle(route, body) {
+  resetAskBudget();
   const u = new URL(String(route), "http://app");
   const method = body === undefined || body === null ? "GET" : "POST";
   try {

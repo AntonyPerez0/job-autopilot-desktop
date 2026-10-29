@@ -7,14 +7,15 @@ const PCT = String.raw`(?:about |around |roughly |approximately )?\d[\d,.]*\s?%`
 const keepCase = (from, to) => (from[0] === from[0].toUpperCase() ? to[0].toUpperCase() + to.slice(1) : to);
 
 export function houseStyle(text) {
-  let s = String(text || "");
+  // One resume line or summary; the looks-ahead below stay within 200 characters of their verb.
+  let s = String(text || "").slice(0, 5000);
   // Estimates: one word for "about" before a number.
   s = s.replace(/\b(approximately|roughly|around)(?=\s+\$?\d)/gi, (m) => keepCase(m, "about"));
   s = s.replace(/(\d)\s?percent\b/gi, "$1%");
   // A decrease with its measure is "Cut", an increase "Increased"; "by 50%" after the verb is just "50%".
-  s = s.replace(new RegExp(String.raw`\b(decreased|lowered|reduced|decrease|lower|reduce|decreasing|lowering|reducing)\b(?=[^,.;]*?\d[\d,.]*\s?%|[^,.;]*?\bfrom [^,.;]*\d[^,.;]* to [^,.;]*\d)`, "gi"), (m) => keepCase(m, /ing$/i.test(m) ? "cutting" : "cut"));
-  s = s.replace(new RegExp(String.raw`\b(raised|boosted|grew|raise|boost|grow|raising|boosting|growing)\b(?=[^,.;]*?\d[\d,.]*\s?%)`, "gi"), (m) => keepCase(m, /ing$/i.test(m) ? "increasing" : /^(raise|boost|grow)$/i.test(m) ? "increase" : "increased"));
-  s = s.replace(new RegExp(String.raw`\b((?:cut|cutting|increased|increase|increasing) [^,.;]+?) by (${PCT})`, "gi"), "$1 $2");
+  s = s.replace(new RegExp(String.raw`\b(decreased|lowered|reduced|decrease|lower|reduce|decreasing|lowering|reducing)\b(?=[^,.;]{0,200}?\d[\d,.]*\s?%|[^,.;]{0,200}?\bfrom [^,.;]{0,200}?\d[^,.;]{0,200}? to [^,.;]{0,200}?\d)`, "gi"), (m) => keepCase(m, /ing$/i.test(m) ? "cutting" : "cut"));
+  s = s.replace(new RegExp(String.raw`\b(raised|boosted|grew|raise|boost|grow|raising|boosting|growing)\b(?=[^,.;]{0,200}?\d[\d,.]*\s?%)`, "gi"), (m) => keepCase(m, /ing$/i.test(m) ? "increasing" : /^(raise|boost|grow)$/i.test(m) ? "increase" : "increased"));
+  s = s.replace(new RegExp(String.raw`\b((?:cut|cutting|increased|increase|increasing) [^,.;]{1,200}?) by (${PCT})`, "gi"), "$1 $2");
   // How often, after a count: "60 tickets daily", "per day", "each day" -> "a day".
   // Only right after a count in the same part of the sentence ("about 10 people monthly"), never a "monthly"
   // that says how often something happens ("sort donations monthly, about 300 pounds").

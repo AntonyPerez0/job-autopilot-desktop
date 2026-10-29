@@ -134,3 +134,15 @@ test("a number answer whose rewording fails is added to their own line, word for
   assert.strictEqual(b.text, "Respond to dispatched breakdown and accident calls, about 10 calls a shift");
   assert.match(b.warning, /as you typed it/);
 });
+
+test("the same line sent many times is rewritten once (audit 3.3)", async () => {
+  let rewrites = 0;
+  reply = (sys) => {
+    if (/You rewrite one resume line/.test(sys)) { rewrites++; return { text: "Respond to dispatched breakdown and accident calls, about 10 a shift" }; }
+    return {};
+  };
+  const same = { path: "experience.tow.calls", question: "How many calls a shift?", answer: "About 10 calls a shift" };
+  const r = await F.applyFill(resume(), { numbers: [same, same, same, { ...same, answer: "About 12 calls a shift" }] });
+  assert.strictEqual(r.profile.experience[0].bullets.filter((x) => x.replaces === "calls").length, 1);
+  assert.ok(rewrites >= 1 && rewrites <= 3, `one line's rewrite, not four: ${rewrites} calls`);
+});

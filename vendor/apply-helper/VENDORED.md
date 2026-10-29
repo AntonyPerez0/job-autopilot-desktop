@@ -43,4 +43,8 @@ Local changes, kept as small as possible:
    larger spreads the rest of the space between sections and entries, within limits, so the page doesn't
    stop two thirds of the way down; the largest setting is 1.22.
 
-To update: copy the new files over these, reapply the nine edits, run `npm test`.
+10. `tailor.js` (`parseJSON`): the model's reply is read up to 400,000 characters, and the JSON inside
+    other text is found from the first `{` to the last `}` with indexOf (the same span `/\{[\s\S]*\}/`
+    matched, without its quadratic time on a reply full of braces). Security audit 3.6.
+
+To update: copy the new files over these, reapply the ten edits, run `npm test`.

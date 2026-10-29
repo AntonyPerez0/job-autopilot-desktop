@@ -66,7 +66,8 @@ export async function repoFacts(user, name) {
     gh(`/repos/${u}/${name}/languages`).catch(() => null), gh(`/repos/${u}/${name}/contributors?per_page=20`).catch(() => null),
   ]);
   if (!repo) throw new Error(`Couldn't find ${u}/${name}.`);
-  const text = String(readme || "").replace(/<[^>]+>/g, " ").replace(/!\[[^\]]*\]\([^)]*\)/g, " ").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+  // At most 100,000 characters, and patterns that stop at the next bracket, so a README built to stall them can't.
+  const text = String(readme || "").slice(0, 100000).replace(/<[^<>]*>/g, " ").replace(/!\[[^[\]]*\]\([^()]*\)/g, " ").replace(/\[([^[\]]*)\]\([^()]*\)/g, "$1")
     .replace(/```[\s\S]*?```/g, " ").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
   const clean = cleanReadme(text);
   const total = arr(contributors).reduce((n, c) => n + (c.contributions || 0), 0);

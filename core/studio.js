@@ -7,7 +7,7 @@
 // - where a number or result would make a line stronger, it asks the user instead of guessing;
 // - nothing it writes is used until the user approves it.
 import { Profile, STEADY, Tailor, aiSettings, approvedOnly } from "./engine.js";
-import { isLocal } from "./llm.js";
+import { aiRequest, isLocal } from "./llm.js";
 import { cacheKey, cached, remember } from "./aicache.js";
 import { houseStyle } from "./style.js";
 import { fmtDate } from "./dates.js";
@@ -320,18 +320,26 @@ const settings = () => aiSettings();
 export const progress = { step: "", n: 0, of: 0, at: 0 };
 export function setProgress(n, of, step) { Object.assign(progress, { n, of, step, at: Date.now() }); }
 
-// A cloud call that hasn't answered in a while gets a second, identical one; whichever answers first wins.
-// The slow one isn't cancelled (it may be about to finish), so nothing already done is thrown away.
-function hedged(call, after) {
-  if (!after) return call();
+// A cloud call that hasn't answered in a while gets a second, identical one; whichever answers first wins,
+// and the other is cancelled then (each runs with its own abort signal, which aiFetch honours).
+export function hedged(call, after) {
+  const ctrls = [];
+  const start = () => { const c = new AbortController(); ctrls.push(c); return [aiRequest.run({ signal: c.signal }, call), c]; };
+  if (!after) return start()[0];
   return new Promise((resolve, reject) => {
     let done = false, failed = 0, timer;
-    const settle = (p) => p.then((v) => { if (!done) { done = true; clearTimeout(timer); resolve(v); } },
-      (e) => { if (++failed === (timer === null ? 2 : 1) && !done) { done = true; clearTimeout(timer); reject(e); } });
-    settle(call());
-    timer = setTimeout(() => { timer = null; if (!done) settle(call()); }, after);
+    const settle = ([p, mine]) => p.then((v) => { if (!done) { done = true; clearTimeout(timer); for (const c of ctrls) if (c !== mine) c.abort(); resolve(v); } },
+      (e) => { if (++failed === (timer === null ? 2 : 1) && !done) { done = true; clearTimeout(timer); for (const c of ctrls) if (c !== mine) c.abort(); reject(e); } });
+    settle(start());
+    timer = setTimeout(() => { timer = null; if (!done) settle(start()); }, after);
   });
 }
+
+// How many paid AI attempts one request from the window may make (each API route starts a fresh budget):
+// a loop that would keep calling the model stops with a plain message instead.
+export const ASK_BUDGET = 120;
+let askLeft = ASK_BUDGET;
+export function resetAskBudget(n = ASK_BUDGET) { askLeft = n; }
 
 export async function ask(messages) {
   // The same question gets the same answer: providers vary their wording even at temperature 0, so the
@@ -341,6 +349,8 @@ export async function ask(messages) {
   if (hit !== undefined) return hit;
   let last;
   for (let i = 0; i < 3; i++) {
+    if (askLeft <= 0) throw new Error("This used more AI calls than one request may make, so it stopped. Try again with less at once.");
+    askLeft--;
     const t0 = Date.now();
     try {
       // The most likely answer every time (temperature 0, a fixed seed): the same facts give the same resume.
@@ -350,7 +360,13 @@ export async function ask(messages) {
       const plain = JSON.parse(JSON.stringify(r));
       remember(key, plain);
       return plain;
-    } catch (e) { last = e; if (process.env.JA_TIME) console.error(`[ai fail ${((Date.now() - t0) / 1000).toFixed(1)}s] ${e.message.slice(0, 80)}`); if (/Model API 4(0[0-3]|04)/.test(e.message)) break; }
+    } catch (e) {
+      last = e;
+      if (process.env.JA_TIME) console.error(`[ai fail ${((Date.now() - t0) / 1000).toFixed(1)}s] ${e.message.slice(0, 80)}`);
+      // a refusal (bad key, no credit, no such model) or a rate limit isn't helped by asking again at once
+      if (/Model API 4(0[0-3]|04|29)/.test(e.message)) break;
+      if (i < 2) await new Promise((r) => setTimeout(r, 4000 * (i + 1)));
+    }
   }
   throw last;
 }

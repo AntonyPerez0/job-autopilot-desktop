@@ -93,3 +93,19 @@ test("the backup outside the app only grows, and keeps the previous copy", () =>
   assert.strictEqual(h.writeBackup("test"), null, "turned off in Settings");
   store.saveSettings({ historyBackup: true });
 });
+
+test("an imported date that isn't a real past instant doesn't count toward today's limit (audit 3.7)", () => {
+  db.openDb(path.join(process.env.JA_DATA_DIR, "cap.db"));
+  const doc = JSON.parse(zlib.gunzipSync(h.exportHistory("test")).toString("utf8"));
+  doc.jobs = [{ s: "n1", c: "Initech", t: "Clerk", at: "now" }, { s: "n2", c: "Hooli", t: "Clerk", at: "2999-01-01T00:00:00Z" },
+    { s: "n3", c: "Globex", t: "Clerk", at: "'localtime', '+0 days" }, { s: "n4", c: "Umbrella", t: "Clerk", at: "2026-10-01 10:00:00" }];
+  h.importHistory(Buffer.from(JSON.stringify(doc)));
+  assert.strictEqual(db.appliedToday(), 0);
+  assert.deepStrictEqual(["n1", "n2", "n3"].map((s) => db.getJob(s).applied_at), [null, null, null]);
+  assert.strictEqual(db.getJob("n4").applied_at, "2026-10-01T10:00:00.000Z", "SQLite's own format, read as UTC");
+  // A row written some other way still doesn't count unless it's a date.
+  db.getDb().prepare("UPDATE jobs SET applied_at = 'now' WHERE slug = 'n1'").run();
+  assert.strictEqual(db.appliedToday(), 0);
+  db.getDb().prepare("UPDATE jobs SET applied_at = ? WHERE slug = 'n1'").run(new Date().toISOString());
+  assert.strictEqual(db.appliedToday(), 1);
+});

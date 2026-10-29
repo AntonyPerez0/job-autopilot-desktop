@@ -361,3 +361,13 @@ test("their own wording isn't stuffing, and a plain ending on a name of theirs i
   assert.deepStrictEqual(S.addedFacts("Wrote a ChatGPT-assisted guide", src), []);
   assert.deepStrictEqual(S.addedFacts("A Kubernetes-based pipeline", ["built a pipeline"]), ['"kubernetes-based"']);
 });
+
+test("house style stays fast on long adversarial text (audit 3.5)", async () => {
+  const { houseStyle } = await import("../core/style.js");
+  for (const bad of ["reduced ".repeat(130000), "reduced from 1".repeat(70000), "cut x".repeat(200000) + " by", "increased 1 per day ".repeat(50000)]) {
+    const t = Date.now();
+    houseStyle(bad);
+    assert.ok(Date.now() - t < 100, `${bad.slice(0, 20)}…: ${Date.now() - t} ms`);
+  }
+  assert.strictEqual(houseStyle("Reduced wait times by 30%"), "Cut wait times 30%", "the swaps still work");
+});

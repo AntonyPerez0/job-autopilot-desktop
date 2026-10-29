@@ -7,7 +7,7 @@ import { getSecret, getSettings } from "../store.js";
 import { thisCycle } from "./budget.js";
 
 const ENDPOINT = "https://data.usajobs.gov/api/Search";
-const strip = (h) => String(h || "").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
+const strip = (h) => String(h || "").slice(0, 100000).replace(/<[^<>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
 const money = (n) => "$" + Math.round(Number(n)).toLocaleString("en-US");
 const day = (iso) => (iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "");
 

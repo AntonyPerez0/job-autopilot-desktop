@@ -7,11 +7,29 @@ import { cleanUrl, jobKey, roleKey, sameRoleAs } from "./dedupe.js";
 import { applyUrl, manualReason } from "./discover.js";
 import { employerLinkFor } from "./sources/simplify.js";
 
-const strip = (h) => String(h || "").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&#39;|&apos;/g, "'").replace(/&quot;/g, '"').replace(/\s+/g, " ").trim();
+const strip = (h) => String(h || "").slice(0, 100000).replace(/<[^<>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&#39;|&apos;/g, "'").replace(/&quot;/g, '"').replace(/\s+/g, " ").trim();
+
+// A job page is read up to 2 MB; the rest isn't downloaded.
+export const MAX_PAGE = 2 * 1024 * 1024;
+export async function textUpTo(res, max = MAX_PAGE) {
+  if (!res.body) return "";
+  const reader = res.body.getReader(), dec = new TextDecoder();
+  let out = "", bytes = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    bytes += value.length;
+    out += dec.decode(value, { stream: true });
+    if (bytes >= max) { await reader.cancel().catch(() => {}); break; }
+  }
+  return out.slice(0, max);
+}
 
 // The JobPosting data most career pages carry for Google, if the page has it.
 export function jobPostingFrom(html) {
-  for (const m of String(html).matchAll(/<script[^>]+application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)) {
+  // Only up to the last </script>: past it no script block can close, and searching there again and again is slow.
+  const h = String(html).slice(0, MAX_PAGE), end = h.toLowerCase().lastIndexOf("</script>");
+  for (const m of h.slice(0, end + 9).matchAll(/<script[^<>]+application\/ld\+json[^<>]*>([\s\S]*?)<\/script>/gi)) {
     let d;
     try { d = JSON.parse(m[1].trim()); } catch { continue; }
     const all = [].concat(d, d && d["@graph"] ? d["@graph"] : []).flat();
@@ -31,8 +49,9 @@ export function jobPostingFrom(html) {
 }
 
 function fromTitleTag(html, host) {
-  const og = (p) => (String(html).match(new RegExp(`<meta[^>]+property=["']og:${p}["'][^>]+content=["']([^"']+)`, "i")) || [])[1];
-  const t = strip(og("title") || (String(html).match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || "");
+  html = String(html).slice(0, MAX_PAGE);
+  const og = (p) => (html.match(new RegExp(`<meta[^<>]+property=["']og:${p}["'][^<>]+content=["']([^"'<>]+)`, "i")) || [])[1];
+  const t = strip(og("title") || (html.match(/<title[^<>]*>([^<]*)<\/title>/i) || [])[1] || "");
   // "Cashier - Dessau RD - Pollo Regio": the last part names the employer (or the site).
   const parts = t.split(/\s+(?:[-|–@]|at)\s+/).map((x) => x.trim()).filter(Boolean);
   const company = parts.length > 1 ? parts.pop() : "";
@@ -81,7 +100,7 @@ export async function resolveLink(raw, { browserPage } = {}) {
   }
   try {
     const res = await fetch(url.href, { redirect: "follow", headers: { "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36" }, signal: AbortSignal.timeout(20000) });
-    const html = await res.text();
+    const html = await textUpTo(res, MAX_PAGE);
     if (res.status === 404 || res.status === 410) throw new Error("That job page is gone (the posting is probably closed).");
     info = jobPostingFrom(html) || (res.ok ? fromTitleTag(html, url.hostname) : null);
   } catch (e) { if (/gone/.test(e.message)) throw e; }

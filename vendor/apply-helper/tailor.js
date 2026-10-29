@@ -35,10 +35,10 @@
   }
 
   function parseJSON(text) {
-    const t = String(text).replace(/^\s*```(?:json)?\s*/i, "").replace(/```\s*$/, "");
+    const t = String(text).slice(0, 400000).replace(/^\s*```(?:json)?\s*/i, "").replace(/```\s*$/, "");
     try { return JSON.parse(t); } catch (e) {
-      const m = t.match(/\{[\s\S]*\}/);
-      if (m) return JSON.parse(m[0]);
+      const a = t.indexOf("{"), b = t.lastIndexOf("}");
+      if (a >= 0 && b > a) return JSON.parse(t.slice(a, b + 1));
       throw new Error("The model did not return JSON.");
     }
   }

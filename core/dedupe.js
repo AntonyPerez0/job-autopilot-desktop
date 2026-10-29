@@ -1,14 +1,16 @@
 // Never apply twice: the same posting, the same role on another board or under
 // a variant title, or a role the user already applied to outside the app.
-const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+// Names and titles are read up to 300 characters, links up to 2048, before any pattern runs on them.
+const name = (s) => String(s || "").slice(0, 300);
+const norm = (s) => name(s).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 export const jobKey = (company, title) => norm(company).split(" ").slice(0, 2).join(" ") + "|" + norm(title);
 
 // The same role at the same employer, whatever the board or the suffix on the title
 // ("... New Grad" and "... New Grad (Remote)"; "Engineer - Acme" and "Engineer").
 const STOP = new Set(["the", "a", "an", "and", "of", "for", "to", "at", "in", "remote", "hybrid", "onsite", "us", "usa"]);
 export function roleKey(company, title) {
-  const co = String(company || "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").trim().split(/\s+/)[0] || "";
-  const t = String(title || "").toLowerCase().replace(/\([^)]*\)|\[[^\]]*\]/g, " ").replace(/[^a-z0-9 ]+/g, " ")
+  const co = name(company).toLowerCase().replace(/[^a-z0-9 ]/g, " ").trim().split(/\s+/)[0] || "";
+  const t = name(title).toLowerCase().replace(/\([^)]*\)|\[[^\]]*\]/g, " ").replace(/[^a-z0-9 ]+/g, " ")
     .split(/\s+/).filter((w) => w && !STOP.has(w) && w !== co);
   return co + "|" + t.join(" ");
 }
@@ -16,11 +18,11 @@ export function roleKey(company, title) {
 // One job posted for many locations ("Delivery Driver(07800) - 5051 Auburn Blvd", "Delivery Driver(07906) - 6306 Fair
 // Oaks Blvd"): the same employer and the same title once store numbers and addresses are taken off.
 export function familyKey(company, title) {
-  const t = String(title || "").replace(/\s+[-–|:]\s+(?=.*\d).*$/, " ").replace(/\d+/g, " ");
+  const t = name(title).replace(/\s+[-–|:]\s+(?=.*\d).*$/, " ").replace(/\d+/g, " ");
   return roleKey(company, t);
 }
 
-export const cleanUrl = (u) => String(u || "").trim().replace(/[?#].*$/, "").replace(/\/(apply|application)\/?$/, "").replace(/\/+$/, "").toLowerCase();
+export const cleanUrl = (u) => String(u || "").slice(0, 2048).trim().replace(/[?#].*$/, "").replace(/\/(apply|application)\/?$/, "").replace(/\/+$/, "").toLowerCase();
 
 // The user's own list: one per line, a posting URL or "Company - Title" / "Title at Company" / "Company, Title".
 export function parseAppliedList(text) {

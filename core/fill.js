@@ -269,7 +269,10 @@ export async function applyFill(profile, input = {}, answers = {}) {
   }
 
   // A number behind a line: the line rewritten with it, taking the old line's place once approved.
+  const seenPaths = new Set(); // one rewrite per line, however often the same path was sent
   for (const x of arr(input.numbers).filter((x) => str(x.answer) && x.path)) {
+    if (seenPaths.has(String(x.path))) continue;
+    seenPaths.add(String(x.path));
     const [k, eid, bid] = String(x.path).split(".");
     const e = arr(p[k]).find((y) => y.id === eid), old = e && arr(e.bullets).find((b) => b.id === bid);
     if (!old) continue;

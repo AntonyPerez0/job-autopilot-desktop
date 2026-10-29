@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 // Every model request goes through here: a deadline, local servers (Ollama,
 // LM Studio) and servers that reject JSON mode. The add-on's Tailor.chat
 // speaks the OpenAI chat API; this adapts it without changing the add-on.
@@ -44,8 +45,12 @@ async function ollamaChat(url, body, ai, signal) {
   return new Response(JSON.stringify({ choices: [{ message: { content: (data.message && data.message.content) || "" } }] }), { status: 200, headers: { "content-type": "application/json" } });
 }
 
+// A caller can cancel the request it's running (studio's hedged calls abort the one that lost).
+export const aiRequest = new AsyncLocalStorage();
+
 export function aiFetch(url, opts = {}, ai = getSettings().ai) {
-  const signal = opts.signal || AbortSignal.timeout(timeoutMs(ai));
+  const cancel = (aiRequest.getStore() || {}).signal;
+  const signal = opts.signal || (cancel ? AbortSignal.any([cancel, AbortSignal.timeout(timeoutMs(ai))]) : AbortSignal.timeout(timeoutMs(ai)));
   const chat = /\/chat\/completions$/.test(String(url)) && opts.body;
   if (chat && providerOf(ai) === "ollama") return ollamaChat(String(url), JSON.parse(opts.body), ai, signal);
   return fetch(url, { ...opts, signal }).then(async (res) => {
