@@ -85,9 +85,14 @@ export const KIND_TEXT = {
   board: "is a job board's copy of the posting, not the employer's form",
 };
 
+// One way to read a hostname everywhere a host decides something (which ATS, a government site, which frames
+// get data): lower case, without the trailing dot that DNS allows ("www.governmentjobs.com." is the same site).
+export const canonHost = (h) => String(h || "").trim().toLowerCase().replace(/\.+$/, "");
+export const hostOf = (u) => { try { return canonHost(new URL(String(u)).hostname); } catch { return ""; } };
+
 export function classify(url) {
   let host = "";
-  try { host = new URL(String(url)).hostname.toLowerCase(); } catch { return { ats: "unknown", kind: "unknown" }; }
+  try { host = canonHost(new URL(String(url)).hostname); } catch { return { ats: "unknown", kind: "unknown" }; }
   for (const [ats, kind, rx] of RULES) if (rx.test(host)) return { ats, kind, host };
   return { ats: "unknown", kind: "unknown", host };
 }

@@ -34,6 +34,9 @@ const PAGES = {
     <label for="st">Are you currently enrolled in full-time studies? *</label><select id="st" required><option value="">Select...</option><option>Yes</option><option>No</option></select>
     <label for="yr">How many years of professional experience do you have? *</label><input id="yr" required>
     <button type="submit" onclick="if(!fn.value||!st.value||!yr.value)return;window.SUBMITTED=1;document.body.innerHTML='<h2>Thank you for applying!</h2>'">Submit application</button></form>`,
+  // A window left open by an earlier posting that keeps opening pages (audit 1.2).
+  "/leftover": `<h1>Old posting</h1><script>let n = 0; const t = setInterval(() => { window.open("/stray?" + (++n), "_blank"); if (n >= 20) clearInterval(t); }, 300);</script>`,
+  "/stray": `<h1>Sign in</h1><label for="u">Email</label><input id="u"><label for="pw">Password</label><input id="pw" type="password">`,
   "/signin": `<h1>Careers</h1><p>Sign in or create an account to apply.</p><label>Email<input></label><label>Password<input type="password"></label><button>Sign in</button>`,
 };
 let submitted = null;
@@ -103,4 +106,18 @@ test("a question only the user can answer: the job stops, the user answers in th
   assert.strictEqual(second.status, "applied", second.reason);
   assert.ok(second.details.audit.some((x) => /your answer used for "Are you currently enrolled/.test(x)));
   assert.ok(second.details.kit.some((k) => k.note === "your answer" && k.value === "2"));
+});
+
+test("a window left open by another posting never becomes this job's form, and nothing this job opened outlives it (audit 1.2)", async () => {
+  const leftover = await ctx.newPage();
+  await leftover.goto(base + "/leftover");
+  const before = new Set(ctx.pages());
+  const r = await applyTo(job("/posting", "t-leftover"), {}, { dryRun: true, browser: ctx });
+  assert.strictEqual(r.status, "filled", r.reason);
+  assert.ok(r.details.kit.some((k) => k.value === "Jordan"), "the form is the posting's own popup");
+  assert.ok(!r.details.kit.some((k) => /password/i.test(k.label)), "never a stray sign-in page");
+  const after = ctx.pages().filter((pg) => !before.has(pg));
+  assert.deepStrictEqual(after.map((pg) => pg.url()), [], "no page opened during the job is left");
+  await leftover.close();
+  for (const pg of ctx.pages().filter((x) => /\/stray/.test(x.url()))) await pg.close();
 });

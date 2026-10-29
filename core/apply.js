@@ -10,6 +10,7 @@ import { dataDir, getAnswers, getPrefs, getSettings } from "./store.js";
 import { waitForCode, waitForLink } from "./mail.js";
 import { isWorkday, siteAccounts, workdayAccount, workdayApplyManually } from "./accounts.js";
 import { withinRadius } from "./geo.js";
+import { canonHost } from "./ats.js";
 import { applyYourAnswers, yourAnswersFor } from "./asked.js";
 import { LOGIN_WALL_JS } from "./ats.js";
 
@@ -133,7 +134,7 @@ function comboFallback(a) {
 
 async function fillCombos(page, kit, regionHint = "") {
   const left = [];
-  for (const f of page.frames()) {
+  for (const f of formFrames(page)) {
     for (const c of await f.evaluate(COMBOS_JS).catch(() => [])) {
       const a = kitAnswer(kit, c.label, c.text);
       const fb = COMBO_FALLBACK.find(([rx]) => rx.test(c.label));
@@ -167,7 +168,7 @@ async function fixDropdowns(page, kit, labels) {
     const k = kitAnswer(kit, label);
     if (!k || !k.value) continue;
     const name = label.replace(/\*\s*$/, "").trim().slice(0, 60).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    for (const f of page.frames()) {
+    for (const f of formFrames(page)) {
       const box = f.getByRole("combobox", { name: new RegExp("^\\s*" + name) }).first();
       if (!(await box.count().catch(() => 0))) continue;
       try {
@@ -218,7 +219,7 @@ export async function verifyCombos(page, kit, fields) {
     const k = kitAnswer(kit, f.label);
     if (!k || !k.value || tellingWords(k.value).length === 0) continue;
     const name = f.label.replace(/\*\s*$/, "").trim().slice(0, 60).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    for (const fr of page.frames()) {
+    for (const fr of formFrames(page)) {
       const box = fr.getByRole("combobox", { name: new RegExp("^\\s*" + name) }).first();
       if (!(await box.count().catch(() => 0))) continue;
       const shown = await box.evaluate(SHOWN_JS).catch(() => "");
@@ -315,7 +316,7 @@ export async function choicesOn(page, label) {
   const name = String(label).replace(/\*\s*$/, "").trim().slice(0, 60).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   if (!name) return [];
   const clean = (list) => [...new Set(list.map((t) => String(t).replace(/\s+/g, " ").trim()).filter((t) => t && t.length < 200 && !/^(select|choose|please select|--|—)/i.test(t)))].slice(0, 60);
-  for (const f of page.frames()) {
+  for (const f of formFrames(page)) {
     const rx = new RegExp("^\\s*" + name, "i");
     for (const box of [f.getByLabel(rx).first(), f.getByRole("combobox", { name: rx }).first(), f.getByRole("button", { name: rx }).first()]) {
       if (!(await box.count().catch(() => 0))) continue;
@@ -362,7 +363,7 @@ function kitAnswer(kit, label, text = "") {
 
 export async function answerGroups(page, kit) {
   const unanswered = [];
-  for (const f of page.frames()) {
+  for (const f of formFrames(page)) {
     const groups = await f.evaluate(GROUPS_JS).catch(() => []);
     for (const g of groups) {
       const a = kitAnswer(kit, g.label, g.text);
@@ -441,18 +442,127 @@ export const UNHIDE_JS = `(() => {
   return n;
 })()`;
 
-async function inject(page) {
-  for (const f of page.frames()) {
-    try { await f.evaluate(UNHIDE_JS); await f.evaluate(SHIM + "\n" + CONTENT_JS); } catch { /* detached or blocked frame */ }
+// ---------- which frames may see the person's data ----------
+// Only the form itself: frames on the main page's origin, or a known ATS's embedded form. An ad, a tracker
+// or any other page in a frame never receives an answer, the resume, or the bridge to content.js.
+export const ATS_EMBEDS = ["greenhouse.io", "lever.co", "ashbyhq.com", "myworkdayjobs.com", "smartrecruiters.com", "workable.com"];
+const originOf = (u) => { try { const x = new URL(u); return /^https?:$/.test(x.protocol) ? x.origin : null; } catch { return null; } };
+export function frameAllowed(mainUrl, frameUrl) {
+  const o = originOf(frameUrl);
+  if (!o) return false;
+  if (o === originOf(mainUrl)) return true;
+  const host = canonHost(new URL(frameUrl).hostname);
+  return ATS_EMBEDS.some((d) => host === d || host.endsWith("." + d));
+}
+// The main frame is the page the app itself opened; the gate is for the frames inside it. Checked again at
+// every call: frames navigate.
+export const formFrames = (page) => page.frames().filter((f) => f === page.mainFrame() || frameAllowed(page.url(), f.url()));
+
+// The kit lines a frame's own fields can use (the same label match content.js makes), and nothing else.
+const STOP = new Set(("a an and are as at be by can do does for from have how i if in is it me of on or our please select that the this to us we what when which will with you your yes no optional required").split(" "));
+const cleanT = (t) => String(t || "").replace(/\s+/g, " ").trim();
+const normL = (t) => cleanT(t).toLowerCase().replace(/\(optional\)|\(required\)|\*/g, " ").replace(/[^a-z0-9+#@./ ]+/g, " ").replace(/\s+/g, " ").trim();
+const toks = (t) => new Set(normL(t).split(" ").filter((w) => w && !STOP.has(w)).map((w) => w.replace(/s$/, "")));
+const CANON = [["first", /\b(first|given|preferred first) name\b|^first$/], ["last", /\b(last|family|sur) ?name\b|^last$/], ["full", /^(full |legal |your )?name$|\bfull (legal )?name\b/],
+  ["email", /\be-?mail\b/], ["phone", /\b(phone|mobile|cell|telephone)\b/], ["linkedin", /\blinkedin\b/], ["github", /\bgithub\b/], ["website", /\b(website|portfolio|personal (site|url))\b/],
+  ["resume", /\b(resume|cv|résumé)\b/], ["cover", /\bcover letter\b/]];
+const canonL = (t) => { const n = normL(t); if (n.length > 60) return null; for (const [k, re] of CANON) if (re.test(n)) return k; return null; };
+function labelScore(a0, b0) {
+  const a = normL(a0), b = normL(b0);
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  const ca = canonL(a0), cb = canonL(b0);
+  if (ca && cb) return ca === cb ? 0.95 : 0;
+  const A = toks(a0), B = toks(b0);
+  let n = 0; for (const w of A) if (B.has(w)) n++;
+  let sc = A.size && B.size ? (2 * n) / (A.size + B.size) : 0;
+  if (A.size >= 2 && [...A].every((w) => B.has(w))) sc = Math.max(sc, 0.8);
+  if (b.startsWith(a) || a.startsWith(b)) sc = Math.max(sc, 0.75);
+  return sc;
+}
+export function kitFor(kit, fields) {
+  const fs = fields || [];
+  return (kit || []).filter((k) => fs.some((f) => (k.kind === "file" ? f.type === "file" : labelScore(k.label, f.label) >= 0.5 || (f.question && labelScore(k.label, f.question + " " + f.label) >= 0.5))));
+}
+// A message for one frame: a fill carries only the lines for that frame's fields, and the resume only when
+// the frame has a file input. null: nothing for this frame.
+export function frameMessage(msg, fields) {
+  if (msg.type !== "fill") return msg;
+  const lines = kitFor(msg.kit.fields, fields);
+  const file = (fields || []).some((f) => f.type === "file");
+  if (!lines.length && !file) return null;
+  return { ...msg, kit: { ...msg.kit, fields: lines }, resume: file ? msg.resume : null };
+}
+
+// The bridge to content.js lives in an isolated world of each frame (CDP Page.createIsolatedWorld), the way a
+// browser extension's content script does: page script can't define, wrap or read __apSend/__apListeners.
+const SESSIONS = new WeakMap(), WORLDS = new WeakMap();
+const bareUrl = (u) => String(u || "").split("#")[0];
+async function sessionFor(page, frame) {
+  for (let f = frame; f; f = f.parentFrame()) {
+    if (SESSIONS.has(f)) return { s: SESSIONS.get(f), root: f };
+    try { const s = await page.context().newCDPSession(f === page.mainFrame() ? page : f); SESSIONS.set(f, s); return { s, root: f }; }
+    catch { /* this frame shares its parent's target */ }
+  }
+  return null;
+}
+async function cdpFrameId(s, root, frame) {
+  const { frameTree } = await s.send("Page.getFrameTree");
+  const chain = [];
+  for (let f = frame; f && f !== root; f = f.parentFrame()) chain.unshift(f);
+  let node = frameTree;
+  for (const f of chain) {
+    const k = f.parentFrame().childFrames().filter((c) => bareUrl(c.url()) === bareUrl(f.url())).indexOf(f);
+    const cands = (node.childFrames || []).filter((c) => bareUrl(c.frame.url) === bareUrl(f.url()));
+    node = cands[Math.max(0, k)];
+    if (!node) return null;
+  }
+  return node.frame.id;
+}
+async function worldOf(page, frame) {
+  const w = WORLDS.get(frame);
+  if (w && w.url === frame.url()) return w;
+  const ses = await sessionFor(page, frame);
+  if (!ses) return null;
+  const frameId = await cdpFrameId(ses.s, ses.root, frame);
+  if (!frameId) return null;
+  const { executionContextId } = await ses.s.send("Page.createIsolatedWorld", { frameId, worldName: "job-autopilot", grantUniveralAccess: false });
+  const ev = async (expression) => {
+    const r = await ses.s.send("Runtime.evaluate", { expression, contextId: executionContextId, awaitPromise: true, returnByValue: true });
+    if (r.exceptionDetails) throw new Error("content script: " + ((r.exceptionDetails.exception || {}).description || r.exceptionDetails.text || "failed").slice(0, 200));
+    return r.result ? r.result.value : undefined;
+  };
+  await ev(SHIM + "\n" + CONTENT_JS);
+  const nw = { url: frame.url(), ev };
+  WORLDS.set(frame, nw);
+  return nw;
+}
+async function inWorld(page, frame, expression) {
+  for (let t = 0; t < 2; t++) {
+    try { const w = await worldOf(page, frame); return w ? await w.ev(expression) : undefined; }
+    catch (e) { WORLDS.delete(frame); if (t) throw e; } // the frame navigated: a fresh world, once
   }
 }
 
-async function eachFrame(page, msg) {
+async function inject(page) {
+  for (const f of formFrames(page)) {
+    try { await inWorld(page, f, UNHIDE_JS); } catch { /* detached or blocked frame */ }
+  }
+}
+
+export async function eachFrame(page, msg) {
   await inject(page);
   const out = [];
-  for (const f of page.frames()) {
+  for (const f of formFrames(page)) {
     try {
-      const r = await f.evaluate((m) => window.__apSend && window.__apSend(m), msg);
+      // A fill goes to a frame only with the lines for the fields that frame has right now.
+      let m = msg;
+      if (msg.type === "fill") {
+        const own = await inWorld(page, f, `window.__apSend(${JSON.stringify({ type: "scrape" })})`);
+        m = frameMessage(msg, own && own.fields);
+        if (!m) continue;
+      }
+      const r = await inWorld(page, f, `window.__apSend(${JSON.stringify(m)})`);
       if (r) out.push(Object.assign(r, { frame: f }));
     } catch { /* frame went away */ }
   }
@@ -496,7 +606,7 @@ async function shot(page, slug, tag) {
 // Make sure the resume landed: some upload widgets ignore a script-set file.
 async function ensureResume(page, file) {
   const all = [];
-  for (const f of page.frames()) {
+  for (const f of formFrames(page)) {
     for (const h of await f.$$("input[type=file]").catch(() => [])) {
       const info = await h.evaluate((e) => {
         let n = e, ctx = "";
@@ -567,10 +677,12 @@ async function openForm(page, slug) {
     btn = page.getByRole("tab", { name: TAB_RX }).or(page.getByRole("link", { name: TAB_RX })).first();
     if (!(await btn.isVisible().catch(() => false))) return page;
   }
-  // The form may open in a new tab.
-  const popup = page.context().waitForEvent("page", { timeout: 6000 }).catch(() => null);
+  // The form may open in a new tab: only a popup this page opened, never any other window in the browser
+  // (one left open by an earlier posting would otherwise get this job's answers).
+  const popup = page.waitForEvent("popup", { timeout: 6000 }).catch(() => null);
   await btn.click({ timeout: 10000 }).catch(() => btn.click({ force: true, timeout: 5000 }).catch(() => {}));
-  const next = await popup;
+  let next = await popup;
+  if (next && (await next.opener().catch(() => null)) !== page) next = null;
   const target = next || page;
   await target.waitForLoadState("domcontentloaded", { timeout: 30000 }).catch(() => {});
   await target.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
@@ -605,12 +717,13 @@ export async function applyTo(job, hooks = {}, opts = {}) {
   const profile = opts.profile || loadProfile();
   const details = JSON.parse(job.details || "{}");
   const pages = [];
-  let page;
+  let page, bh = null, pagesBefore = null;
   const result = { details };
   const manual = (reason) => ({ ...result, status: "manual", reason: "Apply yourself: " + reason });
   try {
     const mode = windowModeOf(settings);
-    const bh = opts.browser ? { ctx: opts.browser } : await acquireBrowser({ windowMode: mode, choice: settings.browser, onStatus: (t) => hooks.status && hooks.status(t) });
+    bh = opts.browser ? { ctx: opts.browser } : await acquireBrowser({ windowMode: mode, choice: settings.browser, onStatus: (t) => hooks.status && hooks.status(t) });
+    pagesBefore = new Set(bh.ctx.pages());
     page = await newAppPage(bh, mode);
     pages.push(page);
     page.setDefaultTimeout(30000);
@@ -640,7 +753,8 @@ export async function applyTo(job, hooks = {}, opts = {}) {
     const creds = siteAccounts(settings);
     let signedIn = false;
     const accountNotes = [];
-    if (creds && (isWorkday(page.url()) || isWorkday(job.apply_url))) {
+    // Only on a Workday page itself: a stored Workday link that led somewhere else never gets the password.
+    if (creds && isWorkday(page.url())) {
       step("account");
       const waitLink = opts.waitLink || ((since, host) => (opts.mailbox ? waitForLink(opts.mailbox, since, host, 180) : Promise.resolve(null)));
       const r = await workdayAccount(page, creds, { waitLink, log: (m) => log(job.slug, m) });
@@ -728,7 +842,7 @@ export async function applyTo(job, hooks = {}, opts = {}) {
 
       // A form on several pages: "Next" until the page with the real Submit button.
       let nextFrame = null, nextLabel = null;
-      for (const f of page.frames()) { nextLabel = await f.evaluate(NEXT_JS).catch(() => null); if (nextLabel) { nextFrame = f; break; } }
+      for (const f of formFrames(page)) { nextLabel = await f.evaluate(NEXT_JS).catch(() => null); if (nextLabel) { nextFrame = f; break; } }
       if (!nextFrame) break;
       // A dry run never moves past the first page: some sites save an application as soon as you press Next.
       // On a site where the app signed in, pages are saved to the user's own account as a draft and nothing is
@@ -755,7 +869,7 @@ export async function applyTo(job, hooks = {}, opts = {}) {
     // Submit.
     step("submit");
     let frame = null, label = null;
-    for (const f of page.frames()) {
+    for (const f of formFrames(page)) {
       label = await f.evaluate(SUBMIT_JS).catch(() => null);
       if (label) { frame = f; break; }
     }
@@ -793,8 +907,14 @@ export async function applyTo(job, hooks = {}, opts = {}) {
     }
     return { ...result, status: "failed", reason: captcha ? "a CAPTCHA challenge blocked the submit" : "submitted but no confirmation appeared" + (errs.length ? ": " + [...new Set(errs)].join("; ").slice(0, 400) : "") };
   } finally {
-    // The browser stays open for the next application; only this job's tabs close.
+    // The browser stays open for the next application; only this job's tabs close, and every other page
+    // that appeared while it ran (popups, windows a page opened), so nothing of this job reaches the next.
     for (const pg of pages.reverse()) await closeAppPage(pg, windowModeOf(settings));
+    if (bh && pagesBefore) for (let round = 0; round < 5; round++) {
+      const extra = bh.ctx.pages().filter((pg) => !pagesBefore.has(pg) && !pg.isClosed());
+      if (!extra.length) break;
+      for (const pg of extra) await closeAppPage(pg, windowModeOf(settings));
+    }
   }
 }
 
@@ -876,7 +996,7 @@ async function fillPage(page, b, fields, resume, a, job) {
     rep[k].push({ label: x.label, note: x.note });
   }
   const groupsLeft = [];
-  for (const f of page.frames()) {
+  for (const f of formFrames(page)) {
     for (const g of await f.evaluate(GROUPS_JS).catch(() => [])) if (g.required) groupsLeft.push(g.label);
     for (const c of await f.evaluate(COMBOS_JS).catch(() => [])) if (c.required && !(await showsValue(page, c.label))) groupsLeft.push(c.label);
   }
@@ -887,7 +1007,7 @@ async function fillPage(page, b, fields, resume, a, job) {
     ...rep.decide.filter((x) => required.has(x.label)).map((x) => `needs you: ${x.label}${x.note ? " (" + x.note + ")" : ""}`),
     ...groupsLeft.map((l) => `required, no answer: ${l}`),
   ];
-  for (const f of page.frames()) {
+  for (const f of formFrames(page)) {
     const empty = await f.evaluate(CHECK_JS).catch(() => []);
     for (const l of empty) if (!blocking.some((x) => x.includes(l))) blocking.push(`still empty: ${l}`);
   }

