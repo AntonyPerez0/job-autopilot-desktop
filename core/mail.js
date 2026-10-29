@@ -255,7 +255,7 @@ const ATS_MAIL = [
   [/(^|\.)paylocity\.com$/, ["paylocity.com"]], [/(^|\.)paycomonline\.(net|com)$/, ["paycomonline.net", "paycom.com"]], [/(^|\.)(recruitingbypaycor|paycor)\.com$/, ["paycor.com"]],
   [/(^|\.)teamtailor\.com$/, ["teamtailor.com"]], [/(^|\.)recruitee\.com$/, ["recruitee.com"]], [/(^|\.)breezy\.hr$/, ["breezy.hr"]],
   [/(^|\.)applytojob\.com$/, ["applytojob.com", "jazzhr.com"]], [/(^|\.)(ats\.rippling\.com|rippling-ats\.com)$/, ["rippling.com"]],
-  [/(^|\.)jobs\.personio\.(de|com)$/, ["personio.de", "personio.com"]],
+  [/(^|\.)jobs\.personio\.(de|com)$/, ["personio.de", "personio.com"]], [/(^|\.)comeet\.(co|com)$/, ["comeet.co", "comeet.com"]],
 ];
 // Where the system a page is on sends its mail from; for a form on the employer's own site, that site.
 export function mailDomainsFor(url) {

@@ -63,11 +63,11 @@ test("a cross-origin frame and the page's own script get nothing; the form gets 
 
 test("an allowed frame with fields gets the whole kit (in its isolated world); the resume only with a file input; no fields, nothing", () => {
   const msg = { type: "fill", kit: { fields: KIT, header: {} }, resume: { name: "r.pdf", b64: "x" } };
-  const three = A.frameMessage(msg, [{ label: "Given name", type: "text" }, { label: "E-mail address", type: "text" }]);
-  assert.strictEqual(three.kit.fields.length, KIT.length, "content.js matches the labels itself, as before");
-  assert.strictEqual(three.resume, null);
-  assert.ok(A.frameMessage(msg, [{ label: "Resume/CV", type: "file" }]).resume);
-  assert.strictEqual(A.frameMessage(msg, []), null, "a frame without fields gets nothing");
+  const two = A.frameMessage(msg, { fields: 2, file: false });
+  assert.strictEqual(two.kit.fields.length, KIT.length, "content.js matches the labels itself, as before");
+  assert.strictEqual(two.resume, null);
+  assert.ok(A.frameMessage(msg, { fields: 1, file: true }).resume);
+  assert.strictEqual(A.frameMessage(msg, { fields: 0, file: false }), null, "a frame without fields gets nothing");
 });
 
 test("only the form's own origin or a known ATS embed", () => {
@@ -143,5 +143,49 @@ test("React dropdowns: their options are read and the answer is set through the 
   await A.fillCombos(page, [{ label: "Country", kind: "fill", value: "United States" }, { label: "Desired salary", kind: "fill", value: "120000" }]);
   assert.strictEqual(await page.getAttribute("#ctry", "data-picked"), "US", "picked through the component");
   assert.strictEqual(await page.inputValue("#ctry"), "", "not typed");
+  await page.close();
+});
+
+test("a search-as-you-type React dropdown (a city): typed through the component, and the person's own Austin picked (plan step 3)", async () => {
+  const page = await browser.newPage();
+  await page.setContent(`<!doctype html><body><form>
+    <div class="field"><label for="fn">First name</label><input id="fn"></div><div class="field"><label for="ln">Last name</label><input id="ln"></div>
+    <div class="field"><label for="city">Location (City) *</label><input id="city" role="combobox" aria-autocomplete="list"></div></form>
+    <script>
+      const el = document.getElementById("city"), props = { options: [] };
+      props.onInputChange = (q) => setTimeout(() => { props.options = /^austin/i.test(q) ? [{ label: "Austin, Minnesota, United States" }, { label: "Austin, Texas, United States" }] : []; }, 600);
+      el.__reactFiber$x2 = { stateNode: { props, selectOption(o) { el.dataset.picked = o.label; } }, return: null };
+    </script></body>`);
+  await A.fillCombos(page, [{ label: "Location (City)", kind: "fill", value: "Austin, TX" }], "Texas");
+  assert.strictEqual(await page.getAttribute("#city", "data-picked"), "Austin, Texas, United States");
+  await page.close();
+});
+
+test("a React dropdown with leftover typed text but nothing chosen is still answered (plan step 3)", async () => {
+  const page = await browser.newPage();
+  await page.setContent(`<!doctype html><body><form>
+    <div class="field"><label for="city">Location (City) *</label><input id="city" role="combobox" aria-autocomplete="list" value="Austin, TX"></div></form>
+    <script>
+      const el = document.getElementById("city"), props = { options: [], value: null };
+      props.onInputChange = () => setTimeout(() => { props.options = [{ label: "Austin, Texas, United States" }]; }, 300);
+      el.__reactFiber$x3 = { stateNode: { props, selectOption(o) { props.value = o; el.dataset.picked = o.label; } }, return: null };
+    </script></body>`);
+  await A.fillCombos(page, [{ label: "Location (City)", kind: "fill", value: "Austin, TX" }], "Texas");
+  assert.strictEqual(await page.getAttribute("#city", "data-picked"), "Austin, Texas, United States");
+  await page.close();
+});
+
+test("React dropdowns are set from the page's world before content.js fills, each with only its own answer; a 'decide' line sets nothing (plan step 3)", async () => {
+  const page = await browser.newPage();
+  await page.setContent(`<!doctype html><body><form>
+    <div class="field"><label for="ctry">Country *</label><input id="ctry" role="combobox" aria-autocomplete="list"></div>
+    <div class="field"><label for="ack">I agree to binding arbitration *</label><input id="ack" role="combobox" aria-autocomplete="list"></div></form>
+    <script>
+      window.__got = [];
+      for (const id of ["ctry", "ack"]) { const el = document.getElementById(id), props = { options: [{ label: "Canada" }, { label: "United States" }, { label: "Yes" }, { label: "No" }], value: null };
+        el.__reactFiber$x4 = { stateNode: { props, selectOption(o) { props.value = o; window.__got.push(id + "=" + o.label); } }, return: null }; }
+    </script></body>`);
+  await A.fillReactSelects(page, [{ label: "Country", kind: "fill", value: "United States" }, { label: "I agree to binding arbitration", kind: "decide" }, { label: "Desired salary", kind: "fill", value: "120000" }]);
+  assert.deepStrictEqual(await page.evaluate(() => window.__got), ["ctry=United States"]);
   await page.close();
 });

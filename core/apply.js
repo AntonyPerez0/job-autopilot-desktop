@@ -105,23 +105,6 @@ export const GROUPS_JS = `(() => {
 
 // Type-to-search boxes (Ashby's Location and School) left empty: no typed text and no
 // chosen value shown next to them.
-export const COMBOS_JS = `(() => {
-  const out = [];
-  let n = 0;
-  for (const el of document.querySelectorAll('input[role=combobox], input[aria-autocomplete=list]')) {
-    if (!el.getClientRects().length || el.disabled || String(el.value || '').trim()) continue;
-    const entry = el.closest('[class*=fieldEntry], [class*=field-entry], .field, fieldset, [class*=question]') || el.parentElement.parentElement;
-    if (entry.querySelector('[class*=single-value], [class*=singleValue], [class*=multi-value], [class*=chip]')) continue;
-    const lab = entry.querySelector('label, legend, [class*=title]');
-    const label = ((lab && lab.innerText) || el.getAttribute('aria-label') || el.placeholder || '').replace(/\\s+/g, ' ').trim();
-    const cid = 'c' + (n++);
-    el.setAttribute('data-ap-combo', cid);
-    out.push({ cid, label, text: (entry.innerText || '').replace(/\\s+/g, ' ').slice(0, 600),
-      required: /_required|required/.test((lab && lab.className) || '') || /\\*\\s*$/.test(label) || el.required || el.getAttribute('aria-required') === 'true' });
-  }
-  return out;
-})()`;
-
 // React dropdowns (react-select: Greenhouse, Lever and many more) are set through the component itself, which
 // lives in the page's own world, not in the isolated one content.js runs in. These run there, each with nothing
 // but the page's own option lists, or one field and the one value the page receives anyway when it's filled.
@@ -137,6 +120,26 @@ const RS_CORE = `
     const lab = entry && entry.querySelector("label, legend, [class*=title]");
     return ((byFor && byFor.innerText) || byIds || (lab && lab.innerText) || el.getAttribute("aria-label") || el.placeholder || "").replace(/\\s+/g, " ").trim(); };
 `;
+export const COMBOS_JS = `(() => {${RS_CORE}
+  const out = [];
+  let n = 0;
+  for (const el of document.querySelectorAll('input[role=combobox], input[aria-autocomplete=list]')) {
+    if (!el.getClientRects().length || el.disabled) continue;
+    const entry = el.closest('[class*=fieldEntry], [class*=field-entry], .field, fieldset, [class*=question]') || el.parentElement.parentElement;
+    // a React dropdown says itself whether something is chosen (text typed into it but not picked isn't an answer)
+    const rs = rsOf(el), v = rs && rs.props.value;
+    if (rs ? v != null && v !== "" && (typeof v.length !== "number" || v.length > 0) : String(el.value || '').trim()) continue;
+    if (!rs && entry.querySelector('[class*=single-value], [class*=singleValue], [class*=multi-value], [class*=chip]')) continue;
+    const lab = entry.querySelector('label, legend, [class*=title]');
+    const label = ((lab && lab.innerText) || el.getAttribute('aria-label') || el.placeholder || '').replace(/\\s+/g, ' ').trim();
+    const cid = 'c' + (n++);
+    el.setAttribute('data-ap-combo', cid);
+    out.push({ cid, label, text: (entry.innerText || '').replace(/\\s+/g, ' ').slice(0, 600),
+      required: /_required|required/.test((lab && lab.className) || '') || /\\*\\s*$/.test(label) || el.required || el.getAttribute('aria-required') === 'true' });
+  }
+  return out;
+})()`;
+
 // [{ label, options }] for every React dropdown in the frame.
 export const RS_OPTIONS_JS = `(() => {${RS_CORE}
   const out = [];
@@ -146,8 +149,25 @@ export const RS_OPTIONS_JS = `(() => {${RS_CORE}
   }
   return out;
 })()`;
+// The React dropdowns in a frame with nothing chosen yet, tagged for RS_PICK_JS: [{ cid, label }].
+const RS_EMPTY_JS = `(() => {${RS_CORE}
+  const out = [];
+  let n = 0;
+  for (const el of document.querySelectorAll("input[role=combobox], input[aria-autocomplete=list]")) {
+    const rs = rsOf(el);
+    if (!rs || el.disabled) continue;
+    const v = rs.props.value;
+    if (v != null && v !== "" && (typeof v.length !== "number" || v.length > 0)) continue;
+    const cid = "r" + (n++);
+    el.setAttribute("data-ap-combo", cid);
+    out.push({ cid, label: labelOf(el) });
+  }
+  return out;
+})()`;
+
 // Pick `value` in the dropdown COMBOS_JS tagged `cid`: true picked, false no such option, null not React.
-export const RS_PICK_JS = (cid, value) => `(async () => {${RS_CORE}
+// region: the person's state or country, to tell one Austin from another in a list of places.
+export const RS_PICK_JS = (cid, value, region = "") => `(async () => {${RS_CORE}
   const el = document.querySelector('[data-ap-combo="' + ${JSON.stringify(String(cid))} + '"]');
   const rs = el && rsOf(el);
   if (!rs) return null;
@@ -157,6 +177,20 @@ export const RS_PICK_JS = (cid, value) => `(async () => {${RS_CORE}
   if (i < 0 && typeof rs.props.loadOptions === "function") {
     try { const r = await rs.props.loadOptions(${JSON.stringify(String(value).slice(0, 60))}, () => {}); const list = Array.from((r && (Array.isArray(r) ? r : r.options)) || []);
       const flat = list.flatMap((o) => (o && o.options ? Array.from(o.options) : [o])); const j = find(flat); if (j >= 0) { opts = flat; i = j; } } catch (e) { /* the loader failed */ }
+  }
+  // search-as-you-type lists (a city): type the start through the component and wait for its suggestions
+  if (i < 0 && typeof rs.props.onInputChange === "function") {
+    try { rs.props.onInputChange(${JSON.stringify(String(value).split(",")[0].slice(0, 60))}, { action: "input-change", prevInputValue: "" }); } catch (e) { /* ignore */ }
+    const city = nk(${JSON.stringify(String(value).split(",")[0])}), reg = nk(${JSON.stringify(String(region))});
+    for (let t = 0; t < 24 && i < 0; t++) {
+      await new Promise((r) => setTimeout(r, 250));
+      opts = rsOpts(rs); i = find(opts);
+      if (i < 0 && city.length > 2) {
+        const l = opts.map((o) => nk(rsLab(rs, o))), starts = l.map((x, k) => (x.startsWith(city) ? k : -1)).filter((k) => k >= 0);
+        const inRegion = reg ? starts.filter((k) => (" " + l[k] + " ").includes(" " + reg + " ")) : [];
+        i = inRegion.length ? inRegion[0] : starts.length === 1 ? starts[0] : -1;
+      }
+    }
   }
   if (i < 0) return false;
   rs.selectOption(opts[i]);
@@ -173,6 +207,19 @@ function comboFallback(a) {
   ].filter(([, v]) => v);
 }
 
+// React dropdowns first, from the page's world, one field and its one answer at a time: content.js, in its
+// isolated world, can only type into them, which is slow and can pick the wrong entry from a list of places.
+export async function fillReactSelects(page, kit, regionHint = "") {
+  for (const f of formFrames(page)) {
+    for (const c of await f.evaluate(RS_EMPTY_JS).catch(() => [])) {
+      const a = kitAnswer(kit, c.label);
+      const fb = COMBO_FALLBACK.find(([rx]) => rx.test(c.label));
+      const value = (a && a.value && fb && fb[1]) || (a && a.value);
+      if (value) { await f.evaluate(RS_PICK_JS(c.cid, value, regionHint)).catch(() => null); await sleep(150); }
+    }
+  }
+}
+
 export async function fillCombos(page, kit, regionHint = "") {
   const left = [];
   for (const f of formFrames(page)) {
@@ -182,7 +229,7 @@ export async function fillCombos(page, kit, regionHint = "") {
       const value = (fb && fb[1]) || (a && a.value);
       if (!value) { if (c.required) left.push(c.label); continue; }
       // A React dropdown takes the answer through its own component first; typing is the fallback.
-      if (await f.evaluate(RS_PICK_JS(c.cid, value)).catch(() => null)) { await sleep(400); continue; }
+      if (await f.evaluate(RS_PICK_JS(c.cid, value, regionHint)).catch(() => null)) { await sleep(400); continue; }
       const box = f.locator(`[data-ap-combo="${c.cid}"]`);
       try {
         await box.click();
@@ -507,14 +554,20 @@ const JOB_LINK = new WeakMap();
 // every call: frames navigate.
 export const formFrames = (page) => page.frames().filter((f) => f === page.mainFrame() || frameAllowed(page.url(), f.url(), JOB_LINK.get(page)));
 
-// A message for one frame. A fill goes only to a frame that has fields, with the whole kit (it lands in the
+// A message for one frame. A fill goes only to a frame that has form fields, with the whole kit (it lands in the
 // frame's isolated world, where the page can't read it, and content.js matches it to the fields as it always
-// has), and with the resume only when the frame has a file input. null: nothing for this frame.
-export function frameMessage(msg, fields) {
+// has), and with the resume only when the frame has a file input. shape: { fields: count, file }. null: nothing.
+export function frameMessage(msg, shape) {
   if (msg.type !== "fill") return msg;
-  if (!(fields || []).length) return null;
-  return { ...msg, resume: fields.some((f) => f.type === "file") ? msg.resume : null };
+  if (!shape || !shape.fields) return null;
+  return { ...msg, resume: shape.file ? msg.resume : null };
 }
+// How many form controls a frame has, and whether one takes a file, counted inside web components too: cheap,
+// unlike a full scrape, which opens dropdowns to read their options.
+const FORM_SHAPE_JS = `(() => { let fields = 0, file = false;
+  const walk = (root) => { for (const el of root.querySelectorAll("input:not([type=hidden]), select, textarea, [role=combobox], [role=radio], [role=checkbox], [role=listbox], [contenteditable=true]")) { fields++; if (el.type === "file") file = true; }
+    for (const h of root.querySelectorAll("*")) if (h.shadowRoot) walk(h.shadowRoot); };
+  walk(document); return { fields, file }; })()`;
 
 // The bridge to content.js lives in an isolated world of each frame (CDP Page.createIsolatedWorld), the way a
 // browser extension's content script does: page script can't define, wrap or read __apSend/__apListeners.
@@ -580,8 +633,7 @@ export async function eachFrame(page, msg) {
       // A fill goes to a frame only when it has fields right now, and the resume only with a file input.
       let m = msg;
       if (msg.type === "fill") {
-        const own = await inWorld(page, f, `window.__apSend(${JSON.stringify({ type: "scrape" })})`);
-        m = frameMessage(msg, own && own.fields);
+        m = frameMessage(msg, await inWorld(page, f, FORM_SHAPE_JS));
         if (!m) continue;
       }
       const r = await inWorld(page, f, `window.__apSend(${JSON.stringify(m)})`);
@@ -1024,6 +1076,7 @@ const PLACE_RX = /address|location|city|where do you live|zip|postal/i;
 async function fillPage(page, b, fields, resume, a, job) {
   const notes = [];
   const fillMsg = { type: "fill", kit: { fields: b.kit, header: {} }, resume: { name: resume.fileName, b64: resume.pdf.toString("base64") } };
+  await fillReactSelects(page, b.kit, a.state || a.country || "");
   let first = await eachFrame(page, fillMsg);
   const want = [a.city, a.zip].filter(Boolean).map((x) => String(x).toLowerCase());
   let cleared = 0;
