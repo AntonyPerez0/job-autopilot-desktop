@@ -90,6 +90,14 @@ export const KIND_TEXT = {
 export const canonHost = (h) => String(h || "").trim().toLowerCase().replace(/\.+$/, "");
 export const hostOf = (u) => { try { return canonHost(new URL(String(u)).hostname); } catch { return ""; } };
 
+// The application systems an employer's form can be embedded from: every one this file knows as fillable or
+// as needing an account, except government sites. (Ads, trackers and job boards are none of these.)
+const GOV_ATS = new Set(["usajobs", "neogov", "calcareers", "edjoin", "oraclepeoplesoft"]);
+export function isApplicationSystem(url) {
+  const h = hostOf(url);
+  return !!h && RULES.some(([ats, kind, rx]) => (kind === "auto" || kind === "account") && !GOV_ATS.has(ats) && rx.test(h));
+}
+
 // Government job sites need the person's own account, and GovernmentJobs.com forbids automated access.
 export const GOV = /(^|\.)(usajobs\.gov|governmentjobs\.com|schooljobs\.com|calcareers\.ca\.gov)$/;
 export const isGovUrl = (u) => GOV.test(hostOf(u));

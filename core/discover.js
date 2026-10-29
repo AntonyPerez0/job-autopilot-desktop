@@ -8,7 +8,7 @@ import { plainAiError } from "./llm.js";
 import { km, remoteOk, toKm, withinRadius } from "./geo.js";
 import fs from "node:fs";
 import { dataDir, getAnswers, getPrefs } from "./store.js";
-import { cleanUrl, familyKey, inAppliedList, jobKey, parseAppliedList, roleKey, siteKey } from "./dedupe.js";
+import { cleanUrl, familyKey, inAppliedList, jobKey, lookupKeys, parseAppliedList, roleKey, storeKeys } from "./dedupe.js";
 import { KIND_TEXT } from "./ats.js";
 import { payPerHour } from "./suggest.js";
 import { siteAccounts } from "./accounts.js";
@@ -136,33 +136,47 @@ export function licenseGap(title, profile) {
 export const lastSearch = { at: null, found: 0, queued: 0, problems: [], done: false };
 
 // A posting whose screening call failed is tried again on the next searches, at most SCREEN_TRIES times in all;
-// then it's kept as skipped, so it isn't screened (and paid for) again on every search.
+// then it's kept as skipped, so it isn't screened (and paid for) again on every search. A failure counts only
+// when other screenings in the same search worked: when the AI itself is down, nothing is used up. A posting
+// skipped this way gets one more try a day later.
 export const SCREEN_TRIES = 3;
 const RETRIES = () => dataDir("screen-retries.json");
 const readRetries = () => { try { return JSON.parse(fs.readFileSync(RETRIES(), "utf8")) || {}; } catch { return {}; } };
-function countScreenFailure(slug) {
+function setScreenFailures(slug, n) {
   const r = readRetries();
-  r[slug] = (Number(r[slug]) || 0) + 1;
+  r[slug] = n;
   const keep = Object.fromEntries(Object.entries(r).slice(-500));
   try { fs.writeFileSync(RETRIES(), JSON.stringify(keep)); } catch { /* the count is a safeguard, not a record */ }
-  return r[slug];
+  return n;
 }
+const countScreenFailure = (slug) => setScreenFailures(slug, (Number(readRetries()[slug]) || 0) + 1);
 
-// One posting only stands in for another (same role, same family, the same screening) on the same employer site.
-const onSite = (url, key) => siteKey(url) + "#" + key;
+// One posting only stands in for another (same role, same family, the same screening) on the same employer site,
+// or the employer's own site and its application system's (dedupe.storeKeys/lookupKeys).
+const addTo = (set, url, key) => { for (const k of storeKeys(url, key)) set.add(k); };
+const inSet = (set, url, key) => lookupKeys(url, key).some((k) => set.has(k));
+const count = (map, url, key) => Math.max(0, ...lookupKeys(url, key).map((k) => map.get(k) || 0));
+const bump = (map, url, key) => { for (const k of storeKeys(url, key)) map.set(k, (map.get(k) || 0) + 1); };
+const found1 = (map, url, key) => lookupKeys(url, key).map((k) => map.get(k)).find(Boolean);
 
 export async function discover(progress = () => {}, ctx = {}) {
   lastSearch.at = new Date().toISOString(); lastSearch.problems = []; lastSearch.found = 0; lastSearch.queued = 0; lastSearch.done = false; lastSearch.aiProblem = "";
   const db = getDb();
   const prefs = getPrefs(), a = getAnswers();
+  for (const r of db.prepare("SELECT slug FROM jobs WHERE status = 'skipped' AND reason LIKE 'screen failed %' AND updated_at < datetime('now', '-1 day')").all()) {
+    db.prepare("DELETE FROM jobs WHERE slug = ?").run(r.slug);
+    setScreenFailures(r.slug, SCREEN_TRIES - 1);
+  }
   const seen = new Set(db.prepare("SELECT slug FROM jobs").all().map((r) => r.slug));
-  const keys = new Set(db.prepare("SELECT key FROM jobs").all().map((r) => r.key));
+  const keys = new Set();
+  for (const r of db.prepare("SELECT key, url, apply_url FROM jobs").all()) addTo(keys, r.url || r.apply_url, r.key);
   const live = db.prepare("SELECT company, title, url, apply_url FROM jobs WHERE status != 'skipped'").all();
-  const roles = new Set(live.map((r) => onSite(r.url || r.apply_url, roleKey(r.company, r.title))));
+  const roles = new Set();
+  for (const r of live) addTo(roles, r.url || r.apply_url, roleKey(r.company, r.title));
   // The same job at many locations: two of them at most, and one screening decision for all of them.
   const PER_FAMILY = 2;
   const families = new Map();
-  for (const r of live) { const f = onSite(r.url || r.apply_url, familyKey(r.company, r.title)); families.set(f, (families.get(f) || 0) + 1); }
+  for (const r of live) bump(families, r.url || r.apply_url, familyKey(r.company, r.title));
   const verdicts = new Map();
   const urls = new Set(db.prepare("SELECT url, apply_url FROM jobs").all().flatMap((r) => [r.url, r.apply_url]).filter(Boolean).map(cleanUrl));
   const manual = parseAppliedList(prefs.alreadyApplied);
@@ -195,7 +209,12 @@ export async function discover(progress = () => {}, ctx = {}) {
   // The lowest pay the person would take, as an hourly figure (a yearly one counts 2,080 hours).
   const floor = Number(prefs.minPay) > 0 ? (prefs.minPayPer === "year" ? Number(prefs.minPay) / 2080 : Number(prefs.minPay)) : 0;
   const dollars = (n) => "$" + (n >= 100 ? Math.round(n).toLocaleString("en-US") : (Math.round(n * 100) / 100).toString());
-  let added = 0, toYou = 0, ji = 0;
+  let added = 0, toYou = 0, ji = 0, screenedOk = 0;
+  const failed = [];
+  const insertJob = (j, key, status, reason, apply) => db.prepare(`INSERT OR IGNORE INTO jobs (slug, key, title, company, location, work_mode, source, url, apply_url, salary, posted_at, status, reason, details)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(j.slug, key, j.title, j.company, j.location || "", j.work_mode || "",
+      j.ats || "", j.url, apply, j.salary || null, j.posted_at || j.posted_text || "", status, reason,
+      JSON.stringify({ description: j.description || "", requirements: j.requirements || [], board: j.board, kind: j.kind, freehire: j.freehire }));
   const list = [...found.values()];
   for (let j of list) {
     progress({ phase: "review", i: ji++, n: list.length, label: `${j.title} at ${j.company}`, added });
@@ -204,11 +223,11 @@ export async function discover(progress = () => {}, ctx = {}) {
     if (j.minYears !== null && j.minYears !== undefined && Number.isFinite(Number(prefs.maxYearsRequired)) && j.minYears > Number(prefs.maxYearsRequired)) continue;
     if (j.sponsorship === false && a.needsSponsorship === "yes") continue;
     const key = jobKey(j.company, j.title);
-    if (keys.has(key) || roles.has(onSite(j.url, roleKey(j.company, j.title))) || (j.url && urls.has(cleanUrl(j.url)))) continue;
+    if (inSet(keys, j.url, key) || inSet(roles, j.url, roleKey(j.company, j.title)) || (j.url && urls.has(cleanUrl(j.url)))) continue;
     if (j.details) {
       try { j = { ...j, ...(await j.details()) }; } catch (e) { log(j.slug, "reading the posting failed: " + e.message, "warn"); continue; }
     }
-    const fam = onSite(j.url, familyKey(j.company, j.title));
+    const fam = familyKey(j.company, j.title);
     let status = "queued", reason = null;
     if (excludedCompany(j.company, prefs)) { status = "skipped"; reason = "excluded company, recruiter or repost aggregator"; }
     else if (j.ghost) { status = "skipped"; reason = "freehire says this posting is likely a ghost listing"; }
@@ -218,35 +237,40 @@ export async function discover(progress = () => {}, ctx = {}) {
       status = "skipped"; reason = `pays at most ${dollars(payPerHour(j.salary).max)} an hour, under the ${prefs.minPayPer === "year" ? dollars(Number(prefs.minPay)) + " a year" : dollars(floor) + " an hour"} you asked for`;
     }
     else if (licenseGap(j.title, profile)) { status = "skipped"; reason = licenseGap(j.title, profile); }
-    else if ((families.get(fam) || 0) >= PER_FAMILY) { status = "skipped"; reason = `the same job at another location: ${PER_FAMILY} of these are already in your list`; }
+    else if (count(families, j.url, fam) >= PER_FAMILY) { status = "skipped"; reason = `the same job at another location: ${PER_FAMILY} of these are already in your list`; }
     else {
       // Workday needs an account; with the user's go-ahead the app makes it, so the job is the app's to apply to.
       const why = j.ats === "workday" && siteAccounts() ? null : manualReason(j);
       if (why) { status = "manual"; reason = why; }
       try {
-        const s = verdicts.get(fam) || await screen(profile, j, j.description, a, prefs);
-        verdicts.set(fam, s);
+        const known = found1(verdicts, j.url, fam);
+        const s = known || await screen(profile, j, j.description, a, prefs);
+        if (!known) screenedOk++;
+        for (const k of storeKeys(j.url, fam)) verdicts.set(k, s);
         if (!s.ok) { status = "skipped"; reason = `screen: ${s.reason}`; }
         else reason = status === "manual" ? `${why}. Screen: ${s.reason}` : `screen: ${s.reason}`;
       } catch (e) {
         lastSearch.aiProblem = plainAiError(e.message);
-        const n = countScreenFailure(j.slug);
-        if (n < SCREEN_TRIES) { log(j.slug, `screen failed (try ${n} of ${SCREEN_TRIES}), will retry next search: ` + e.message, "warn"); continue; }
-        status = "skipped"; reason = `screen failed ${n} times, so it isn't tried again: ${plainAiError(e.message).slice(0, 200)}`;
+        failed.push({ j, key, error: e.message });
+        continue;
       }
     }
     const apply = status === "skipped" ? null : await applyUrl(j.ats, j.apply_url || j.url);
-    db.prepare(`INSERT OR IGNORE INTO jobs (slug, key, title, company, location, work_mode, source, url, apply_url, salary, posted_at, status, reason, details)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(j.slug, key, j.title, j.company, j.location || "", j.work_mode || "",
-      j.ats || "", j.url, apply, j.salary || null, j.posted_at || j.posted_text || "", status, reason,
-      JSON.stringify({ description: j.description || "", requirements: j.requirements || [], board: j.board, kind: j.kind, freehire: j.freehire }));
-    keys.add(key);
-    roles.add(onSite(j.url, roleKey(j.company, j.title)));
+    insertJob(j, key, status, reason, apply);
+    addTo(keys, j.url, key);
+    addTo(roles, j.url, roleKey(j.company, j.title));
     if (j.url) urls.add(cleanUrl(j.url));
-    if (status !== "skipped") families.set(fam, (families.get(fam) || 0) + 1);
+    if (status !== "skipped") bump(families, j.url, fam);
     if (status === "queued") added++;
     if (status === "manual") toYou++;
     log(j.slug, `${status}: ${j.title} at ${j.company} (${j.location}) via ${j.board}${reason ? " - " + reason : ""}`);
+  }
+  if (failed.length && !screenedOk) log(null, `every screening in this search failed (${failed.length}): the AI seems unavailable, so none of them counts as a try`, "warn");
+  else for (const { j, key, error } of failed) {
+    const n = countScreenFailure(j.slug);
+    if (n < SCREEN_TRIES) { log(j.slug, `screen failed (try ${n} of ${SCREEN_TRIES}), will retry next search: ${error}`, "warn"); continue; }
+    insertJob(j, key, "skipped", `screen failed ${n} times, so it isn't tried again for a day: ${plainAiError(error).slice(0, 200)}`, null);
+    log(j.slug, `skipped: screen failed ${n} times`, "warn");
   }
   log(null, `discovery done: ${found.size} new results, ${added} queued, ${toYou} for you to apply to`);
   Object.assign(lastSearch, { found: found.size, queued: added, toYou, done: true });

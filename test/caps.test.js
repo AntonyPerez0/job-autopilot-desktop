@@ -25,9 +25,9 @@ test("Fill out my page: at most 5 numbers, 500 characters each, the same line on
   assert.strictEqual(f.numbers[0].text.length, 500);
 });
 
-test("a resume import: at most 10 files, 2 MB each, refused before anything is read", async () => {
+test("a resume import: at most 20 files, 10 MB each, refused before anything is read", async () => {
   const small = { name: "r.txt", b64: Buffer.from("Jordan Lee").toString("base64") };
-  assert.match((await handle("/api/resumes/import", { files: [...Array(11)].map(() => small) })).error, /at most 10/);
-  const big = { name: "big.pdf", b64: Buffer.alloc(3 * 1024 * 1024).toString("base64") };
-  assert.match((await handle("/api/resumes/import", { files: [big] })).error, /big\.pdf is larger than 2 MB/);
+  assert.match((await handle("/api/resumes/import", { files: [...Array(21)].map(() => small) })).error, /at most 20/);
+  const big = { name: "big.pdf", b64: Buffer.alloc(11 * 1024 * 1024).toString("base64") };
+  assert.match((await handle("/api/resumes/import", { files: [big] })).error, /big\.pdf is larger than 10 MB/);
 });

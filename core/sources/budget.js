@@ -3,7 +3,7 @@
 // rotation google.js uses). The position is kept in settings.rotate[source].
 import { getSettings, saveSettings } from "../store.js";
 
-export const PER_CYCLE = 12;
+export const PER_CYCLE = 30; // typical setups need about 10; the clamped preferences allow about 1,000
 
 export function thisCycle(runs, source, perCycle = PER_CYCLE) {
   if (runs.length <= perCycle) return runs;

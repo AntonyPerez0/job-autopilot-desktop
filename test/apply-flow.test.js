@@ -161,14 +161,20 @@ test("a run that timed out stops before Submit and reports nothing more (audit 4
   store.saveSettings({ dryRun: true });
 });
 
-test("http:// is never opened, and a page that moves to a government site ends as Apply yourself (audit 4.3, 4.6)", async () => {
+test("http:// is never opened: an http link is opened as https, or left to the person; a page that moves to a government site ends as Apply yourself (audit 4.3, 4.6, plan step 7)", async () => {
   const hits = [];
   await ctx.route("http://plain.example/**", (r) => { hits.push(r.request().url()); return r.fulfill({ contentType: "text/html", body: PAGES["/form-ping"] }); });
+  await ctx.route("http://nossl.example/**", (r) => { hits.push(r.request().url()); return r.fulfill({ contentType: "text/html", body: PAGES["/form-ping"] }); });
+  await ctx.route("https://plain.example/**", (r) => r.fulfill({ contentType: "text/html", body: `<!doctype html><html><body>${PAGES["/form-ping"]}</body></html>` }));
+  await ctx.route("https://nossl.example/**", (r) => r.abort("connectionrefused"));
   await ctx.route("https://www.governmentjobs.com/**", (r) => r.fulfill({ contentType: "text/html", body: `<!doctype html><html><body>${PAGES["/form-ping"]}</body></html>` }));
-  const plain = await applyTo({ ...job("/", "t-http"), apply_url: "http://plain.example/jobs/1" }, {}, { dryRun: true, browser: ctx });
-  assert.strictEqual(plain.status, "manual");
-  assert.match(plain.reason, /doesn't use https/);
-  assert.deepStrictEqual(hits, [], "never reached page.goto");
+  const up = await applyTo({ ...job("/", "t-http"), apply_url: "http://plain.example/jobs/1" }, {}, { dryRun: true, browser: ctx });
+  assert.strictEqual(up.status, "filled", up.reason);
+  const none = await applyTo({ ...job("/", "t-nossl"), apply_url: "http://nossl.example/jobs/1" }, {}, { dryRun: true, browser: ctx });
+  assert.strictEqual(none.status, "manual");
+  assert.match(none.reason, /only answers over plain http/);
+  assert.deepStrictEqual(hits, [], "nothing over plain http");
+  await ctx.unroute("http://nossl.example/**"); await ctx.unroute("https://plain.example/**"); await ctx.unroute("https://nossl.example/**");
   const gov = await applyTo(job("/to-gov", "t-gov"), {}, { dryRun: true, browser: ctx });
   assert.strictEqual(gov.status, "manual", gov.reason);
   assert.match(gov.reason, /government job site/);

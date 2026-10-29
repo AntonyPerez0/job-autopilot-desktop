@@ -135,14 +135,15 @@ export function dkimPassFor(headers, domains) {
 }
 const headersOf = (source) => String(source || "").split(/\r?\n\r?\n/)[0];
 
-// Of the emails that arrived after `since` (seconds, by the server's own clock), the code Greenhouse sent:
-// from a Greenhouse address, DKIM-signed by Greenhouse; its own wording first. A code from anyone else is never used.
+// Of the emails that arrived after `since` (seconds, by the server's own clock), the code the form's own system
+// sent: from one of `domains` (mailDomainsFor the form's page; Greenhouse by default), DKIM-signed by it;
+// Greenhouse's own wording first. A code from anyone else is never used.
 // mails: [{ from, headers, internalDate (Date or seconds), subject, text }], newest first.
-export function pickCode(mails, since) {
-  const fromGreenhouse = (m) => GREENHOUSE_MAIL.some((d) => under(senderDomain(m.from), d)) && dkimPassFor(m.headers, GREENHOUSE_MAIL);
+export function pickCode(mails, since, domains = GREENHOUSE_MAIL) {
+  const fromThem = (m) => domains.some((d) => under(senderDomain(m.from), d)) && dkimPassFor(m.headers, domains);
   const ok = mails.filter((m) => {
     const at = m.internalDate instanceof Date ? m.internalDate.getTime() / 1000 : Number(m.internalDate) || 0;
-    return at >= since - 60 && CODE_SUBJECT.test(m.subject || "") && fromGreenhouse(m);
+    return at >= since - 60 && CODE_SUBJECT.test(m.subject || "") && fromThem(m);
   });
   for (const m of ok) { const x = String(m.text || "").match(GREENHOUSE); if (x) return x[1]; }
   for (const m of ok) { const c = findCode(m.text); if (c) return c; }
@@ -211,14 +212,14 @@ async function recentMail(c, since) {
 }
 
 // Wait for the code Greenhouse emailed after `since` (seconds). Returns the code or null.
-export async function waitForCode(cfg, since, timeoutSec = 180) {
+export async function waitForCode(cfg, since, timeoutSec = 180, domains = GREENHOUSE_MAIL) {
   const deadline = Date.now() + timeoutSec * 1000;
   while (Date.now() < deadline) {
     let c;
     try {
       c = await connect(cfg);
       if (!c) return null;
-      const code = pickCode(await recentMail(c, since), since);
+      const code = pickCode(await recentMail(c, since), since, domains);
       if (code) return code;
     } catch { /* try again until the deadline */ } finally { if (c) await c.logout().catch(() => {}); }
     await new Promise((r) => setTimeout(r, 8000));
@@ -248,20 +249,35 @@ const ATS_MAIL = [
   [/(^|\.)greenhouse\.io$/, ["greenhouse.io", "greenhouse-mail.io"]], [/(^|\.)lever\.co$/, ["lever.co"]], [/(^|\.)ashbyhq\.com$/, ["ashbyhq.com"]],
   [/(^|\.)(myworkdayjobs|myworkday|workday)\.com$/, ["myworkday.com", "workday.com", "myworkdayjobs.com"]],
   [/(^|\.)smartrecruiters\.com$/, ["smartrecruiters.com"]], [/(^|\.)workable\.com$/, ["workable.com", "workablemail.com"]],
+  [/(^|\.)icims\.com$/, ["icims.com"]], [/(^|\.)jobvite\.com$/, ["jobvite.com"]], [/(^|\.)bamboohr\.com$/, ["bamboohr.com"]],
+  [/(^|\.)taleo\.net$/, ["taleo.net"]], [/(^|\.)oraclecloud\.com$/, ["oraclecloud.com", "oracle.com"]],
+  [/(^|\.)(successfactors|sapsf)\.(com|eu)$/, ["successfactors.com", "successfactors.eu", "sapsf.com", "sapsf.eu"]],
+  [/(^|\.)paylocity\.com$/, ["paylocity.com"]], [/(^|\.)paycomonline\.(net|com)$/, ["paycomonline.net", "paycom.com"]], [/(^|\.)(recruitingbypaycor|paycor)\.com$/, ["paycor.com"]],
+  [/(^|\.)teamtailor\.com$/, ["teamtailor.com"]], [/(^|\.)recruitee\.com$/, ["recruitee.com"]], [/(^|\.)breezy\.hr$/, ["breezy.hr"]],
+  [/(^|\.)applytojob\.com$/, ["applytojob.com", "jazzhr.com"]], [/(^|\.)(ats\.rippling\.com|rippling-ats\.com)$/, ["rippling.com"]],
+  [/(^|\.)jobs\.personio\.(de|com)$/, ["personio.de", "personio.com"]],
 ];
-// A "thank you for applying" email counts only when it's from the system the job is on (or the employer's own
-// site, for a form on it), signed by it (DKIM pass, the provider's topmost verdict), and its subject names the
-// employer in full, not just the first word of the name.
-// mail: { from, headers, subject }; job: { company, url }.
-export function confirmationOk(mail, job) {
-  const host = canon((() => { try { return new URL(String(job.url || "")).hostname; } catch { return ""; } })());
-  if (!host) return false;
+// Where the system a page is on sends its mail from; for a form on the employer's own site, that site.
+export function mailDomainsFor(url) {
+  const host = canon((() => { try { return new URL(String(url || "")).hostname; } catch { return ""; } })());
+  if (!host) return [];
   const ats = ATS_MAIL.find(([rx]) => rx.test(host));
-  const allowed = ats ? ats[1] : [siteOf(host)];
-  const d = senderDomain(mail.from);
-  if (!allowed.some((x) => under(d, x)) || !dkimPassFor(mail.headers, allowed)) return false;
-  const subj = words(mail.subject), name = words(job.company);
-  return name.length > 0 && name.every((w) => subj.includes(w));
+  return ats ? ats[1] : [siteOf(host)];
+}
+const ALL_ATS_MAIL = [...new Set(ATS_MAIL.flatMap(([, d]) => d))];
+// A "thank you for applying" email counts only when it's from an application system the app knows, the job's
+// own site, or a domain named after the employer (acme.com or acmehealth.com for "Acme Health", not
+// acme-careers.test); signed by that domain (DKIM pass, the provider's topmost verdict); and naming the employer
+// in full, not just the first word, in its subject or its sender's name. A forged one could at most skip a job.
+// mail: { from ("Name <address>"), headers, subject }; job: { company, url }.
+export function confirmationOk(mail, job) {
+  const d = senderDomain(mail.from), name = words(job.company);
+  if (!d || !name.length) return false;
+  const site = siteOf(d), label = site.split(".")[0].replace(/[^a-z0-9]/g, "");
+  const signer = [...mailDomainsFor(job.url), ...ALL_ATS_MAIL].find((x) => under(d, x)) || (label === name.join("") || label === name[0] ? site : null);
+  if (!signer || !dkimPassFor(mail.headers, [signer])) return false;
+  const display = String(mail.from || "").replace(/<[^>]*>|\S+@\S+/g, " ");
+  return [mail.subject, display].some((t) => { const w = words(t); return name.every((x) => w.includes(x)); });
 }
 
 export async function findConfirmation(cfg, company, title, days = 60, url = "") {
@@ -278,7 +294,7 @@ export async function findConfirmation(cfg, company, title, days = 60, url = "")
         const msg = await c.fetchOne(String(uid), { envelope: true, source: true }, { uid: true });
         if (!msg) continue;
         const subject = (msg.envelope && msg.envelope.subject) || "";
-        const from = ((msg.envelope && msg.envelope.from) || []).map((x) => x.address || "").join(" ");
+        const from = ((msg.envelope && msg.envelope.from) || []).map((x) => `${x.name || ""} <${x.address || ""}>`).join(", ");
         if (!CONFIRM.test(subject) || CODE_SUBJECT.test(subject) || !confirmationOk({ from, headers: headersOf(msg.source), subject }, { company, url })) continue;
         const t = await textOf(msg.source);
         hits.push({ date: t.date, subject, text: t.text });

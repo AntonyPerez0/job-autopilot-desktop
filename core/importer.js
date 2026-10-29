@@ -55,14 +55,22 @@ export function mergeProfiles(a, b) {
     const taken = new Set(arr(out.skills).map((x) => x.id));
     out.skills = arr(out.skills);
     for (const s of arr(b.skills)) {
-      const same = out.skills.find((y) => norm(y.label) === norm(s.label));
+      // the group as it stands: not one an approved update has replaced, and not an update still waiting
+      const replaced = new Set(out.skills.filter((y) => y.approved && y.replaces).map((y) => y.replaces));
+      const same = out.skills.find((y) => norm(y.label) === norm(s.label) && !replaced.has(y.id) && (!y.replaces || y.approved));
       if (same) {
         const items = String(same.items || "").split(/,\s*/).filter(Boolean);
-        let added = false;
-        for (const it of String(s.items || "").split(/,\s*/)) if (it && !items.some((x) => norm(x) === norm(it))) { items.push(it); added = true; }
-        same.items = items.join(", ");
-        // New items from a resume the person hasn't reviewed: the group waits for their approval again.
-        if (added) same.approved = false;
+        // New items from a resume the person hasn't reviewed. An approved group stays as it is and keeps working;
+        // its updated copy waits beside it for their approval, then takes its place (approvedOnly: replaces).
+        const pending = same.approved ? out.skills.find((y) => y.replaces === same.id && !y.approved) : null;
+        const into = pending || same;
+        const list = String(into.items || "").split(/,\s*/).filter(Boolean);
+        const fresh = String(s.items || "").split(/,\s*/).filter((it) => it && !list.some((x) => norm(x) === norm(it)));
+        if (fresh.length && same.approved && !pending) {
+          const id = freeId(`${same.id}-update`, taken);
+          out.skills.push({ id, label: same.label, items: [...list, ...fresh].join(", "), approved: false, replaces: same.id, source: "an imported resume" });
+          for (const base of arr(out.bases)) { const at = arr(base.skills).indexOf(same.id); if (at >= 0) base.skills.splice(at, 0, id); }
+        } else if (fresh.length) into.items = [...list, ...fresh].join(", ");
         map.skills[s.id] = same.id;
       } else { const id = freeId(s.id, taken); map.skills[s.id] = id; out.skills.push({ ...s, id }); }
     }
@@ -131,7 +139,13 @@ export async function importResumes(files, onStep = () => {}, settings = aiSetti
   if (merged) delete merged.essaySample;
   // Instructions and title variants the model wrote would steer every later prompt and the resume's title
   // without anyone reviewing them: they're not kept.
-  if (merged) { delete merged.titleVariants; if (merged.rules) delete merged.rules.instructions; }
+  if (merged) {
+    delete merged.titleVariants;
+    if (merged.rules) delete merged.rules.instructions;
+    // A job title the AI wrote for a layout ("titleVariant") would put a title the person never had on the resume.
+    for (const k of ["experience", "projects"]) for (const e of arr(merged[k])) delete e.titleVariants;
+    for (const b of arr(merged.bases)) for (const sec of arr(b.sections)) for (const it of arr(sec.items)) delete it.titleVariant;
+  }
   // Dates one way ("Jun 2021 – Present"), whatever style the uploaded resume used.
   if (merged) for (const k of ["experience", "projects"]) for (const e of merged[k] || []) if (e.dates) e.dates = fmtRange(e.dates);
   return { profile: unapproved(merged), texts };

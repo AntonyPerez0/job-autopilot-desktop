@@ -185,5 +185,11 @@ test("the sign-up's terms box is chosen by its label, and never one with binding
   assert.ok(b && !b.box && /arbitration/.test(b.binding), "binding terms: not ticked, and said why");
   await page.setContent(`<label><input type="checkbox" id="mk">Send me news and job alerts</label>`);
   assert.strictEqual(await A.termsBox(page), null, "no terms box: no box at all, not the marketing one");
+  // Plain arbitration follows the person's Settings choice; a jury or class-action waiver never does (plan step 8).
+  await page.setContent(`<label><input type="checkbox" id="arb2">I agree to the Terms of Use, including the arbitration agreement</label>`);
+  assert.ok((await A.termsBox(page)).binding, "not allowed in Settings: not ticked");
+  assert.strictEqual(await (await A.termsBox(page, { allowArbitration: true })).box.getAttribute("id"), "arb2", "allowed: ticked");
+  await page.setContent(`<label><input type="checkbox" id="arb3">I agree to the Terms and to arbitration, and waive any jury trial</label>`);
+  assert.ok((await A.termsBox(page, { allowArbitration: true })).binding, "a jury waiver: never");
   await page.close();
 });

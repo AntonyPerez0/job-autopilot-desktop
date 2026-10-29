@@ -72,7 +72,23 @@ test("a 'thank you for applying' email counts only from the job's own system, si
   assert.ok(!M.confirmationOk({ ...ok, from: "jobs@acme-careers.test", headers: AR("acme-careers.test") }, job), "another sender");
   assert.ok(!M.confirmationOk({ ...ok, headers: AR("us.greenhouse-mail.io", false) }, job), "no DKIM pass");
   assert.ok(!M.confirmationOk({ ...ok, subject: "Thank you for applying to Acme" }, job), "only the first word of the company");
-  assert.ok(!M.confirmationOk(ok, { company: "Acme Health", url: "https://jobs.lever.co/acmehealth/1" }), "Greenhouse mail for a Lever job");
+  assert.ok(M.confirmationOk(ok, { company: "Acme Health", url: "https://jobs.lever.co/acmehealth/1" }), "any known application system's signed mail (plan step 5)");
+  const mine = { from: "Acme Health Careers <careers@acmehealth.com>", headers: AR("acmehealth.com"), subject: "Thanks for applying!" };
+  assert.ok(M.confirmationOk(mine, job), "the employer's own domain, signed, named in the sender's name");
+  assert.ok(!M.confirmationOk({ ...mine, from: "Acme Health Careers <careers@acme-careers.test>", headers: AR("acme-careers.test") }, job), "a look-alike domain");
+  assert.ok(!M.confirmationOk({ ...mine, headers: AR("acmehealth.com", false) }, job), "unsigned");
   const own = { company: "Pollo Regio", url: "https://careers.polloregio.com/jobs/9" };
   assert.ok(M.confirmationOk({ from: "hr@polloregio.com", headers: AR("polloregio.com"), subject: "Pollo Regio: we received your application" }, own), "the employer's own site");
+});
+
+test("a code from the form's own system (iCIMS here), signed, is used; a newer one from anyone else is not (plan step 4)", () => {
+  const since = 1_800_000_000;
+  const domains = M.mailDomainsFor("https://careers-acme.icims.com/jobs/1/apply");
+  assert.deepStrictEqual(domains, ["icims.com"]);
+  const mine = { from: "no-reply@talent.icims.com", headers: AR("talent.icims.com"), internalDate: new Date((since + 30) * 1000), subject: "Your verification code", text: "Your verification code is: 48213977" };
+  const other = { from: "codes@unrelated-site.test", headers: AR("unrelated-site.test"), internalDate: new Date((since + 90) * 1000), subject: "Your verification code", text: "Your verification code is: 11112222" };
+  assert.strictEqual(M.pickCode([other, mine], since, domains), "48213977");
+  assert.strictEqual(M.pickCode([{ ...mine, headers: AR("talent.icims.com", false) }], since, domains), null, "unsigned");
+  assert.strictEqual(M.pickCode([mine], since), null, "Greenhouse's senders only, when nothing else is named");
+  assert.deepStrictEqual(M.mailDomainsFor("https://careers.polloregio.com/apply"), ["polloregio.com"], "the employer's own site");
 });

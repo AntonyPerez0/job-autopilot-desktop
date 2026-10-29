@@ -88,7 +88,8 @@ test("government job sites are the person's to apply to, and GovernmentJobs.com 
   } finally { globalThis.fetch = real; }
 });
 
-test("many titles and places: at most 12 searches a cycle, each source taking turns (audit 2.5)", async () => {
+test("many titles and places: at most PER_CYCLE (30) searches a cycle, each source taking turns (audit 2.5, plan step 11)", async () => {
+  const { PER_CYCLE } = await import("../core/sources/budget.js");
   await store.setSecret("usajobsKey", "k123");
   store.saveSettings({ usajobsEmail: "jordan@example.com", rotate: {} });
   const real = globalThis.fetch;
@@ -100,17 +101,18 @@ test("many titles and places: at most 12 searches a cycle, each source taking tu
     return new Response(JSON.stringify({ SearchResult: { SearchResultItems: [] } }), { status: 200 });
   };
   try {
-    const prefs = { titles: [...Array(20)].map((_, i) => "Title " + i), cities: [{ name: "Sacramento", region: "CA", country: "US", lat: 38.58, lon: -121.49 }], radius: 25, remote: true, remoteCountry: "US" };
+    const prefs = { titles: [...Array(25)].map((_, i) => "Title " + i), cities: [{ name: "Sacramento", region: "CA", country: "US", lat: 38.58, lon: -121.49 }], radius: 25, remote: true, remoteCountry: "US" };
     await U.search(prefs, {});
-    assert.strictEqual(asked.length, 12, "one cycle: 12 of the 40 searches");
+    assert.strictEqual(PER_CYCLE, 30);
+    assert.strictEqual(asked.length, PER_CYCLE, "one cycle: 30 of the 50 searches");
     const first = asked.splice(0);
     await U.search(prefs, {});
-    assert.strictEqual(asked.length, 12);
-    assert.ok(!asked.some((x) => first.includes(x)), "the next cycle takes the next ones");
+    assert.strictEqual(asked.length, PER_CYCLE);
+    assert.ok(asked.slice(0, 20).every((x) => !first.includes(x)), "the next cycle starts with the ones left over");
     asked.length = 0;
     const F = await import("../core/sources/freehire.js");
     await F.search(prefs, {});
-    assert.ok(asked.length <= 12 && asked.every((x) => x.startsWith("fh:")), `freehire: ${asked.length}`);
+    assert.ok(asked.length <= PER_CYCLE && asked.every((x) => x.startsWith("fh:")), `freehire: ${asked.length}`);
   } finally { globalThis.fetch = real; }
 });
 

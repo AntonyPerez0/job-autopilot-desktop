@@ -61,15 +61,13 @@ test("a cross-origin frame and the page's own script get nothing; the form gets 
   await page.close();
 });
 
-test("a frame's message carries only the kit lines for its own fields, and the resume only with a file input", () => {
+test("an allowed frame with fields gets the whole kit (in its isolated world); the resume only with a file input; no fields, nothing", () => {
   const msg = { type: "fill", kit: { fields: KIT, header: {} }, resume: { name: "r.pdf", b64: "x" } };
-  const three = A.frameMessage(msg, [{ label: "First name", type: "text" }, { label: "Email", type: "text" }, { label: "Phone", type: "text" }]);
-  assert.deepStrictEqual(three.kit.fields.map((k) => k.value), ["Jordan", "jordan.lee@example.com", "+1 (512) 555-0142"]);
+  const three = A.frameMessage(msg, [{ label: "Given name", type: "text" }, { label: "E-mail address", type: "text" }]);
+  assert.strictEqual(three.kit.fields.length, KIT.length, "content.js matches the labels itself, as before");
   assert.strictEqual(three.resume, null);
-  const file = A.frameMessage(msg, [{ label: "Resume/CV", type: "file" }]);
-  assert.deepStrictEqual(file.kit.fields.map((k) => k.label), ["Resume"]);
-  assert.ok(file.resume);
-  assert.strictEqual(A.frameMessage(msg, [{ label: "Search this site", type: "text" }]), null, "no matching field: nothing at all");
+  assert.ok(A.frameMessage(msg, [{ label: "Resume/CV", type: "file" }]).resume);
+  assert.strictEqual(A.frameMessage(msg, []), null, "a frame without fields gets nothing");
 });
 
 test("only the form's own origin or a known ATS embed", () => {
@@ -80,9 +78,15 @@ test("only the form's own origin or a known ATS embed", () => {
   assert.ok(!A.frameAllowed("https://acme.example/jobs/1", "https://evilgreenhouse.io/embed"), "a lookalike domain");
   assert.ok(!A.frameAllowed("https://acme.example/jobs/1", "about:blank"));
   assert.ok(!A.frameAllowed("https://acme.example/jobs/1", "http://acme.example/frame"), "same host, other scheme: another origin");
+  // every application system the app knows, and the job's own link; never a job board or a government site
+  for (const u of ["https://careers-acme.icims.com/jobs/1/apply", "https://acme.jobs.jobvite.com/x", "https://acme.bamboohr.com/careers/1", "https://acme.wd5.myworkdayjobs.com/x", "https://recruiting.paylocity.com/x"])
+    assert.ok(A.frameAllowed("https://acme.example/jobs/1", u), u);
+  for (const u of ["https://www.indeed.com/viewjob?jk=1", "https://www.governmentjobs.com/careers/x", "http://careers-acme.icims.com/jobs/1"])
+    assert.ok(!A.frameAllowed("https://acme.example/jobs/1", u), u);
+  assert.ok(A.frameAllowed("https://www.acme.example/careers", "https://apply.acme-hr.example/form", "https://apply.acme-hr.example/job/1"), "the job's own apply link");
 });
 
-test("an emailed code goes only into the frame where Submit was pressed, and only on Greenhouse (audit 2.8)", async () => {
+test("an emailed code goes only into the frame where Submit was pressed, from that form's own system (audit 2.8, plan step 4)", async () => {
   const page = await browser.newPage();
   await page.goto(`http://127.0.0.1:${server.address().port}/`);
   await page.waitForTimeout(300);
@@ -92,7 +96,52 @@ test("an emailed code goes only into the frame where Submit was pressed, and onl
   await A.enterCode(page.mainFrame(), "AbC12345");
   assert.strictEqual(await page.inputValue("#sc"), "AbC12345");
   assert.strictEqual(await ad.inputValue("#adcode"), "", "the other frame got nothing");
-  assert.ok(A.isGreenhouse("https://job-boards.greenhouse.io/globex/jobs/1"));
-  assert.ok(!A.isGreenhouse("https://greenhouse.io.evil.test/x") && !A.isGreenhouse("https://evilgreenhouse.io/x"));
+  assert.deepStrictEqual(A.codeSenders("https://job-boards.greenhouse.io/globex/jobs/1", "https://globex.example/careers/1"), ["greenhouse.io", "greenhouse-mail.io", "globex.example"]);
+  assert.deepStrictEqual(A.codeSenders("https://careers-acme.icims.com/jobs/1", ""), ["icims.com"]);
+  assert.deepStrictEqual(A.codeSenders("https://greenhouse.io.evil.test/x", ""), ["evil.test"], "a look-alike is only itself");
+  await page.close();
+});
+
+test("a form embedded from an application system the app knows (iCIMS here) is filled; the tracker beside it still gets nothing (plan step 1)", async () => {
+  const page = await browser.newPage();
+  const seen = [];
+  await page.route("https://careers.acme.example/**", (r) => r.fulfill({ contentType: "text/html", body: `<!doctype html><body><h1>Join Acme</h1>
+    <iframe src="https://careers-acme.icims.com/jobs/1/apply" width="600" height="300"></iframe><iframe src="https://pixel.tracker.example/p" width="10" height="10"></iframe></body>` }));
+  await page.route("https://careers-acme.icims.com/**", (r) => r.fulfill({ contentType: "text/html", body: `<!doctype html><body>
+    <label for="fn">First name</label><input id="fn"><label for="em">Email</label><input id="em" type="email"></body>` }));
+  await page.route("https://pixel.tracker.example/**", (r) => r.fulfill({ contentType: "text/html", body: `<!doctype html><body><label for="e3">Email</label><input id="e3">
+    <script>setInterval(() => { if (document.getElementById("e3").value || window.__apListeners) parent.postMessage("leak", "*"); }, 50)</script></body>` }));
+  await page.exposeFunction("__leak", (m) => seen.push(m));
+  await page.goto("https://careers.acme.example/jobs/1");
+  await page.evaluate(() => addEventListener("message", (e) => window.__leak(String(e.data))));
+  await page.waitForTimeout(500);
+  const out = await A.eachFrame(page, { type: "fill", kit: { fields: KIT, header: {} }, resume: null });
+  await page.waitForTimeout(500);
+  const icims = page.frames().find((f) => /icims/.test(f.url())), px = page.frames().find((f) => /tracker/.test(f.url()));
+  assert.strictEqual(await icims.inputValue("#fn"), "Jordan");
+  assert.strictEqual(await icims.inputValue("#em"), "jordan.lee@example.com");
+  assert.strictEqual(await px.inputValue("#e3"), "", "the tracker's field stayed empty");
+  assert.deepStrictEqual(seen, []);
+  assert.ok(out.some((r) => r.frame === icims) && !out.some((r) => r.frame === px));
+  await page.close();
+});
+
+test("React dropdowns: their options are read and the answer is set through the component, in the page's world, with one value (plan step 3)", async () => {
+  const page = await browser.newPage();
+  await page.setContent(`<!doctype html><body><form>
+    <div class="field"><label for="fn">First name</label><input id="fn"></div>
+    <div class="field"><label for="ln">Last name</label><input id="ln"></div>
+    <div class="field"><label for="ctry">Country *</label><input id="ctry" role="combobox" aria-autocomplete="list" aria-expanded="false"></div></form>
+    <script>
+      const el = document.getElementById("ctry"), seen = [];
+      const opts = [{ label: "Canada", value: "CA" }, { label: "United States", value: "US" }];
+      el.__reactFiber$x1 = { stateNode: null, return: { stateNode: { props: { options: opts }, selectOption(o) { el.dataset.picked = o.value; seen.push(o); } }, return: null } };
+      window.__seen = seen;
+    </script></body>`);
+  const { fields } = await A.scrapeAll(page);
+  assert.deepStrictEqual(fields.find((f) => /Country/.test(f.label)).options, ["Canada", "United States"], "the page's own options, for the model");
+  await A.fillCombos(page, [{ label: "Country", kind: "fill", value: "United States" }, { label: "Desired salary", kind: "fill", value: "120000" }]);
+  assert.strictEqual(await page.getAttribute("#ctry", "data-picked"), "US", "picked through the component");
+  assert.strictEqual(await page.inputValue("#ctry"), "", "not typed");
   await page.close();
 });

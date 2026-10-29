@@ -193,10 +193,10 @@ const ROUTES = {
     return { ok: true, hasKey: !!getSecret("apiKey") };
   },
   "POST /api/resumes/import": async (b) => {
-    // At most 10 files of 2 MB each (checked before decoding).
-    if ((b.files || []).length > 10) return bad("Add at most 10 resumes at a time.");
-    const big = (b.files || []).find((f) => String(f.b64 || "").length * 0.75 > 2 * 1024 * 1024);
-    if (big) return bad(`${String(big.name || "A file").slice(0, 80)} is larger than 2 MB. Save it as a smaller PDF or DOCX and try again.`);
+    // At most 20 files of 10 MB each (checked before decoding).
+    if ((b.files || []).length > 20) return bad("Add at most 20 resumes at a time.");
+    const big = (b.files || []).find((f) => String(f.b64 || "").length * 0.75 > 10 * 1024 * 1024);
+    if (big) return bad(`${String(big.name || "A file").slice(0, 80)} is larger than 10 MB. Save it as a smaller PDF or DOCX and try again.`);
     const files = (b.files || []).map((f) => ({ name: String(f.name || "").slice(0, 200), bytes: Buffer.from(String(f.b64 || ""), "base64") }));
     if (b.text) b.text = String(b.text).slice(0, 200000);
     if (!files.length && !b.text) return bad("Add at least one resume.");

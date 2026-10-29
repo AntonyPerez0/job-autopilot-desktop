@@ -7,10 +7,10 @@ import { CONTENT_JS, loadProfile, plan, build } from "./engine.js";
 import { log } from "./db.js";
 import { acquireBrowser, closeAppPage, closeBrowser, newAppPage } from "./browser.js";
 import { dataDir, getAnswers, getPrefs, getSettings } from "./store.js";
-import { waitForCode, waitForLink } from "./mail.js";
+import { mailDomainsFor, waitForCode, waitForLink } from "./mail.js";
 import { isWorkday, siteAccounts, workdayAccount, workdayApplyManually } from "./accounts.js";
 import { withinRadius } from "./geo.js";
-import { canonHost, hostOf, isGovUrl } from "./ats.js";
+import { hostOf, isApplicationSystem, isGovUrl } from "./ats.js";
 import { applyYourAnswers, yourAnswersFor } from "./asked.js";
 import { LOGIN_WALL_JS } from "./ats.js";
 
@@ -122,6 +122,47 @@ export const COMBOS_JS = `(() => {
   return out;
 })()`;
 
+// React dropdowns (react-select: Greenhouse, Lever and many more) are set through the component itself, which
+// lives in the page's own world, not in the isolated one content.js runs in. These run there, each with nothing
+// but the page's own option lists, or one field and the one value the page receives anyway when it's filled.
+const RS_CORE = `
+  const rsOf = (el) => { try { const k = Object.keys(el).find((x) => x.startsWith("__reactFiber")); let f = k && el[k];
+    for (let i = 0; f && i < 40; i++, f = f.return) { const sn = f.stateNode; if (sn && typeof sn.selectOption === "function" && sn.props) return sn; } } catch (e) { /* not React */ } return null; };
+  const rsOpts = (rs) => { const out = []; for (const o of Array.from(rs.props.options || [])) { if (o && o.options) out.push(...Array.from(o.options)); else if (o) out.push(o); } return out; };
+  const rsLab = (rs, o) => { try { return String(rs.props.getOptionLabel ? rs.props.getOptionLabel(o) : o.label).replace(/\\s+/g, " ").trim(); } catch (e) { return String((o && o.label) || ""); } };
+  const nk = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const labelOf = (el) => { const byFor = el.id && document.querySelector('label[for="' + CSS.escape(el.id) + '"]');
+    const byIds = (el.getAttribute("aria-labelledby") || "").split(/\\s+/).map((id) => document.getElementById(id)).filter(Boolean).map((x) => x.innerText).join(" ");
+    const entry = el.closest("[class*=fieldEntry], [class*=field-entry], .field, fieldset, [class*=question]") || el.parentElement.parentElement;
+    const lab = entry && entry.querySelector("label, legend, [class*=title]");
+    return ((byFor && byFor.innerText) || byIds || (lab && lab.innerText) || el.getAttribute("aria-label") || el.placeholder || "").replace(/\\s+/g, " ").trim(); };
+`;
+// [{ label, options }] for every React dropdown in the frame.
+export const RS_OPTIONS_JS = `(() => {${RS_CORE}
+  const out = [];
+  for (const el of document.querySelectorAll("input[role=combobox], input[aria-autocomplete=list]")) {
+    const rs = rsOf(el);
+    if (rs) out.push({ label: labelOf(el), options: rsOpts(rs).slice(0, 80).map((o) => rsLab(rs, o)).filter(Boolean) });
+  }
+  return out;
+})()`;
+// Pick `value` in the dropdown COMBOS_JS tagged `cid`: true picked, false no such option, null not React.
+export const RS_PICK_JS = (cid, value) => `(async () => {${RS_CORE}
+  const el = document.querySelector('[data-ap-combo="' + ${JSON.stringify(String(cid))} + '"]');
+  const rs = el && rsOf(el);
+  if (!rs) return null;
+  const want = nk(${JSON.stringify(String(value))});
+  const find = (list) => { const l = list.map((o) => nk(rsLab(rs, o))); let i = l.indexOf(want); if (i < 0) i = l.findIndex((x) => x.startsWith(want)); if (i < 0) i = l.findIndex((x) => want.length > 2 && x.includes(want)); return i; };
+  let opts = rsOpts(rs), i = find(opts);
+  if (i < 0 && typeof rs.props.loadOptions === "function") {
+    try { const r = await rs.props.loadOptions(${JSON.stringify(String(value).slice(0, 60))}, () => {}); const list = Array.from((r && (Array.isArray(r) ? r : r.options)) || []);
+      const flat = list.flatMap((o) => (o && o.options ? Array.from(o.options) : [o])); const j = find(flat); if (j >= 0) { opts = flat; i = j; } } catch (e) { /* the loader failed */ }
+  }
+  if (i < 0) return false;
+  rs.selectOption(opts[i]);
+  return true;
+})()`;
+
 // Type-to-search boxes answered from the user's own facts: their city, their school.
 let COMBO_FALLBACK = [];
 function comboFallback(a) {
@@ -132,7 +173,7 @@ function comboFallback(a) {
   ].filter(([, v]) => v);
 }
 
-async function fillCombos(page, kit, regionHint = "") {
+export async function fillCombos(page, kit, regionHint = "") {
   const left = [];
   for (const f of formFrames(page)) {
     for (const c of await f.evaluate(COMBOS_JS).catch(() => [])) {
@@ -140,6 +181,8 @@ async function fillCombos(page, kit, regionHint = "") {
       const fb = COMBO_FALLBACK.find(([rx]) => rx.test(c.label));
       const value = (fb && fb[1]) || (a && a.value);
       if (!value) { if (c.required) left.push(c.label); continue; }
+      // A React dropdown takes the answer through its own component first; typing is the fallback.
+      if (await f.evaluate(RS_PICK_JS(c.cid, value)).catch(() => null)) { await sleep(400); continue; }
       const box = f.locator(`[data-ap-combo="${c.cid}"]`);
       try {
         await box.click();
@@ -395,10 +438,11 @@ async function waitOutcome(page, before, wantsCode) {
   return null;
 }
 
-const emailCode = (mailbox, since) => (mailbox ? waitForCode(mailbox, since, 180) : Promise.resolve(null));
+const emailCode = (mailbox, since, domains) => (mailbox ? waitForCode(mailbox, since, 180, domains) : Promise.resolve(null));
 
-// Greenhouse is the only site whose emailed code the app reads; the code goes only into its frame.
-export const isGreenhouse = (u) => { const h = canonHost((() => { try { return new URL(u).hostname; } catch { return ""; } })()); return h === "greenhouse.io" || h.endsWith(".greenhouse.io"); };
+// Who may send the code for this form: the system the Submit frame is on, or the employer's own site (the job's
+// apply link). The code goes only into that frame.
+export const codeSenders = (frameUrl, applyUrl) => [...new Set([...mailDomainsFor(frameUrl), ...mailDomainsFor(applyUrl)])];
 
 // Type the code into the code box (one input, or one box per character) of the frame where Submit was
 // pressed, then confirm. No other frame sees it.
@@ -447,55 +491,29 @@ export const UNHIDE_JS = `(() => {
 })()`;
 
 // ---------- which frames may see the person's data ----------
-// Only the form itself: frames on the main page's origin, or a known ATS's embedded form. An ad, a tracker
-// or any other page in a frame never receives an answer, the resume, or the bridge to content.js.
-export const ATS_EMBEDS = ["greenhouse.io", "lever.co", "ashbyhq.com", "myworkdayjobs.com", "smartrecruiters.com", "workable.com"];
+// Only the form itself: frames on the main page's origin or the job's own apply link, or an application system
+// the app knows (ats.js) embedding its form. An ad, a tracker or any other page in a frame never receives an
+// answer, the resume, or the bridge to content.js.
 const originOf = (u) => { try { const x = new URL(u); return /^https?:$/.test(x.protocol) ? x.origin : null; } catch { return null; } };
-export function frameAllowed(mainUrl, frameUrl) {
+export function frameAllowed(mainUrl, frameUrl, applyUrl = "") {
   const o = originOf(frameUrl);
   if (!o) return false;
-  if (o === originOf(mainUrl)) return true;
-  const host = canonHost(new URL(frameUrl).hostname);
-  return ATS_EMBEDS.some((d) => host === d || host.endsWith("." + d));
+  if (o === originOf(mainUrl) || (applyUrl && o === originOf(applyUrl))) return true;
+  return new URL(frameUrl).protocol === "https:" && isApplicationSystem(frameUrl);
 }
+// The job's apply link, for each page an application uses.
+const JOB_LINK = new WeakMap();
 // The main frame is the page the app itself opened; the gate is for the frames inside it. Checked again at
 // every call: frames navigate.
-export const formFrames = (page) => page.frames().filter((f) => f === page.mainFrame() || frameAllowed(page.url(), f.url()));
+export const formFrames = (page) => page.frames().filter((f) => f === page.mainFrame() || frameAllowed(page.url(), f.url(), JOB_LINK.get(page)));
 
-// The kit lines a frame's own fields can use (the same label match content.js makes), and nothing else.
-const STOP = new Set(("a an and are as at be by can do does for from have how i if in is it me of on or our please select that the this to us we what when which will with you your yes no optional required").split(" "));
-const cleanT = (t) => String(t || "").replace(/\s+/g, " ").trim();
-const normL = (t) => cleanT(t).toLowerCase().replace(/\(optional\)|\(required\)|\*/g, " ").replace(/[^a-z0-9+#@./ ]+/g, " ").replace(/\s+/g, " ").trim();
-const toks = (t) => new Set(normL(t).split(" ").filter((w) => w && !STOP.has(w)).map((w) => w.replace(/s$/, "")));
-const CANON = [["first", /\b(first|given|preferred first) name\b|^first$/], ["last", /\b(last|family|sur) ?name\b|^last$/], ["full", /^(full |legal |your )?name$|\bfull (legal )?name\b/],
-  ["email", /\be-?mail\b/], ["phone", /\b(phone|mobile|cell|telephone)\b/], ["linkedin", /\blinkedin\b/], ["github", /\bgithub\b/], ["website", /\b(website|portfolio|personal (site|url))\b/],
-  ["resume", /\b(resume|cv|résumé)\b/], ["cover", /\bcover letter\b/]];
-const canonL = (t) => { const n = normL(t); if (n.length > 60) return null; for (const [k, re] of CANON) if (re.test(n)) return k; return null; };
-function labelScore(a0, b0) {
-  const a = normL(a0), b = normL(b0);
-  if (!a || !b) return 0;
-  if (a === b) return 1;
-  const ca = canonL(a0), cb = canonL(b0);
-  if (ca && cb) return ca === cb ? 0.95 : 0;
-  const A = toks(a0), B = toks(b0);
-  let n = 0; for (const w of A) if (B.has(w)) n++;
-  let sc = A.size && B.size ? (2 * n) / (A.size + B.size) : 0;
-  if (A.size >= 2 && [...A].every((w) => B.has(w))) sc = Math.max(sc, 0.8);
-  if (b.startsWith(a) || a.startsWith(b)) sc = Math.max(sc, 0.75);
-  return sc;
-}
-export function kitFor(kit, fields) {
-  const fs = fields || [];
-  return (kit || []).filter((k) => fs.some((f) => (k.kind === "file" ? f.type === "file" : labelScore(k.label, f.label) >= 0.5 || (f.question && labelScore(k.label, f.question + " " + f.label) >= 0.5))));
-}
-// A message for one frame: a fill carries only the lines for that frame's fields, and the resume only when
-// the frame has a file input. null: nothing for this frame.
+// A message for one frame. A fill goes only to a frame that has fields, with the whole kit (it lands in the
+// frame's isolated world, where the page can't read it, and content.js matches it to the fields as it always
+// has), and with the resume only when the frame has a file input. null: nothing for this frame.
 export function frameMessage(msg, fields) {
   if (msg.type !== "fill") return msg;
-  const lines = kitFor(msg.kit.fields, fields);
-  const file = (fields || []).some((f) => f.type === "file");
-  if (!lines.length && !file) return null;
-  return { ...msg, kit: { ...msg.kit, fields: lines }, resume: file ? msg.resume : null };
+  if (!(fields || []).length) return null;
+  return { ...msg, resume: fields.some((f) => f.type === "file") ? msg.resume : null };
 }
 
 // The bridge to content.js lives in an isolated world of each frame (CDP Page.createIsolatedWorld), the way a
@@ -559,7 +577,7 @@ export async function eachFrame(page, msg) {
   const out = [];
   for (const f of formFrames(page)) {
     try {
-      // A fill goes to a frame only with the lines for the fields that frame has right now.
+      // A fill goes to a frame only when it has fields right now, and the resume only with a file input.
       let m = msg;
       if (msg.type === "fill") {
         const own = await inWorld(page, f, `window.__apSend(${JSON.stringify({ type: "scrape" })})`);
@@ -573,12 +591,23 @@ export async function eachFrame(page, msg) {
   return out;
 }
 
-async function scrapeAll(page) {
+export async function scrapeAll(page) {
   let parts = [];
   for (let t = 0; t < 8; t++) {
     parts = await eachFrame(page, { type: "scrape" });
     if (Math.max(0, ...parts.map((p) => p.fields.length)) >= 3) break;
     await sleep(2500);
+  }
+  // React dropdowns' options, which the isolated scrape can't read: from the page's own lists, matched by label.
+  const nkl = (s) => String(s || "").toLowerCase().replace(/\*/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+  for (const p of parts) {
+    if (!p.fields.some((f) => f.type === "combo" && !f.options)) continue;
+    const lists = await p.frame.evaluate(RS_OPTIONS_JS).catch(() => []);
+    for (const f of p.fields) {
+      if (f.type !== "combo" || f.options) continue;
+      const l = lists.find((x) => nkl(x.label) === nkl(f.label));
+      if (l && l.options.length > 1) f.options = l.options;
+    }
   }
   const top = parts.find((p) => p.frame === page.mainFrame()) || parts[0] || { text: "", fields: [] };
   let text = top.text || "";
@@ -640,6 +669,8 @@ async function ensureResume(page, file) {
 export const abortCurrent = () => closeBrowser();
 
 // https only; plain http just for this computer itself (127.0.0.1, localhost), which never leaves it.
+// An http:// link to another computer, as https:// (most sites answer both); anything else as it is.
+export const toHttps = (u) => { const s = String(u || ""); return /^http:\/\//i.test(s) && !httpsOk(s) ? "https://" + s.slice(7) : s; };
 export function httpsOk(u) {
   try { const x = new URL(String(u)); return x.protocol === "https:" || (x.protocol === "http:" && /^(127\.0\.0\.1|localhost|\[::1\])$/.test(x.hostname)); } catch { return false; }
 }
@@ -741,6 +772,8 @@ export async function applyTo(job, hooks = {}, opts = {}) {
     bh = opts.browser ? { ctx: opts.browser } : await acquireBrowser({ windowMode: mode, choice: settings.browser, onStatus: (t) => hooks.status && hooks.status(t) });
     pagesBefore = new Set(bh.ctx.pages());
     page = await newAppPage(bh, mode);
+    const link = toHttps(job.apply_url);
+    JOB_LINK.set(page, link);
     pages.push(page);
     page.setDefaultTimeout(30000);
     if (process.env.AP_DEBUG) {
@@ -749,12 +782,14 @@ export async function applyTo(job, hooks = {}, opts = {}) {
     }
     step("open");
     // Only over https, never a government job site, checked again wherever the page may have moved.
-    if (!httpsOk(job.apply_url)) return manual("the application link doesn't use https (an encrypted connection), so the app doesn't open it");
+    if (!httpsOk(link)) return manual("the application link isn't a web address the app can open over https (an encrypted connection)");
     const unsafePage = () => (isGovUrl(page.url()) ? manual(`it moved to ${hostOf(page.url()).replace(/^www\./, "")}, a government job site that needs your own account there, so the app doesn't fill it`)
       : !httpsOk(page.url()) ? manual(`the form is on a page without https (${hostOf(page.url()) || page.url().slice(0, 40)}), so the app doesn't fill it`) : null);
-    log(job.slug, "opening " + job.apply_url);
+    log(job.slug, "opening " + link + (link !== job.apply_url ? " (the link said http://)" : ""));
     cut();
-    const resp = await page.goto(job.apply_url, { waitUntil: "domcontentloaded", timeout: 60000 });
+    // An http:// link opened as https://: a site that doesn't answer there is the person's to apply to.
+    const resp = await page.goto(link, { waitUntil: "domcontentloaded", timeout: 60000 }).catch((e) => { if (link === job.apply_url) throw e; return "no https"; });
+    if (resp === "no https") return manual(`${hostOf(link)} only answers over plain http (unencrypted), so the app doesn't open it`);
     if (resp && resp.status() >= 400) return { ...result, status: "skipped", reason: `posting page returned ${resp.status()} (probably closed)` };
     if (unsafePage()) return unsafePage();
     await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
@@ -767,7 +802,7 @@ export async function applyTo(job, hooks = {}, opts = {}) {
     if (fields.length < 3 && !CLOSED_RX.test(text.slice(0, 3000))) {
       // A posting page with an "Apply" button in front of the form.
       const target = await openForm(page, job.slug);
-      if (target !== page) { pages.push(target); page = target; page.setDefaultTimeout(30000); }
+      if (target !== page) { pages.push(target); page = target; page.setDefaultTimeout(30000); JOB_LINK.set(page, link); }
       if (unsafePage()) return unsafePage();
       ({ text, fields } = await scrapeAll(page));
     }
@@ -783,7 +818,7 @@ export async function applyTo(job, hooks = {}, opts = {}) {
       const getLink = opts.waitLink || ((since, host) => (opts.mailbox ? waitForLink(opts.mailbox, since, host, 180) : Promise.resolve(null)));
       // the confirmation link is opened right after: not for a run that has timed out
       const waitLink = async (since, host) => { cut(); const l = await getLink(since, host); cut(); return l; };
-      const r = await workdayAccount(page, creds, { waitLink, log: (m) => log(job.slug, m) });
+      const r = await workdayAccount(page, creds, { waitLink, log: (m) => log(job.slug, m), allowArbitration });
       if (!r.ok) return { ...result, status: "failed", reason: r.reason, screenshot: await shot(page, job.slug, "account") };
       signedIn = true;
       accountNotes.push(...r.notes);
@@ -916,18 +951,19 @@ export async function applyTo(job, hooks = {}, opts = {}) {
     if (halted()) return manual(`${halted()} just as Submit was pressed: it may have gone through. Check your email or the site before applying again`);
     let outcome = await waitOutcome(page, before, () => got428);
     if (outcome === "code") {
-      // Only on Greenhouse's own form: a code box anywhere else (a widget, another site's frame) gets nothing.
-      if (!isGreenhouse(frame.url())) {
+      // Only a code from the form's own system (or the employer's own site), signed by it.
+      const senders = codeSenders(frame.url(), job.apply_url);
+      if (!senders.length) {
         result.screenshot = await shot(page, job.slug, "after");
-        return { ...result, status: "failed", reason: "security code: the form asks for an emailed code, and the app only reads codes on Greenhouse forms. Open the application and enter it yourself" };
+        return { ...result, status: "failed", reason: "security code: the form asks for an emailed code, and the app can't tell who should send it. Open the application and enter it yourself" };
       }
       if (halted()) return manual(`${halted()} before the emailed code was entered, so the application wasn't finished. Open it and enter the code yourself`);
       step("code");
       log(job.slug, "the employer emailed a security code; reading it from the inbox");
-      const code = await emailCode(opts.mailbox, submittedAt);
+      const code = await emailCode(opts.mailbox, submittedAt, senders);
       if (!code) {
         result.screenshot = await shot(page, job.slug, "after");
-        return { ...result, status: "failed", reason: "security code: Greenhouse emailed a verification code and the autopilot could not read it (no mailbox access, or it did not arrive in 3 minutes)" };
+        return { ...result, status: "failed", reason: `security code: the employer emailed a verification code and the autopilot could not read it (no mailbox access, or no signed email from ${senders.join(" or ")} in 3 minutes)` };
       }
       got428 = false;
       step("confirm");

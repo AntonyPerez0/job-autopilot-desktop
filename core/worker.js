@@ -4,7 +4,7 @@ import fs from "node:fs";
 import { getDb, log, setJob, getJob, appliedToday, nextDayStart } from "./db.js";
 import { discover } from "./discover.js";
 import { sameRoleAs, sameUrlAs } from "./dedupe.js";
-import { abortCurrent, applyTo, httpsOk, STEPS } from "./apply.js";
+import { abortCurrent, applyTo, httpsOk, STEPS, toHttps } from "./apply.js";
 import { hostOf, isGovUrl } from "./ats.js";
 import { acquireBrowser, closeAppPage, closeBrowser, newAppPage } from "./browser.js";
 import { windowModeOf } from "./apply.js";
@@ -115,11 +115,12 @@ async function applyOne(job) {
 // Government job sites need the person's own account, and GovernmentJobs.com forbids automated access:
 // a job there is never opened by the app, even if it was queued by hand (hosts read by ats.hostOf, so a
 // trailing dot or capitals don't hide one).
-// A plain http:// link is never opened either: the person's answers would cross the network unencrypted.
+// Nothing is opened over plain http (an http:// link is tried as https:// in applyTo), and nothing that isn't a
+// web address at all.
 async function applyOneInner(job) {
-  if (!httpsOk(job.apply_url || job.url)) {
-    setJob(job.slug, { status: "manual", reason: "Apply yourself: the application link doesn't use https (an encrypted connection), so the app doesn't open it" });
-    log(job.slug, "not https: left for you to apply to");
+  if (!httpsOk(toHttps(job.apply_url || job.url))) {
+    setJob(job.slug, { status: "manual", reason: "Apply yourself: the application link isn't a web address the app can open over https (an encrypted connection)" });
+    log(job.slug, "not a web address: left for you to apply to");
     return false;
   }
   if (isGovUrl(job.apply_url || job.url)) {

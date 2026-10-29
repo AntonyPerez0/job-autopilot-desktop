@@ -94,10 +94,12 @@ const CREATE = {
 };
 
 // The sign-up's terms box, chosen by what its label says, never by where it is: only ordinary terms of use or a
-// privacy policy, with nothing binding in it (arbitration, waived rights, a background check). { box, text } for
-// the one to tick; { binding } when the only terms on offer bind the person to more; null when there's no box.
+// privacy policy, with nothing binding in it (waived rights, a background check), and arbitration only when the
+// person allowed plain arbitration in Settings (for every employer, or this one). { box, text } for the one to
+// tick; { binding } when the only terms on offer bind the person to more; null when there's no box.
 const TERMS_RX = /\b(terms|privacy|conditions|policy|policies)\b/i;
-export async function termsBox(page) {
+const MORE_THAN_ARBITRATION = /waive|waiver|jury|class action|release (of )?(all |any )?(claims|liability)|hold harmless|indemnif|non-?compete|non-?solicit|background check|drug (test|screen)/i;
+export async function termsBox(page, { allowArbitration = false } = {}) {
   let binding = null;
   for (const sel of CREATE.terms) {
     for (const el of await page.locator(sel).all().catch(() => [])) {
@@ -108,7 +110,8 @@ export async function termsBox(page) {
         return [e.getAttribute("aria-label"), byId(e.getAttribute("aria-labelledby")), lab && lab.innerText, !lab && e.parentElement ? e.parentElement.innerText : ""].filter(Boolean).join(" ").replace(/\s+/g, " ").trim().slice(0, 600);
       }).catch(() => "");
       if (!TERMS_RX.test(text)) continue;
-      if (WAIVER_RX.test(text) || BINDING_RX.test(text)) { binding = binding || text; continue; }
+      const plainArbitration = allowArbitration && /arbitrat/i.test(text) && !MORE_THAN_ARBITRATION.test(text);
+      if ((WAIVER_RX.test(text) || BINDING_RX.test(text)) && !plainArbitration) { binding = binding || text; continue; }
       return { box: el, text };
     }
   }
@@ -143,7 +146,7 @@ export async function workdayApplyManually(page) {
 
 // Returns { ok, created, notes[] } or { ok: false, reason }.
 // waitLink(sinceSeconds, host) -> the confirmation link from the mailbox, or null.
-export async function workdayAccount(page, creds, { waitLink, log = () => {} } = {}) {
+export async function workdayAccount(page, creds, { waitLink, log = () => {}, allowArbitration = false } = {}) {
   const host = hostOf(page.url());
   const notes = [];
   if (!isWorkday(page.url())) return { ok: false, reason: LEFT(page) };
@@ -160,7 +163,7 @@ export async function workdayAccount(page, creds, { waitLink, log = () => {} } =
     if (!(await visible(page, CREATE.verify))) return { ok: false, reason: `${host}: the sign-up form did not appear` };
     if (!(await fillOnWorkday(page, SIGN_IN.password, creds.password))) return { ok: false, reason: LEFT(page) };
     if (!(await fillOnWorkday(page, CREATE.verify, creds.password))) return { ok: false, reason: LEFT(page) };
-    const terms = await termsBox(page);
+    const terms = await termsBox(page, { allowArbitration });
     if (terms && terms.binding) return { ok: false, reason: `${host}'s sign-up asks you to accept "${terms.binding.slice(0, 160)}", which binds you to more than terms of use. Open it and decide yourself` };
     if (terms) {
       await terms.box.check({ timeout: 5000 }).catch(() => terms.box.click({ force: true }));
