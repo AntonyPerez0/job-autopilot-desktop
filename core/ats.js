@@ -90,6 +90,10 @@ export const KIND_TEXT = {
 export const canonHost = (h) => String(h || "").trim().toLowerCase().replace(/\.+$/, "");
 export const hostOf = (u) => { try { return canonHost(new URL(String(u)).hostname); } catch { return ""; } };
 
+// Government job sites need the person's own account, and GovernmentJobs.com forbids automated access.
+export const GOV = /(^|\.)(usajobs\.gov|governmentjobs\.com|schooljobs\.com|calcareers\.ca\.gov)$/;
+export const isGovUrl = (u) => GOV.test(hostOf(u));
+
 export function classify(url) {
   let host = "";
   try { host = canonHost(new URL(String(url)).hostname); } catch { return { ats: "unknown", kind: "unknown" }; }

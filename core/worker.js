@@ -4,7 +4,8 @@ import fs from "node:fs";
 import { getDb, log, setJob, getJob, appliedToday, nextDayStart } from "./db.js";
 import { discover } from "./discover.js";
 import { sameRoleAs, sameUrlAs } from "./dedupe.js";
-import { abortCurrent, applyTo, STEPS } from "./apply.js";
+import { abortCurrent, applyTo, httpsOk, STEPS } from "./apply.js";
+import { hostOf, isGovUrl } from "./ats.js";
 import { acquireBrowser, closeAppPage, closeBrowser, newAppPage } from "./browser.js";
 import { windowModeOf } from "./apply.js";
 
@@ -82,21 +83,29 @@ function appliedSameRole(job) {
 async function inboxConfirms(job) {
   const m = mailbox();
   if (!m) return null;
-  return findConfirmation(m, job.company, job.title, 60);
+  return findConfirmation(m, job.company, job.title, 60, job.apply_url || job.url);
 }
 
-async function stillOpen(slug) {
+// Only freehire's own postings are asked about: no other board's job is ever named to freehire.me.
+export function isFreehireJob(job) {
+  try { return (JSON.parse(job.details || "{}") || {}).board === "freehire"; } catch { return false; }
+}
+export async function stillOpen(job) {
+  if (!isFreehireJob(job)) return true;
   try {
-    const r = await call("check_jobs_open", { slugs: [slug] });
+    const r = await call("check_jobs_open", { slugs: [encodeURIComponent(String(job.slug))] });
     const j = (r.jobs || [])[0];
     // freehire only knows its own postings: "not_found" (every HiringCafe job, for one) says nothing about whether it's open.
     return !j || j.status !== "closed";
   } catch { return true; }
 }
 
-async function withTimeout(p, ms) {
+// run(signal): when the time is up, the signal is aborted (applyTo stops at its next step) and the wait ends.
+export async function withTimeout(run, ms) {
+  const ctrl = new AbortController();
   let t;
-  return Promise.race([p, new Promise((_, rej) => { t = setTimeout(() => rej(new Error("application timed out")), ms); })]).finally(() => clearTimeout(t));
+  const late = new Promise((_, rej) => { t = setTimeout(() => { ctrl.abort(); rej(new Error("application timed out")); }, ms); });
+  return Promise.race([run(ctrl.signal), late]).finally(() => clearTimeout(t));
 }
 
 async function applyOne(job) {
@@ -104,12 +113,16 @@ async function applyOne(job) {
 }
 
 // Government job sites need the person's own account, and GovernmentJobs.com forbids automated access:
-// a job there is never opened by the app, even if it was queued by hand.
-const GOV = /(^|\.)(usajobs\.gov|governmentjobs\.com|schooljobs\.com|calcareers\.ca\.gov)$/i;
-const hostOf = (u) => { try { return new URL(u).hostname; } catch { return ""; } };
-
+// a job there is never opened by the app, even if it was queued by hand (hosts read by ats.hostOf, so a
+// trailing dot or capitals don't hide one).
+// A plain http:// link is never opened either: the person's answers would cross the network unencrypted.
 async function applyOneInner(job) {
-  if (GOV.test(hostOf(job.apply_url || job.url))) {
+  if (!httpsOk(job.apply_url || job.url)) {
+    setJob(job.slug, { status: "manual", reason: "Apply yourself: the application link doesn't use https (an encrypted connection), so the app doesn't open it" });
+    log(job.slug, "not https: left for you to apply to");
+    return false;
+  }
+  if (isGovUrl(job.apply_url || job.url)) {
     setJob(job.slug, { status: "manual", reason: `Apply yourself on ${hostOf(job.apply_url || job.url).replace(/^www\./, "")}: it needs your own account there, so the app doesn't open it` });
     log(job.slug, "government job site: left for you to apply to");
     return false;
@@ -128,7 +141,7 @@ async function applyOneInner(job) {
     log(job.slug, "skipped: the inbox already has this employer's confirmation for this role");
     return false;
   }
-  if (!(await stillOpen(job.slug))) {
+  if (!(await stillOpen(job))) {
     setJob(job.slug, { status: "skipped", reason: "posting closed before the app got to it" });
     log(job.slug, "closed before we got to it");
     return false;
@@ -136,25 +149,33 @@ async function applyOneInner(job) {
   const dryRun = !!CONFIG.dryRun;
   log(job.slug, `applying: ${job.title} at ${job.company}${dryRun ? " (dry run)" : ""}`);
   const track = applyProgress(job);
+  // pressedAt: when Submit was really pressed (the step after it began). From then on the job counts as
+  // possibly sent, toward the daily cap and for never applying twice, whatever the page shows next.
+  let signal = null, pressedAt = null;
   const progress = (key) => {
+    if (signal && signal.aborted) return; // a run that timed out reports nothing more
     track(key);
     if (key === "submit" && !dryRun) setJob(job.slug, { status: "submitting", applied_at: new Date().toISOString() });
+    if (key === "confirm" && !dryRun && !pressedAt) { pressedAt = new Date().toISOString(); setJob(job.slug, { status: "submitting", applied_at: pressedAt }); }
   };
   try {
     // A model on the user's own computer can take many minutes per step.
     const limit = (isLocal(getSettings().ai) ? 60 : 12) * 60000;
-    const r = await withTimeout(applyTo(job, { progress, status: (t) => { state.now = t; } }, { dryRun, mailbox: mailbox() }), limit);
+    const r = await withTimeout((s) => { signal = s; return applyTo(job, { progress, status: (t) => { if (!s.aborted) state.now = t; } }, { dryRun, mailbox: mailbox(), signal: s }); }, limit);
     // A job added by its link gets its real title and employer once the AI has read the page.
     const p = (r.details && r.details.plan) || {};
     const known = (x) => x && !/\b(not stated|unknown|n\/a)\b/i.test(x);
     if (JSON.parse(job.details || "{}").addedByUser && known(p.employer) && known(p.jobTitle)) setJob(job.slug, { company: p.employer, title: p.jobTitle });
+    // Submit was pressed but no confirmation came: it may have gone through, so it's never sent again on its own.
+    const maybe = !!pressedAt && r.status !== "applied";
+    const reason = maybe && !/may have gone through/.test(r.reason || "") ? `${String(r.reason || "").replace(/\.?$/, "")}. Submit was pressed, so it may have gone through. Check your email before using Try again.` : r.reason;
     setJob(job.slug, {
-      status: r.status, reason: r.reason, details: r.details || null,
+      status: maybe ? "failed" : r.status, reason, details: r.details || null,
       resume_file: r.resume_file || null, screenshot: r.screenshot || null,
-      applied_at: r.status === "applied" ? new Date().toISOString() : null,
+      applied_at: r.status === "applied" ? new Date().toISOString() : pressedAt,
     });
-    log(job.slug, `${r.status}: ${r.reason}`, r.status === "failed" ? "warn" : "info");
-    return r.status === "applied" || r.status === "filled";
+    log(job.slug, `${maybe ? "failed" : r.status}: ${reason}`, r.status === "failed" || maybe ? "warn" : "info");
+    return r.status === "applied" || r.status === "filled" || maybe;
   } catch (e) {
     await abortCurrent();
     if ((getJob(job.slug) || {}).status === "submitting") {

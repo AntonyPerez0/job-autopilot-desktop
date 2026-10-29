@@ -10,7 +10,7 @@ import { dataDir, getAnswers, getPrefs, getSettings } from "./store.js";
 import { waitForCode, waitForLink } from "./mail.js";
 import { isWorkday, siteAccounts, workdayAccount, workdayApplyManually } from "./accounts.js";
 import { withinRadius } from "./geo.js";
-import { canonHost } from "./ats.js";
+import { canonHost, hostOf, isGovUrl } from "./ats.js";
 import { applyYourAnswers, yourAnswersFor } from "./asked.js";
 import { LOGIN_WALL_JS } from "./ats.js";
 
@@ -639,6 +639,11 @@ async function ensureResume(page, file) {
 // A timed-out run shuts the browser down, so nothing it was doing can carry on.
 export const abortCurrent = () => closeBrowser();
 
+// https only; plain http just for this computer itself (127.0.0.1, localhost), which never leaves it.
+export function httpsOk(u) {
+  try { const x = new URL(String(u)); return x.protocol === "https:" || (x.protocol === "http:" && /^(127\.0\.0\.1|localhost|\[::1\])$/.test(x.hostname)); } catch { return false; }
+}
+
 // "minimized" unless the user chose otherwise; the old headless switch still counts.
 export const windowModeOf = (s) => s.windowMode || (s.headless ? "headless" : "minimized");
 
@@ -720,7 +725,10 @@ export async function applyTo(job, hooks = {}, opts = {}) {
   allowArbitration = arbitrationAllowed(a, job.company);
   COMBO_FALLBACK = comboFallback(a);
   const jobLocal = withinRadius(job.location, prefs);
-  const step = (k) => { try { hooks.progress && hooks.progress(k); } catch { /* display only */ } };
+  // A run the worker gave up on (it timed out) stops at its next step, page load or press: nothing more is
+  // sent, and nothing more is reported for it.
+  const cut = () => { if (opts.signal && opts.signal.aborted) throw new Error("application timed out"); };
+  const step = (k) => { cut(); try { hooks.progress && hooks.progress(k); } catch { /* display only */ } };
   step("browser");
   const profile = opts.profile || loadProfile();
   const details = JSON.parse(job.details || "{}");
@@ -740,11 +748,18 @@ export async function applyTo(job, hooks = {}, opts = {}) {
       page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") console.log("CONSOLE", m.type(), m.text().slice(0, 200)); });
     }
     step("open");
+    // Only over https, never a government job site, checked again wherever the page may have moved.
+    if (!httpsOk(job.apply_url)) return manual("the application link doesn't use https (an encrypted connection), so the app doesn't open it");
+    const unsafePage = () => (isGovUrl(page.url()) ? manual(`it moved to ${hostOf(page.url()).replace(/^www\./, "")}, a government job site that needs your own account there, so the app doesn't fill it`)
+      : !httpsOk(page.url()) ? manual(`the form is on a page without https (${hostOf(page.url()) || page.url().slice(0, 40)}), so the app doesn't fill it`) : null);
     log(job.slug, "opening " + job.apply_url);
+    cut();
     const resp = await page.goto(job.apply_url, { waitUntil: "domcontentloaded", timeout: 60000 });
     if (resp && resp.status() >= 400) return { ...result, status: "skipped", reason: `posting page returned ${resp.status()} (probably closed)` };
+    if (unsafePage()) return unsafePage();
     await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
     await sleep(2000);
+    if (unsafePage()) return unsafePage(); // a redirect that came after the first page loaded
 
     step("read");
     await dismissCookies(page);
@@ -753,6 +768,7 @@ export async function applyTo(job, hooks = {}, opts = {}) {
       // A posting page with an "Apply" button in front of the form.
       const target = await openForm(page, job.slug);
       if (target !== page) { pages.push(target); page = target; page.setDefaultTimeout(30000); }
+      if (unsafePage()) return unsafePage();
       ({ text, fields } = await scrapeAll(page));
     }
     if (CLOSED_RX.test(text.slice(0, 3000)) && fields.length < 5) return { ...result, status: "skipped", reason: "posting is closed" };
@@ -764,7 +780,9 @@ export async function applyTo(job, hooks = {}, opts = {}) {
     // Only on a Workday page itself: a stored Workday link that led somewhere else never gets the password.
     if (creds && isWorkday(page.url())) {
       step("account");
-      const waitLink = opts.waitLink || ((since, host) => (opts.mailbox ? waitForLink(opts.mailbox, since, host, 180) : Promise.resolve(null)));
+      const getLink = opts.waitLink || ((since, host) => (opts.mailbox ? waitForLink(opts.mailbox, since, host, 180) : Promise.resolve(null)));
+      // the confirmation link is opened right after: not for a run that has timed out
+      const waitLink = async (since, host) => { cut(); const l = await getLink(since, host); cut(); return l; };
       const r = await workdayAccount(page, creds, { waitLink, log: (m) => log(job.slug, m) });
       if (!r.ok) return { ...result, status: "failed", reason: r.reason, screenshot: await shot(page, job.slug, "account") };
       signedIn = true;
@@ -859,9 +877,11 @@ export async function applyTo(job, hooks = {}, opts = {}) {
       if (n >= MAX_PAGES) return { ...result, status: "failed", reason: `the form kept asking for more after ${MAX_PAGES} pages` };
       const before = page.url(), beforeLabels = fields.map((f) => f.label).join("|");
       log(job.slug, `pressing "${nextLabel}"`);
+      cut();
       await nextFrame.locator("[data-ap-next]").first().click({ timeout: 15000 });
       await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
       await sleep(3000);
+      if (unsafePage()) return unsafePage();
       if (await loginWall(page)) return manual(`after page ${n}, ${new URL(page.url()).hostname} asks you to sign in or create an account`);
       ({ fields } = await scrapeAll(page));
       // Still on the same page: the site refused it (an error the app could not see before).
@@ -888,6 +908,7 @@ export async function applyTo(job, hooks = {}, opts = {}) {
     if (halted()) return manual(`${halted()} while this application was being filled, so it was not submitted. It's filled in and waiting: check it and submit it yourself, or try again later`);
     log(job.slug, `pressing "${label}"`);
     await frame.locator("[data-ap-submit]").first().scrollIntoViewIfNeeded().catch(() => {});
+    cut();
     await frame.locator("[data-ap-submit]").first().click({ timeout: 15000 });
 
     step("confirm");
@@ -910,6 +931,7 @@ export async function applyTo(job, hooks = {}, opts = {}) {
       }
       got428 = false;
       step("confirm");
+      cut();
       await enterCode(frame, code);
       outcome = await waitOutcome(page, page.url(), () => got428);
       if (outcome === "code") outcome = null;

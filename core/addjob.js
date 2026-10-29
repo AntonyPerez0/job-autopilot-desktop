@@ -120,8 +120,8 @@ export async function addJob(raw, opts = {}) {
     db.prepare("UPDATE jobs SET status = 'queued', attempts = 0, reason = 'added again by you', updated_at = datetime('now') WHERE slug = ?").run(same.slug);
     return { ...same, status: "queued", again: true };
   }
-  const twin = sameRoleAs({ slug: j.slug, company: j.company, title: j.title },
-    db.prepare("SELECT slug, company, title, status FROM jobs WHERE status IN ('applied', 'submitting')").all());
+  const twin = sameRoleAs({ slug: j.slug, company: j.company, title: j.title, url: j.url },
+    db.prepare("SELECT slug, company, title, url, apply_url, status FROM jobs WHERE status IN ('applied', 'submitting')").all());
   if (twin && j.title !== "Job") throw new Error(`You already applied to this role: ${twin.title} at ${twin.company}.`);
   const manual = !(j.kind === "auto" || j.kind === "unknown");
   const status = manual ? "manual" : "queued";

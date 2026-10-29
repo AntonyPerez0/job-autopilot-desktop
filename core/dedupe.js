@@ -8,12 +8,35 @@ export const jobKey = (company, title) => norm(company).split(" ").slice(0, 2).j
 // The same role at the same employer, whatever the board or the suffix on the title
 // ("... New Grad" and "... New Grad (Remote)"; "Engineer - Acme" and "Engineer").
 const STOP = new Set(["the", "a", "an", "and", "of", "for", "to", "at", "in", "remote", "hybrid", "onsite", "us", "usa"]);
+// The employer's whole name ("Acme Staffing Partners" is not "Acme"), without the legal form ("Globex, Inc." is "Globex").
+const LEGAL = new Set(["inc", "incorporated", "llc", "llp", "ltd", "limited", "corp", "corporation", "co", "company", "plc", "gmbh", "ag", "sa", "pbc"]);
+export function companyKey(company) {
+  const w = name(company).toLowerCase().replace(/['’]/g, "").replace(/[^a-z0-9 ]/g, " ").trim().split(/\s+/).filter(Boolean);
+  if (w[0] === "the" && w.length > 1) w.shift();
+  while (w.length > 1 && LEGAL.has(w[w.length - 1])) w.pop();
+  return w.join(" ");
+}
 export function roleKey(company, title) {
-  const co = name(company).toLowerCase().replace(/[^a-z0-9 ]/g, " ").trim().split(/\s+/)[0] || "";
+  const co = companyKey(company), cw = new Set(co.split(" "));
   const t = name(title).toLowerCase().replace(/\([^)]*\)|\[[^\]]*\]/g, " ").replace(/[^a-z0-9 ]+/g, " ")
-    .split(/\s+/).filter((w) => w && !STOP.has(w) && w !== co);
+    .split(/\s+/).filter((w) => w && !STOP.has(w) && !cw.has(w));
   return co + "|" + t.join(" ");
 }
+
+// The employer's site a posting is on: the host, and on an application system shared by many employers the
+// employer's own part of it (boards.greenhouse.io/acme, apply.workable.com/acme). One posting only stands in for
+// another (as already applied, or for its screening) on the same site: a look-alike elsewhere can't push it out.
+const TENANT_IN_PATH = /(^|\.)(greenhouse\.io|lever\.co|ashbyhq\.com|workable\.com|smartrecruiters\.com|bamboohr\.com|jobvite\.com|recruitee\.com|breezy\.hr|teamtailor\.com|applytojob\.com|icims\.com)$/;
+export function siteKey(url) {
+  let u;
+  try { u = new URL(String(url || "").slice(0, 2048)); } catch { return ""; }
+  const host = u.hostname.toLowerCase().replace(/\.+$/, "").replace(/^www\./, "");
+  const seg = (u.pathname.split("/").filter(Boolean).find((x) => !/^(embed|job_app|jobs?|j|o|en(-[a-z]{2})?)$/i.test(x)) || "").toLowerCase();
+  return TENANT_IN_PATH.test(host) && seg ? `${host}/${seg}` : host;
+}
+const siteOfJob = (j) => siteKey(j.url || j.apply_url || j.official_job_url);
+// Two postings on the same employer site, or one of them without a link at all (nothing to tell them apart by).
+export const sameSite = (a, b) => { const x = siteOfJob(a), y = siteOfJob(b); return !x || !y || x === y; };
 
 // One job posted for many locations ("Delivery Driver(07800) - 5051 Auburn Blvd", "Delivery Driver(07906) - 6306 Fair
 // Oaks Blvd"): the same employer and the same title once store numbers and addresses are taken off.
@@ -54,5 +77,5 @@ export function sameUrlAs(job, rows) {
 // An applied (or mid-submit) job for the same role, from rows of { slug, company, title, status }.
 export function sameRoleAs(job, rows) {
   const key = roleKey(job.company, job.title);
-  return rows.find((j) => j.slug !== job.slug && (j.status === "applied" || j.status === "submitting") && roleKey(j.company, j.title) === key) || null;
+  return rows.find((j) => j.slug !== job.slug && (j.status === "applied" || j.status === "submitting") && roleKey(j.company, j.title) === key && sameSite(job, j)) || null;
 }

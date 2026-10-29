@@ -54,10 +54,11 @@ export const getJob = (slug) => getDb().prepare("SELECT * FROM jobs WHERE slug =
 
 const startHour = () => Math.max(0, Math.min(23, Number(getSettings().dayStartsAtHour) || 0));
 
-// An application "day" runs from dayStartsAtHour to the same hour the next day (local time).
+// An application "day" runs from dayStartsAtHour to the same hour the next day (local time). Every row with a
+// submit time today counts: applied, mid-submit, or pressed without a confirmation ("may have gone through").
 export function appliedToday() {
   const shift = `-${startHour()} hours`;
-  return getDb().prepare("SELECT COUNT(*) n FROM jobs WHERE status IN ('applied', 'submitting') AND applied_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(applied_at, 'localtime', ?) = date('now', 'localtime', ?)").get(shift, shift).n;
+  return getDb().prepare("SELECT COUNT(*) n FROM jobs WHERE applied_at IS NOT NULL AND applied_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(applied_at, 'localtime', ?) = date('now', 'localtime', ?)").get(shift, shift).n;
 }
 
 // When the current application day ends, as a timestamp.

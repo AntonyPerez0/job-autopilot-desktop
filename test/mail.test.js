@@ -64,3 +64,15 @@ test("a confirmation link is opened only from the site that asked, pointing to t
   assert.strictEqual(M.pickLink([spoof], since, "globex.wd5.myworkdayjobs.com"), null, "from Workday, but pointing elsewhere");
   assert.strictEqual(M.siteOf("jobs.acme.co.uk"), "acme.co.uk");
 });
+
+test("a 'thank you for applying' email counts only from the job's own system, signed, naming the employer in full (audit 4.7)", () => {
+  const ok = { from: "no-reply@us.greenhouse-mail.io", headers: AR("us.greenhouse-mail.io"), subject: "Thank you for applying to Acme Health" };
+  const job = { company: "Acme Health", url: "https://job-boards.greenhouse.io/acmehealth/jobs/1" };
+  assert.ok(M.confirmationOk(ok, job));
+  assert.ok(!M.confirmationOk({ ...ok, from: "jobs@acme-careers.test", headers: AR("acme-careers.test") }, job), "another sender");
+  assert.ok(!M.confirmationOk({ ...ok, headers: AR("us.greenhouse-mail.io", false) }, job), "no DKIM pass");
+  assert.ok(!M.confirmationOk({ ...ok, subject: "Thank you for applying to Acme" }, job), "only the first word of the company");
+  assert.ok(!M.confirmationOk(ok, { company: "Acme Health", url: "https://jobs.lever.co/acmehealth/1" }), "Greenhouse mail for a Lever job");
+  const own = { company: "Pollo Regio", url: "https://careers.polloregio.com/jobs/9" };
+  assert.ok(M.confirmationOk({ from: "hr@polloregio.com", headers: AR("polloregio.com"), subject: "Pollo Regio: we received your application" }, own), "the employer's own site");
+});

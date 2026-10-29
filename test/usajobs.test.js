@@ -113,3 +113,31 @@ test("many titles and places: at most 12 searches a cycle, each source taking tu
     assert.ok(asked.length <= 12 && asked.every((x) => x.startsWith("fh:")), `freehire: ${asked.length}`);
   } finally { globalThis.fetch = real; }
 });
+
+test("a trailing dot or capitals don't hide a government site (audit 4.3)", async () => {
+  const { isGovUrl } = await import("../core/ats.js");
+  assert.ok(isGovUrl("https://www.governmentjobs.com./careers/x") && isGovUrl("https://WWW.GovernmentJobs.COM/careers/x") && isGovUrl("https://www.usajobs.gov../job/1"));
+  assert.ok(!isGovUrl("https://governmentjobs.com.evil.test/x"));
+  const real = globalThis.fetch;
+  let fetched = 0;
+  globalThis.fetch = async () => { fetched++; return new Response("<html></html>"); };
+  try {
+    const { resolveLink } = await import("../core/addjob.js");
+    const j = await resolveLink("https://www.governmentjobs.com./careers/sacramento/jobs/4712345/sign-maker");
+    assert.strictEqual(fetched, 0, "www.governmentjobs.com. is not fetched");
+    assert.strictEqual(j.ats, "neogov");
+  } finally { globalThis.fetch = real; }
+});
+
+test("only freehire's own jobs are asked about on freehire.me, with the slug encoded (audit 4.8, 4.9)", async () => {
+  const { stillOpen } = await import("../core/worker.js");
+  const real = globalThis.fetch;
+  const asked = [];
+  globalThis.fetch = async (url, opts) => { asked.push(JSON.parse(opts.body).params.arguments.slugs); return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { structuredContent: { jobs: [{ slug: "x", status: "open" }] } } }), { status: 200 }); };
+  try {
+    for (const board of ["HiringCafe", "USAJOBS", "added by you", undefined]) assert.strictEqual(await stillOpen({ slug: "hc-123", details: JSON.stringify({ board }) }), true);
+    assert.deepStrictEqual(asked, [], "no other board's job is named to freehire.me");
+    await stillOpen({ slug: "acme-swe-1/../../admin?x=1", details: JSON.stringify({ board: "freehire" }) });
+    assert.deepStrictEqual(asked, [["acme-swe-1%2F..%2F..%2Fadmin%3Fx%3D1"]]);
+  } finally { globalThis.fetch = real; }
+});

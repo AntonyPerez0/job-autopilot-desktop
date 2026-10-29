@@ -243,7 +243,28 @@ export async function waitForLink(cfg, since, hostHint = "", timeoutSec = 180) {
 }
 
 // Has the employer already confirmed an application for this role? A description, null for no, undefined if unreadable.
-export async function findConfirmation(cfg, company, title, days = 60) {
+// Where an application system sends its mail from.
+const ATS_MAIL = [
+  [/(^|\.)greenhouse\.io$/, ["greenhouse.io", "greenhouse-mail.io"]], [/(^|\.)lever\.co$/, ["lever.co"]], [/(^|\.)ashbyhq\.com$/, ["ashbyhq.com"]],
+  [/(^|\.)(myworkdayjobs|myworkday|workday)\.com$/, ["myworkday.com", "workday.com", "myworkdayjobs.com"]],
+  [/(^|\.)smartrecruiters\.com$/, ["smartrecruiters.com"]], [/(^|\.)workable\.com$/, ["workable.com", "workablemail.com"]],
+];
+// A "thank you for applying" email counts only when it's from the system the job is on (or the employer's own
+// site, for a form on it), signed by it (DKIM pass, the provider's topmost verdict), and its subject names the
+// employer in full, not just the first word of the name.
+// mail: { from, headers, subject }; job: { company, url }.
+export function confirmationOk(mail, job) {
+  const host = canon((() => { try { return new URL(String(job.url || "")).hostname; } catch { return ""; } })());
+  if (!host) return false;
+  const ats = ATS_MAIL.find(([rx]) => rx.test(host));
+  const allowed = ats ? ats[1] : [siteOf(host)];
+  const d = senderDomain(mail.from);
+  if (!allowed.some((x) => under(d, x)) || !dkimPassFor(mail.headers, allowed)) return false;
+  const subj = words(mail.subject), name = words(job.company);
+  return name.length > 0 && name.every((w) => subj.includes(w));
+}
+
+export async function findConfirmation(cfg, company, title, days = 60, url = "") {
   let c;
   try {
     c = await connect(cfg);
@@ -257,8 +278,8 @@ export async function findConfirmation(cfg, company, title, days = 60) {
         const msg = await c.fetchOne(String(uid), { envelope: true, source: true }, { uid: true });
         if (!msg) continue;
         const subject = (msg.envelope && msg.envelope.subject) || "";
-        const from = ((msg.envelope && msg.envelope.from) || []).map((x) => `${x.name || ""} ${x.address || ""}`).join(" ");
-        if (!CONFIRM.test(subject) || CODE_SUBJECT.test(subject) || !(subject + " " + from).toLowerCase().includes(ck)) continue;
+        const from = ((msg.envelope && msg.envelope.from) || []).map((x) => x.address || "").join(" ");
+        if (!CONFIRM.test(subject) || CODE_SUBJECT.test(subject) || !confirmationOk({ from, headers: headersOf(msg.source), subject }, { company, url })) continue;
         const t = await textOf(msg.source);
         hits.push({ date: t.date, subject, text: t.text });
       }

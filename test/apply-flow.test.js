@@ -38,14 +38,20 @@ const PAGES = {
   "/form-ping": `<form id="f" onsubmit="return false"><label for="fn">First name *</label><input id="fn" required><label for="ln">Last name *</label><input id="ln" required>
     <label for="em">Email *</label><input id="em" type="email" required>
     <button type="submit" onclick="fetch('/done',{method:'POST',body:'sent'}).then(()=>{document.body.innerHTML='<h2>Thank you for applying!</h2>'})">Submit application</button></form>`,
+  // Submit is sent, but the page never confirms (audit 4.1).
+  "/form-silent": `<form id="f" onsubmit="return false"><label for="fn">First name *</label><input id="fn" required><label for="ln">Last name *</label><input id="ln" required>
+    <label for="em">Email *</label><input id="em" type="email" required>
+    <button type="submit" onclick="fetch('/done',{method:'POST',body:'silent'})">Submit application</button></form>`,
+  // A posting that moves to a government job site (audit 4.3).
+  "/to-gov": `<p>Moving</p><script>location.replace("https://www.governmentjobs.com/careers/acme/jobs/1/clerk")</script>`,
   // A window left open by an earlier posting that keeps opening pages (audit 1.2).
   "/leftover": `<h1>Old posting</h1><script>let n = 0; const t = setInterval(() => { window.open("/stray?" + (++n), "_blank"); if (n >= 20) clearInterval(t); }, 300);</script>`,
   "/stray": `<h1>Sign in</h1><label for="u">Email</label><input id="u"><label for="pw">Password</label><input id="pw" type="password">`,
   "/signin": `<h1>Careers</h1><p>Sign in or create an account to apply.</p><label>Email<input></label><label>Password<input type="password"></label><button>Sign in</button>`,
 };
-let submitted = null;
+let submitted = null, sends = 0;
 const site = http.createServer((req, res) => {
-  if (req.url === "/done") { let b = ""; req.on("data", (c) => (b += c)); req.on("end", () => { submitted = b; res.end("ok"); }); return; }
+  if (req.url === "/done") { let b = ""; req.on("data", (c) => (b += c)); req.on("end", () => { submitted = b; sends++; res.end("ok"); }); return; }
   const body = PAGES[req.url.split("?")[0]];
   res.writeHead(body ? 200 : 404, { "content-type": "text/html" });
   res.end(`<!doctype html><html><body>${body || "not found"}</body></html>`);
@@ -138,4 +144,60 @@ test("'Back to dry run' or Pause pressed during a live run stops the Submit (aud
     assert.strictEqual(submitted, null, `${label}: Submit never fired`);
   }
   store.saveSettings({ dryRun: true, paused: false });
+});
+
+test("a run that timed out stops before Submit and reports nothing more (audit 4.2)", async () => {
+  store.saveSettings({ dryRun: false, paused: false });
+  submitted = null;
+  const ctrl = new AbortController(), after = [];
+  setTimeout(() => ctrl.abort(), 10000);
+  await assert.rejects(applyTo(job("/form-ping", "t-timeout"), { progress: (k) => { if (ctrl.signal.aborted) after.push(k); } }, { dryRun: false, browser: ctx, signal: ctrl.signal }), /timed out/);
+  assert.strictEqual(submitted, null, "Submit never fired");
+  assert.deepStrictEqual(after, [], "no step reported after the timeout");
+  const { withTimeout } = await import("../core/worker.js");
+  let seen;
+  await assert.rejects(withTimeout((sig) => { seen = sig; return new Promise(() => {}); }, 50), /timed out/);
+  assert.ok(seen.aborted, "the run's signal is aborted when its time is up");
+  store.saveSettings({ dryRun: true });
+});
+
+test("http:// is never opened, and a page that moves to a government site ends as Apply yourself (audit 4.3, 4.6)", async () => {
+  const hits = [];
+  await ctx.route("http://plain.example/**", (r) => { hits.push(r.request().url()); return r.fulfill({ contentType: "text/html", body: PAGES["/form-ping"] }); });
+  await ctx.route("https://www.governmentjobs.com/**", (r) => r.fulfill({ contentType: "text/html", body: `<!doctype html><html><body>${PAGES["/form-ping"]}</body></html>` }));
+  const plain = await applyTo({ ...job("/", "t-http"), apply_url: "http://plain.example/jobs/1" }, {}, { dryRun: true, browser: ctx });
+  assert.strictEqual(plain.status, "manual");
+  assert.match(plain.reason, /doesn't use https/);
+  assert.deepStrictEqual(hits, [], "never reached page.goto");
+  const gov = await applyTo(job("/to-gov", "t-gov"), {}, { dryRun: true, browser: ctx });
+  assert.strictEqual(gov.status, "manual", gov.reason);
+  assert.match(gov.reason, /government job site/);
+  await ctx.unroute("http://plain.example/**"); await ctx.unroute("https://www.governmentjobs.com/**");
+});
+
+// The whole loop, in the app's own browser (Playwright's Chromium): skipped where it isn't installed.
+const { chromiumPath } = await import("../core/browser.js");
+test("dailyCap 1: the loop stops after one Submit, even when the page doesn't confirm (audit 4.1)", { skip: !chromiumPath() && "no Playwright Chromium here" }, async () => {
+  const db = (await import("../core/db.js")).getDb();
+  const { appliedToday, getJob } = await import("../core/db.js");
+  const worker = await import("../core/worker.js");
+  db.prepare("DELETE FROM jobs").run();
+  store.savePrefs({ ...examplePrefs(), boards: { freehire: false, hiringcafe: false, simplify: false, google: false } });
+  store.saveSettings({ dryRun: false, paused: false, reviewedDryRun: true, dailyCap: 1, minutesBetweenApplies: 0, maxAttempts: 3, searchEveryMinutes: 600, browser: "chromium", windowMode: "headless" });
+  for (const slug of ["cap-1", "cap-2"]) db.prepare("INSERT INTO jobs (slug, key, title, company, location, url, apply_url, status, details) VALUES (?, ?, 'Cashier', ?, 'Austin, TX', ?, ?, 'queued', '{}')")
+    .run(slug, slug, slug === "cap-1" ? "Globex" : "Initech", base + "/form-silent?" + slug, base + "/form-silent?" + slug);
+  sends = 0;
+  const run = worker.run();
+  try {
+    for (let i = 0; i < 240 && !/daily cap reached/.test(worker.state.now); i++) await new Promise((r) => setTimeout(r, 1000));
+    assert.match(worker.state.now, /daily cap reached/);
+  } finally { worker.stop(); await run; }
+  assert.strictEqual(sends, 1, "one Submit");
+  const first = getJob("cap-1");
+  assert.strictEqual(first.status, "failed");
+  assert.match(first.reason, /may have gone through/);
+  assert.ok(first.applied_at, "its submit time is kept");
+  assert.strictEqual(getJob("cap-2").status, "queued", "the next one waits for tomorrow");
+  assert.strictEqual(appliedToday(), 1);
+  store.saveSettings({ dryRun: true, dailyCap: 10 });
 });

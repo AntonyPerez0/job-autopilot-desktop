@@ -6,8 +6,9 @@ import { getDb, log } from "./db.js";
 import { loadProfile, screen } from "./engine.js";
 import { plainAiError } from "./llm.js";
 import { km, remoteOk, toKm, withinRadius } from "./geo.js";
-import { getAnswers, getPrefs } from "./store.js";
-import { cleanUrl, familyKey, inAppliedList, jobKey, parseAppliedList, roleKey } from "./dedupe.js";
+import fs from "node:fs";
+import { dataDir, getAnswers, getPrefs } from "./store.js";
+import { cleanUrl, familyKey, inAppliedList, jobKey, parseAppliedList, roleKey, siteKey } from "./dedupe.js";
 import { KIND_TEXT } from "./ats.js";
 import { payPerHour } from "./suggest.js";
 import { siteAccounts } from "./accounts.js";
@@ -134,18 +135,34 @@ export function licenseGap(title, profile) {
 
 export const lastSearch = { at: null, found: 0, queued: 0, problems: [], done: false };
 
+// A posting whose screening call failed is tried again on the next searches, at most SCREEN_TRIES times in all;
+// then it's kept as skipped, so it isn't screened (and paid for) again on every search.
+export const SCREEN_TRIES = 3;
+const RETRIES = () => dataDir("screen-retries.json");
+const readRetries = () => { try { return JSON.parse(fs.readFileSync(RETRIES(), "utf8")) || {}; } catch { return {}; } };
+function countScreenFailure(slug) {
+  const r = readRetries();
+  r[slug] = (Number(r[slug]) || 0) + 1;
+  const keep = Object.fromEntries(Object.entries(r).slice(-500));
+  try { fs.writeFileSync(RETRIES(), JSON.stringify(keep)); } catch { /* the count is a safeguard, not a record */ }
+  return r[slug];
+}
+
+// One posting only stands in for another (same role, same family, the same screening) on the same employer site.
+const onSite = (url, key) => siteKey(url) + "#" + key;
+
 export async function discover(progress = () => {}, ctx = {}) {
   lastSearch.at = new Date().toISOString(); lastSearch.problems = []; lastSearch.found = 0; lastSearch.queued = 0; lastSearch.done = false; lastSearch.aiProblem = "";
   const db = getDb();
   const prefs = getPrefs(), a = getAnswers();
   const seen = new Set(db.prepare("SELECT slug FROM jobs").all().map((r) => r.slug));
   const keys = new Set(db.prepare("SELECT key FROM jobs").all().map((r) => r.key));
-  const live = db.prepare("SELECT company, title FROM jobs WHERE status != 'skipped'").all();
-  const roles = new Set(live.map((r) => roleKey(r.company, r.title)));
+  const live = db.prepare("SELECT company, title, url, apply_url FROM jobs WHERE status != 'skipped'").all();
+  const roles = new Set(live.map((r) => onSite(r.url || r.apply_url, roleKey(r.company, r.title))));
   // The same job at many locations: two of them at most, and one screening decision for all of them.
   const PER_FAMILY = 2;
   const families = new Map();
-  for (const r of live) { const f = familyKey(r.company, r.title); families.set(f, (families.get(f) || 0) + 1); }
+  for (const r of live) { const f = onSite(r.url || r.apply_url, familyKey(r.company, r.title)); families.set(f, (families.get(f) || 0) + 1); }
   const verdicts = new Map();
   const urls = new Set(db.prepare("SELECT url, apply_url FROM jobs").all().flatMap((r) => [r.url, r.apply_url]).filter(Boolean).map(cleanUrl));
   const manual = parseAppliedList(prefs.alreadyApplied);
@@ -187,11 +204,11 @@ export async function discover(progress = () => {}, ctx = {}) {
     if (j.minYears !== null && j.minYears !== undefined && Number.isFinite(Number(prefs.maxYearsRequired)) && j.minYears > Number(prefs.maxYearsRequired)) continue;
     if (j.sponsorship === false && a.needsSponsorship === "yes") continue;
     const key = jobKey(j.company, j.title);
-    if (keys.has(key) || roles.has(roleKey(j.company, j.title)) || (j.url && urls.has(cleanUrl(j.url)))) continue;
+    if (keys.has(key) || roles.has(onSite(j.url, roleKey(j.company, j.title))) || (j.url && urls.has(cleanUrl(j.url)))) continue;
     if (j.details) {
       try { j = { ...j, ...(await j.details()) }; } catch (e) { log(j.slug, "reading the posting failed: " + e.message, "warn"); continue; }
     }
-    const fam = familyKey(j.company, j.title);
+    const fam = onSite(j.url, familyKey(j.company, j.title));
     let status = "queued", reason = null;
     if (excludedCompany(j.company, prefs)) { status = "skipped"; reason = "excluded company, recruiter or repost aggregator"; }
     else if (j.ghost) { status = "skipped"; reason = "freehire says this posting is likely a ghost listing"; }
@@ -211,7 +228,12 @@ export async function discover(progress = () => {}, ctx = {}) {
         verdicts.set(fam, s);
         if (!s.ok) { status = "skipped"; reason = `screen: ${s.reason}`; }
         else reason = status === "manual" ? `${why}. Screen: ${s.reason}` : `screen: ${s.reason}`;
-      } catch (e) { log(j.slug, "screen failed, will retry next search: " + e.message, "warn"); lastSearch.aiProblem = plainAiError(e.message); continue; }
+      } catch (e) {
+        lastSearch.aiProblem = plainAiError(e.message);
+        const n = countScreenFailure(j.slug);
+        if (n < SCREEN_TRIES) { log(j.slug, `screen failed (try ${n} of ${SCREEN_TRIES}), will retry next search: ` + e.message, "warn"); continue; }
+        status = "skipped"; reason = `screen failed ${n} times, so it isn't tried again: ${plainAiError(e.message).slice(0, 200)}`;
+      }
     }
     const apply = status === "skipped" ? null : await applyUrl(j.ats, j.apply_url || j.url);
     db.prepare(`INSERT OR IGNORE INTO jobs (slug, key, title, company, location, work_mode, source, url, apply_url, salary, posted_at, status, reason, details)
@@ -219,7 +241,7 @@ export async function discover(progress = () => {}, ctx = {}) {
       j.ats || "", j.url, apply, j.salary || null, j.posted_at || j.posted_text || "", status, reason,
       JSON.stringify({ description: j.description || "", requirements: j.requirements || [], board: j.board, kind: j.kind, freehire: j.freehire }));
     keys.add(key);
-    roles.add(roleKey(j.company, j.title));
+    roles.add(onSite(j.url, roleKey(j.company, j.title)));
     if (j.url) urls.add(cleanUrl(j.url));
     if (status !== "skipped") families.set(fam, (families.get(fam) || 0) + 1);
     if (status === "queued") added++;
