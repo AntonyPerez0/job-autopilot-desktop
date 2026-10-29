@@ -62,7 +62,7 @@ test("Dedupe: titles, companies and links", async () => {
 
 test("The model's reply (tailor.js parseJSON)", async () => {
   const src = fs.readFileSync(path.resolve(import.meta.dirname, "..", "vendor", "apply-helper", "tailor.js"), "utf8");
-  const parseJSON = new Function(src.match(/function parseJSON\(text\) \{[\s\S]*?\n {2}\}\n/)[0] + "return parseJSON;")();
+  const parseJSON = new Function(src.replace(/\r\n/g, "\n").match(/function parseJSON\(text\) \{[\s\S]*?\n {2}\}\n/)[0] + "return parseJSON;")();
   await fast("parseJSON", (s) => { try { parseJSON(s); } catch { /* not JSON: an error, quickly */ } });
   assert.deepStrictEqual(parseJSON('Here it is: {"a": {"b": 1}} hope that helps'), { a: { b: 1 } });
   assert.deepStrictEqual(parseJSON('```json\n{"x": 2}\n```'), { x: 2 });

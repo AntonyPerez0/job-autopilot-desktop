@@ -53,6 +53,15 @@ jobs:
           hdiutil detach /tmp/ja-dmg
           codesign -dv "$RUNNER_TEMP/Job Autopilot.app" 2>&1 | head -5
           lipo -archs "$RUNNER_TEMP/Job Autopilot.app/Contents/MacOS/Job Autopilot"
+          codesign --verify --deep --strict --verbose=2 "$RUNNER_TEMP/Job Autopilot.app"
+          # The app as shipped starts by itself (nothing below changes it yet): it records its launch.
+          mkdir -p "$RUNNER_TEMP/as-shipped"
+          JA_DATA_DIR="$RUNNER_TEMP/as-shipped" "$RUNNER_TEMP/Job Autopilot.app/Contents/MacOS/Job Autopilot" > "$RUNNER_TEMP/as-shipped.log" 2>&1 &
+          SHIPPED=$!
+          for i in $(seq 1 90); do [ -f "$RUNNER_TEMP/as-shipped/launches.json" ] && break; sleep 1; done
+          kill $SHIPPED 2>/dev/null || true; sleep 2
+          tail -20 "$RUNNER_TEMP/as-shipped.log"
+          test -f "$RUNNER_TEMP/as-shipped/launches.json" || { echo "::error::the app as shipped did not start"; exit 1; }
           # The shipped app ignores --inspect (a fuse), and the tests drive it through Playwright, which needs it:
           # this installed test copy only gets it back (and a fresh ad-hoc signature). The .dmg stays as built.
           npx --no-install electron-fuses read --app "$RUNNER_TEMP/Job Autopilot.app" | grep -q "EnableNodeCliInspectArguments is Disabled"
@@ -62,6 +71,15 @@ jobs:
       - name: Update now, end to end (macOS)
         if: runner.os == 'macOS'
         run: JA_APP_EXE="$RUNNER_TEMP/Job Autopilot.app/Contents/MacOS/Job Autopilot" JA_UPDATE_FILE="$(ls dist/*-mac-universal.zip | head -1)" node test/e2e/update.mjs
+      - name: What happened to the app (macOS, after a failure)
+        if: failure() && runner.os == 'macOS'
+        run: |
+          ls -la "$RUNNER_TEMP" | head -20
+          ls -la "$RUNNER_TEMP/Job Autopilot.app/Contents/MacOS" 2>&1 | head
+          codesign --verify --deep --strict --verbose=2 "$RUNNER_TEMP/Job Autopilot.app" 2>&1 | tail -5 || true
+          ls -t ~/Library/Logs/DiagnosticReports 2>/dev/null | head -5
+          f=$(ls -t ~/Library/Logs/DiagnosticReports/*Job* 2>/dev/null | head -1); [ -n "$f" ] && head -60 "$f"
+          log show --last 10m --style compact --predicate 'process == "Job Autopilot" OR eventMessage CONTAINS "Job Autopilot"' 2>/dev/null | tail -60 || true
       - name: Install with the .exe installer and run the setup end to end
         if: runner.os == 'Windows'
         shell: pwsh
@@ -72,6 +90,15 @@ jobs:
           if (!(Test-Path $app)) { Get-ChildItem -Recurse (Join-Path $env:LOCALAPPDATA "Programs") -Filter "Job Autopilot.exe" | Select-Object -First 3; throw "installed app not found" }
           # The shipped app ignores --inspect (a fuse), and the tests drive it through Playwright, which needs it:
           # this runner's installed copy only gets it back. The Setup .exe stays as built.
+          # The app as shipped starts by itself (nothing below changes it yet): it records its launch.
+          $shipped = Join-Path $env:RUNNER_TEMP "as-shipped"
+          New-Item -ItemType Directory -Force $shipped | Out-Null
+          $env:JA_DATA_DIR = $shipped
+          $p = Start-Process -FilePath $app -PassThru
+          for ($i = 0; $i -lt 90 -and !(Test-Path (Join-Path $shipped "launches.json")); $i++) { Start-Sleep 1 }
+          Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue; Start-Sleep 2
+          Remove-Item Env:JA_DATA_DIR
+          if (!(Test-Path (Join-Path $shipped "launches.json"))) { throw "the app as shipped did not start" }
           $fuses = npx --no-install electron-fuses read --app $app | Out-String
           if ($fuses -notmatch "EnableNodeCliInspectArguments is Disabled") { throw "the built app should ignore --inspect" }
           npx --no-install electron-fuses write --app $app EnableNodeCliInspectArguments=on
