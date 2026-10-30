@@ -70,7 +70,14 @@ const server = http.createServer((req, res) => {
     else if (/help someone remember/.test(sys)) content = { occupation: 0, questions: [{ q: "Did you restock shelves when they ran low?", t: [0, 0] }, { q: "Did you help unload deliveries?", t: [0, 1] }] };
     else if (/confirmed they did at a job/.test(sys)) content = { lines: [{ text: "Restocked shelves when they ran low, about twice a shift", from: [0] }] };
     else if (/resume project lines for a person's own GitHub/.test(sys)) content = { projects: [{ i: 0, title: "Bird Feeder Cam", lines: ["Streams live video of a bird feeder from a Raspberry Pi"] }] };
-    else if (/one-page resume from a person's own answers/.test(sys)) content = { summary: "", jobs: [{ index: 0, bullets: [{ text: "Stocked shelves and helped customers find items", source: "stocked shelves, helped customers" }] }], skills: [] };
+    else if (/friendly resume coach/.test(sys)) content = /PERSON[^\n]*: yes/.test((msg.messages[1] || {}).content || "")
+      ? { reply: "Thanks.", question: "About how many deliveries did you make on a normal day?", ideas: ["Did you load the van yourself?"],
+        notes: { jobs: [{ title: "Delivery Driver", employer: "Initech Foods", start: "2019", end: "2020", daily: "drove the van to stores", numbers: "", proud: "", tools: "" }] } }
+      : { reply: "Got it: you drove the van to stores for Initech Foods.", question: "What did you do there, other than drive?", ideas: ["Did you load the van yourself?", "Did you get any training or licenses for it?"],
+        notes: { jobs: [{ title: "Delivery Driver", employer: "Initech Foods", start: "2019", end: "2020", daily: "drove the van to stores", numbers: "", proud: "", tools: "" }] } };
+    else if (/one-page resume from a person's own answers/.test(sys)) content = /Initech Foods/.test(all)
+      ? { summary: "", jobs: [{ index: 0, bullets: [{ text: "Drove the delivery van to stores", source: "drove the van to stores" }] }] }
+      : { summary: "", jobs: [{ index: 0, bullets: [{ text: "Stocked shelves and helped customers find items", source: "stocked shelves, helped customers" }] }], skills: [] };
     else if (/You screen job postings/.test(sys)) content = { decision: "skip", reason: "mock screen", level: "unclear" };
     reply({ choices: [{ message: { content: JSON.stringify(content) } }] });
   });
@@ -339,6 +346,25 @@ try {
   assert.ok(prof.experience[0].bullets.some((b) => b.text.startsWith("Built the Python and PostgreSQL scheduling service")), "accepted line saved");
   // Create: a job from the interview, added to the current resume, waiting for approval.
   await win.click('details:has(#sec-create) > summary');
+  // Tell it in my own words (the first way shown): a message, the coach's question, a job title it guessed is asked about.
+  await win.fill('#sec-create [name=t_text]', "I drove the van to stores for Initech Foods from 2019 to 2020");
+  await win.click('#sec-create [data-tsend]');
+  await win.waitForSelector('#sec-create .talk-msg.coach:has-text("Is \\"Delivery Driver\\" the right job title")');
+  assert.ok(await win.isVisible('#sec-create [data-tideas] button:has-text("What did you do there, other than drive?")'), "the coach's own question becomes an idea");
+  assert.ok(await win.isVisible('#sec-create [data-theard]:has-text("Initech Foods")'), "what it picked up is shown");
+  await win.click('#sec-create [data-twrite]');
+  await win.waitForSelector('#sec-create [data-cmsg] .msg.err:has-text("Delivery Driver")');
+  await win.fill('#sec-create [name=t_text]', "yes");
+  await win.click('#sec-create [data-tsend]');
+  await win.waitForSelector('#sec-create .talk-msg.coach:has-text("About how many deliveries")');
+  await shot("12b-talk");
+  await win.check('#sec-create [name=t_merge]');
+  await win.click('#sec-create [data-twrite]');
+  await win.waitForSelector('#sec-review .rv-group:has-text("Delivery Driver")');
+  const talked = JSON.parse(fs.readFileSync(path.join(data, "profile.json"), "utf8")).experience.find((e) => e.org === "Initech Foods");
+  assert.ok(talked && talked.bullets.some((b) => /delivery van/.test(b.text)), "the job from the chat is on the resume, waiting for approval");
+  // The form, for people who'd rather fill one in.
+  await win.click('#sec-create [data-cmode=form]');
   await win.fill('#sec-create [name=c_title]', "Stock Associate");
   await win.fill('#sec-create [name=c_employer]', "Corner Market");
   await win.fill('#sec-create [name=c_daily]', "stocked shelves, helped customers");

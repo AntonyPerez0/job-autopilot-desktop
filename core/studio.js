@@ -778,7 +778,7 @@ const yesSource = (c) => [c.q.replace(/^did you\s*/i, "").replace(/\?$/, ""), c.
 
 // Two lines that say the same thing in other words ("Set out cones..." twice, "Trained two new guys" and
 // "Trained new employees"): most of the longer one's words are in the shorter one.
-const lineWords = (t) => new Set(String(t).toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !STOPW.has(w)).map((w) => w.replace(/(ing|ed|es|s|e)$/, "")));
+export const lineWords = (t) => new Set(String(t).toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !STOPW.has(w)).map((w) => w.replace(/(ing|ed|es|s|e)$/, "")));
 export function sameLine(a, b) {
   const x = lineWords(a), y = lineWords(b);
   if (!x.size || !y.size) return false;

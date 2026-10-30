@@ -482,6 +482,17 @@ details.card-fold[open] > summary h2::before, details.card-fold[open] > summary 
 .recall { margin-top: var(--space-sm); display: grid; gap: var(--space-xs); }
 .recall-item { padding: var(--space-xs) var(--space-sm); border-radius: var(--radius-input); background: var(--color-cotton); box-shadow: var(--edge-stock); display: grid; gap: var(--space-xs); }
 .recall-q { font-size: var(--text-sm); }
+/* "Tell it in my own words": the chat that stands in for the creator's form. */
+.talk-log { display: grid; gap: var(--space-xs); max-height: 26rem; overflow-y: auto; padding: var(--space-2xs); border-radius: var(--radius-card); }
+.talk-log:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+.talk-msg { max-width: 80%; padding: var(--space-xs) var(--space-sm); border-radius: var(--radius-card); font-size: var(--text-sm); line-height: 1.5; white-space: pre-wrap; color: var(--color-ink); }
+.talk-msg.coach { justify-self: start; background: var(--color-paper-2); }
+.talk-msg.coach b { display: block; margin-top: var(--space-2xs); font-weight: 600; }
+.talk-msg.you { justify-self: end; background: var(--color-cotton); box-shadow: var(--edge-stock); }
+.talk-asked { color: var(--color-muted); font-size: var(--text-xs); margin-bottom: var(--space-3xs); }
+.talk-re { display: flex; flex-wrap: wrap; gap: var(--space-xs); align-items: center; font-size: var(--text-sm); color: var(--color-ink-2); }
+.talk .chips { margin-top: 0; align-items: center; }
+.talk .chips .chip-add { white-space: normal; text-align: left; min-height: 28px; }
 
 /* ---------- smaller windows ---------- */
 @media (max-width: 75rem) { .grid-kpi { grid-template-columns: repeat(3, minmax(0, 1fr)); } .kpi:nth-child(4) { border-left: 0; padding-left: 0; } .kpi:nth-child(n+4) { border-top: 1px solid var(--color-rule); } .grid-2 { grid-template-columns: minmax(0, 1fr); } }

@@ -24,6 +24,7 @@ import { listAccounts, passwordProblems } from "./accounts.js";
 import { addJob } from "./addjob.js";
 import { addRecalled, applySuggestion, checklist, createFromInterview, progress as writing, recallFor, resetAskBudget, rewriteWithAnswer, setProgress, suggestImprovements } from "./studio.js";
 import { importProjects, listRepos, placeProjects, usernameOf } from "./github.js";
+import { LIMITS, clearTalk, getTalk, notReady, say } from "./talk.js";
 import { asksFor, removeYourAnswer, saveYourAnswers } from "./asked.js";
 import { monthUse, testKey as testSerpKey } from "./sources/google.js";
 import { testKey as testUsajobsKey } from "./sources/usajobs.js";
@@ -294,22 +295,23 @@ const ROUTES = {
     if (!aiSettings().apiKey) return bad("Connect an AI first (Settings > AI).");
     const iv = capInterview(b.interview || {});
     if (!(iv.jobs || []).some((j) => j.title || j.employer) && !(iv.education || []).some((e) => e.school)) return bad("Add at least one job or school.");
-    try {
-      setProgress(0, 4, "Starting");
-      const r = await createFromInterview(iv, b.merge ? getProfile() : null, getAnswers());
-      // Then the recruiter's pass: the strongest lines first, a headline and summary, skills in groups.
-      try {
-        const pol = await polishCreated(r.profile, { target: iv.target, ids: r.created.experience, skillIds: r.created.skills, answers: getAnswers() });
-        r.profile = pol.profile;
-        r.rejected.push(...pol.rejected);
-      } catch (e) { log(null, "resume polish skipped: " + e.message, "warn"); }
-      placeProjects(r.profile);
-      saveProfile(r.profile);
-      const cur = (iv.jobs || []).find((j) => j.current) || (iv.jobs || [])[0];
-      if (cur) saveAnswers(prefillAnswers({ ...r.profile, experience: [{ title: cur.title, org: cur.employer, dates: cur.current ? "Present" : "" }] }));
-      saveAnswers(yearsFromInterview(iv, getAnswers()));
-      return { profile: r.profile, answers: getAnswers(), rejected: r.rejected, questions: r.questions };
-    } catch (e) { return bad(e.message); }
+    return writeResume(iv, b.merge);
+  },
+  // "Tell it in my own words": the conversation so far, the next message, and the resume written from it.
+  "GET /api/resume/talk": () => getTalk(),
+  "POST /api/resume/talk/clear": () => clearTalk(),
+  "POST /api/resume/talk": async (b) => {
+    if (!aiSettings().apiKey) return bad("Connect an AI first (Settings > AI).");
+    try { return await say(cut(b.text, LIMITS.chars), cut(b.re, 300), { target: (getPrefs().titles || [])[0] || "" }); } catch (e) { return bad(e.message); }
+  },
+  "POST /api/resume/talk/write": async (b) => {
+    if (!aiSettings().apiKey) return bad("Connect an AI first (Settings > AI).");
+    let t = getTalk();
+    try { if (!t.notes) t = await say("", "", { target: (getPrefs().titles || [])[0] || "" }); } catch (e) { return bad(e.message); }
+    if (!t.notes) return bad("Tell me about your work first.");
+    const why = notReady({ iv: t.notes, unsure: t.unsure || [] });
+    if (why) return bad(why);
+    return writeResume({ ...t.notes, target: t.notes.target || (getPrefs().titles || [])[0] || "" }, b.merge);
   },
   // Projects from the user's public GitHub repositories.
   "GET /api/github/repos": async (_, q) => {
@@ -523,6 +525,26 @@ export function yearsFromInterview(iv, a, now = new Date()) {
     out.totalYears = Math.floor((months.size / 12) * 2) / 2;
   }
   return out;
+}
+
+// A resume from the creator's interview (the form, or what they said in the chat), added to theirs or on its own.
+async function writeResume(iv, merge) {
+  try {
+    setProgress(0, 4, "Starting");
+    const r = await createFromInterview(iv, merge ? getProfile() : null, getAnswers());
+    // Then the recruiter's pass: the strongest lines first, a headline and summary, skills in groups.
+    try {
+      const pol = await polishCreated(r.profile, { target: iv.target, ids: r.created.experience, skillIds: r.created.skills, answers: getAnswers() });
+      r.profile = pol.profile;
+      r.rejected.push(...pol.rejected);
+    } catch (e) { log(null, "resume polish skipped: " + e.message, "warn"); }
+    placeProjects(r.profile);
+    saveProfile(r.profile);
+    const cur = (iv.jobs || []).find((j) => j.current) || (iv.jobs || [])[0];
+    if (cur) saveAnswers(prefillAnswers({ ...r.profile, experience: [{ title: cur.title, org: cur.employer, dates: cur.current ? "Present" : "" }] }));
+    saveAnswers(yearsFromInterview(iv, getAnswers()));
+    return { profile: r.profile, answers: getAnswers(), rejected: r.rejected, questions: r.questions };
+  } catch (e) { return bad(e.message); }
 }
 
 export async function handle(route, body) {

@@ -271,6 +271,108 @@
     };
   }
 
+  // ---------- "Tell it in my own words": a chat about their work, instead of the creator's form ----------
+  // The coach answers each message with the one question that would help the resume most and a few other ideas;
+  // the server keeps the conversation and the notes taken from it. write(btn, merge) writes the resume from them;
+  // cleared() clears what the last try at writing said.
+  const TOPICS = [["My jobs", "My most recent job was "], ["A normal day", "On a normal day I "], ["Something that went well", "Something that went well: "],
+    ["Numbers", "Some numbers: about "], ["Tools and machines", "I used "], ["Training people", "I trained "], ["School and training", "For school, I "],
+    ["Licenses and certificates", "I have a "], ["Languages", "I speak "], ["Other work", "I also worked "]];
+  function talk(el, cfg, mergeBox, write, cleared) {
+    const START = "Tell me about your work, the way you'd tell a friend. Start with your most recent job: where it was, about when, and what you did there. Part-time jobs, gig work, a family business and volunteering all count. Spelling doesn't matter.";
+    let state = { turns: [] }, re = "";
+    el.innerHTML = `<div class="form talk">
+      <div class="talk-log" data-tlog role="log" tabindex="0" aria-label="Your conversation about your work"></div>
+      <div class="chips" data-tideas></div>
+      <div class="talk-re" data-tre hidden><span></span><button type="button" class="btn ghost sm" data-tre-x>${icon("x")}I'm telling something else</button></div>
+      <div class="fld"><textarea name="t_text" rows="4" aria-label="Your message" placeholder="e.g. I've worked at Corner Market since 2021. I run the register, stock shelves and close the store on weekends."></textarea>
+        <small>${window.ja && window.ja.platform === "darwin" ? "Cmd" : "Ctrl"}+Enter sends. Nothing goes on your resume until you approve it.</small></div>
+      <div class="chips" style="margin-top:0"><span class="hint">Things you could talk about:</span>${TOPICS.map(([l], i) => `<button type="button" class="tag chip-add" data-topic="${i}">+ ${esc(l)}</button>`).join("")}</div>
+      <div data-theard></div>
+      ${mergeBox("t_merge")}
+      <div class="row-actions"><button type="button" class="btn" data-tsend>${icon("send")}Send</button><button type="button" class="btn primary" data-twrite>${icon("bolt")}Write my resume</button>
+        <button type="button" class="btn ghost sm" data-tclear>${icon("trash")}Start over</button></div>
+      <div data-tmsg></div></div>`;
+    const log = el.querySelector("[data-tlog]"), box = el.querySelector("[name=t_text]"), tm = el.querySelector("[data-tmsg]");
+    const reBox = el.querySelector("[data-tre]");
+    const setRe = (q) => { re = q || ""; reBox.hidden = !re; reBox.querySelector("span").innerHTML = re ? `Answering: <b>${esc(re)}</b>` : ""; };
+    const span = (j) => (j.start ? `${j.start} – ${j.current ? "now" : j.end || "?"}` : j.current ? "now" : "");
+    const draw = () => {
+      const turns = state.turns, last = turns[turns.length - 1];
+      log.innerHTML = [`<div class="talk-msg coach">${esc(START)}</div>`, ...turns.map((t) => (t.who === "you"
+        ? `<div class="talk-msg you">${t.re ? `<div class="talk-asked">${esc(t.re)}</div>` : ""}${esc(t.text)}</div>`
+        : `<div class="talk-msg coach">${esc(t.text)}${t.question ? `<b>${esc(t.question)}</b>` : ""}</div>`))].join("");
+      log.scrollTop = log.scrollHeight;
+      const ideas = last && last.who === "coach" ? last.ideas || [] : [];
+      el.querySelector("[data-tideas]").innerHTML = ideas.length ? `<span class="hint">Or answer one of these:</span>${ideas.map((q, i) => `<button type="button" class="tag chip-add" data-idea="${i}">${esc(q)}</button>`).join("")}` : "";
+      el.querySelectorAll("[data-idea]").forEach((b) => b.onclick = () => { setRe(ideas[Number(b.dataset.idea)]); box.focus(); });
+      const n = state.notes;
+      el.querySelector("[data-theard]").innerHTML = n && (n.jobs.length || n.education.length) ? `<div class="sub-item"><b>What I have so far</b>
+        ${n.jobs.map((j) => `<div>${esc(j.title || "Job title?")}${j.employer ? `, ${esc(j.employer)}` : ""} <span class="muted">${esc(span(j))}</span>${!j.daily && !j.proud ? ` <span class="pill">what you did?</span>` : ""}</div>`).join("")}
+        ${n.education.map((e) => `<div>${esc(e.school)}${e.earned ? `, ${esc(e.earned)}` : ""} <span class="muted">${esc(e.year)}</span></div>`).join("")}
+        ${[["Licenses", n.certifications], ["Skills", n.skills], ["Languages", n.languages]].filter((x) => x[1]).map(([l, v]) => `<div><span class="muted">${l}:</span> ${esc(v)}</div>`).join("")}
+        ${state.left ? `<small class="hint">Only what you said is used: ${state.left} detail${state.left === 1 ? "" : "s"} the AI put in its own words ${state.left === 1 ? "was" : "were"} left out.</small>` : ""}</div>` : "";
+      // Typing straight after a question answers it.
+      setRe(last && last.who === "coach" ? last.question : "");
+    };
+    // The AI didn't answer their last message (it failed, or the app closed while it was thinking).
+    const failed = (why) => {
+      const last = state.turns[state.turns.length - 1];
+      if (!why && !(last && last.who === "you")) return msg(tm, "", "");
+      tm.innerHTML = `<div class="msg err">${esc(why || "The AI didn't answer your last message.")}${last && last.who === "you" ? ` <button type="button" class="btn sm" data-tagain>${icon("retry")}Ask again</button>` : ""}</div>`;
+      const again = tm.querySelector("[data-tagain]");
+      if (again) again.onclick = () => send("");
+    };
+    const busy = (on) => el.querySelectorAll("[data-tsend], [data-twrite], [data-tclear]").forEach((b) => { b.disabled = on; });
+    const send = async (text) => {
+      const answering = re;
+      busy(true);
+      cleared();
+      if (text) { state.turns.push({ who: "you", text, ...(answering ? { re: answering } : {}) }); box.value = ""; }
+      draw();
+      msg(tm, "info", "Reading what you said...");
+      const r = await api("/api/resume/talk", { text, re: answering });
+      busy(false);
+      if (r.error) {
+        state = await api("/api/resume/talk");
+        const kept = state.turns.some((t) => t.who === "you" && t.text === text);
+        if (text && !kept) box.value = text;
+        draw();
+        return failed(r.error);
+      }
+      state = r;
+      draw();
+      failed();
+      box.focus();
+    };
+    el.querySelector("[data-tsend]").onclick = () => { const t = box.value.trim(); if (!t) { msg(tm, "err", "Type something first."); return box.focus(); } send(t); };
+    box.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); el.querySelector("[data-tsend]").click(); } });
+    el.querySelector("[data-tre-x]").onclick = () => { setRe(""); box.focus(); };
+    el.querySelectorAll("[data-topic]").forEach((b) => b.onclick = () => {
+      const start = TOPICS[Number(b.dataset.topic)][1];
+      box.value = box.value.trim() ? `${box.value.trimEnd()}\n${start}` : start;
+      setRe("");
+      box.focus();
+      box.setSelectionRange(box.value.length, box.value.length);
+    });
+    el.querySelector("[data-twrite]").onclick = (e) => {
+      if (box.value.trim()) return msg(tm, "err", "Send your last message first, so it's included.");
+      msg(tm, "", "");
+      write(e.currentTarget, val(el, "t_merge"));
+    };
+    let sure = null;
+    el.querySelector("[data-tclear]").onclick = async (e) => {
+      const b = e.currentTarget;
+      if (!sure) { b.lastChild.textContent = "Sure? Press again to start over"; sure = setTimeout(() => { sure = null; b.lastChild.textContent = "Start over"; }, 4000); return; }
+      clearTimeout(sure); sure = null; b.lastChild.textContent = "Start over";
+      state = await api("/api/resume/talk/clear", {});
+      draw();
+      failed();
+    };
+    api("/api/resume/talk").then((t) => { if (t && !t.error) { state = t; draw(); failed(); } });
+    draw();
+  }
+
   // ---------- Resume creator: a short interview, then a resume from the answers ----------
   function creator(el, cfg, onDone, { offerFill = true } = {}) {
     const jobCard = (n) => `<div class="sub-item" data-cjob>
@@ -285,7 +387,11 @@
       <div data-recall-host></div></div>`;
     const schoolCard = () => `<div class="form-row" data-cschool>${fld("School or training", inp("c_school", "", 'placeholder="e.g. Lincoln High School, Austin Community College"'))}
       ${fld("What you earned", inp("c_earned", "", 'placeholder="e.g. Diploma, GED, Associate degree, CNA certificate"'))}${fld("Year", inp("c_year", "", 'placeholder="e.g. 2022, or Expected 2027"'))}</div>`;
+    const mergeBox = (name) => `<label class="check" ${cfg.profile ? "" : "hidden"}><input type="checkbox" name="${name}" ${cfg.profile ? "" : "checked"}>Add to my current resume instead of starting a new one</label>`;
     el.innerHTML = `<div class="form">
+      <div class="row-actions"><span class="mode-switch" role="group" aria-label="How to tell the app about your work"><button type="button" data-cmode="talk" class="on" aria-pressed="true">Tell it in my own words</button><button type="button" data-cmode="form" aria-pressed="false">Fill in a form</button></span></div>
+      <div data-ctalk></div>
+      <div class="form" data-cform hidden>
       <p class="hint" style="margin:0">Answer in your own words; spelling and wording don't matter. The AI turns your answers into resume lines the way recruiters like them: short, starting with an action, showing results. It never adds anything you didn't say, and you check every line before it's used.</p>
       <div class="section-t">1. The job you want next</div>
       ${fld("What kind of job are you looking for?", inp("c_target", (cfg.prefs && (cfg.prefs.titles || [])[0]) || "", 'placeholder="e.g. Retail associate, Warehouse worker, Medical assistant"'))}
@@ -300,10 +406,15 @@
       <div class="form-row">${fld("Certifications and licenses", inp("c_certs", "", 'placeholder="e.g. Food Handler, forklift, CPR, CDL"'))}${fld("Languages", inp("c_langs", "", 'placeholder="e.g. English, Spanish"'))}</div>
       ${fld("Skills", inp("c_skills", "", 'placeholder="e.g. cash handling, customer service, Excel, inventory"'))}
       ${fld("Anything else? (optional)", inp("c_summary", "", 'placeholder="e.g. Reliable, available weekends, love working with people"'), "Used for the short summary at the top.")}
-      <label class="check" ${cfg.profile ? "" : "hidden"}><input type="checkbox" name="c_merge" ${cfg.profile ? "" : "checked"}>Add to my current resume instead of starting a new one</label>
-      <div class="row-actions"><button type="button" class="btn primary" data-cgo>${icon("bolt")}Write my resume</button></div>
+      ${mergeBox("c_merge")}
+      <div class="row-actions"><button type="button" class="btn primary" data-cgo>${icon("bolt")}Write my resume</button></div></div>
       <div data-cmsg></div></div>`;
     const m = el.querySelector("[data-cmsg]");
+    el.querySelectorAll("[data-cmode]").forEach((b) => b.onclick = () => {
+      el.querySelectorAll("[data-cmode]").forEach((x) => { x.classList.toggle("on", x === b); x.setAttribute("aria-pressed", String(x === b)); });
+      el.querySelector("[data-ctalk]").hidden = b.dataset.cmode !== "talk";
+      el.querySelector("[data-cform]").hidden = b.dataset.cmode !== "form";
+    });
     // Each job card gets its own "Help me remember" box.
     const boxes = new WeakMap();
     const attach = () => el.querySelectorAll("[data-cjob]").forEach((c) => {
@@ -327,7 +438,10 @@
       const thin = jobs.find((j) => !j.daily && !j.confirmed.length);
       if (thin) return msg(m, "err", `Tell us what you did at ${thin.title || thin.employer} on a normal day, or use "Help me remember what I did". A few words is enough.`);
       const interview = { target: val(el, "c_target"), jobs, education, certifications: val(el, "c_certs"), languages: val(el, "c_langs"), skills: val(el, "c_skills"), summary: val(el, "c_summary") };
-      const btn = el.querySelector("[data-cgo]");
+      write(el.querySelector("[data-cgo]"), "/api/resume/create", { interview, merge: val(el, "c_merge") });
+    };
+    // Both ways end here: the resume written, with the steps shown as they happen, then what came of it.
+    const write = async (btn, route, body) => {
       btn.disabled = true;
       msg(m, "info", "Writing your resume from your answers. This usually takes 1 to 3 minutes (longer when the AI service is busy). You can leave this window open and wait.");
       // The steps as they happen, so a long wait never looks stuck.
@@ -337,7 +451,7 @@
         const secs = Math.round((Date.now() - started) / 1000);
         if (pr && pr.of && pr.n) msg(m, "info", `Step ${pr.n} of ${pr.of}: ${pr.step}... (${secs < 60 ? secs + " seconds" : Math.floor(secs / 60) + " min " + (secs % 60) + " s"} so far)`);
       }, 1500);
-      const r = await api("/api/resume/create", { interview, merge: val(el, "c_merge") }).finally(() => clearInterval(tick));
+      const r = await api(route, body).finally(() => clearInterval(tick));
       btn.disabled = false;
       if (r.error) return msg(m, "err", r.error);
       cfg.profile = r.profile; cfg.answers = r.answers;
@@ -349,6 +463,7 @@
       if (offerFill) m.querySelector("[data-cfill]").onclick = (ev) => { ev.currentTarget.hidden = true; fillPage(m.querySelector("[data-cfill-host]"), cfg, () => onDone && onDone({ ...r, profile: cfg.profile })); };
       onDone && onDone(r);
     };
+    talk(el.querySelector("[data-ctalk]"), cfg, mergeBox, (btn, merge) => write(btn, "/api/resume/talk/write", { merge }), () => msg(m, "", ""));
     return { save: async () => (cfg.profile ? null : "Write your resume first.") };
   }
 

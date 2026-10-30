@@ -247,8 +247,9 @@ change all of it later under **Settings** and **Profile**.
    service instead, or a free model on your own computer (see
    [Using a local model](#using-a-local-model)).
 3. **Your resume.** Drop in one or more resumes (PDF or Word `.docx`). No
-   resume? Open **I don't have a resume** and answer a few questions; the app
-   writes one with you (see [Making and improving your resume](#making-and-improving-your-resume)).
+   resume? Open **I don't have a resume** and tell the app about your work in
+   your own words, in a chat (or answer a short form); the app writes one with
+   you (see [Making and improving your resume](#making-and-improving-your-resume)).
    Have projects on GitHub? Open **Add projects from my GitHub** (see
    [Projects from GitHub](#projects-from-github)).
 4. **Check it.** The app splits your resume into pieces: summaries, bullet
@@ -339,7 +340,29 @@ app asks you ("About how many customers did you serve on a typical day?")
 instead of guessing. Answer only if you know, and it rewrites the line with
 your answer.
 
-**Make a resume with me.** A short interview:
+**Make a resume with me.** Two ways to tell the app about your work.
+
+**Tell it in my own words** (the first one shown) is a chat. Type about your
+jobs the way you'd tell a friend, in as many messages as you like. Each time,
+the app answers with the one question that would help your resume most: first
+whatever is missing (a job title, the employer, about when, what you did on a
+normal day), then digging into what you mentioned ("About how many customers
+did you help on a busy day?", "What did you do to get the new hires up to
+speed?"), then what people leave out (other jobs, school, licenses,
+languages). A few other questions sit under it if you'd rather answer one of
+those, and **Things you could talk about** starts a message for you. **What I
+have so far** shows the jobs, school and licenses it picked up.
+
+Only your own words count. The AI's notes are checked against what you typed,
+with no AI involved: a number, a name, a tool or a claim ("managed",
+"reduced") you never said is left out, and a job title you never used is asked
+about (Is "Delivery Driver" the right job title for your work at Initech
+Foods?) before anything is written. **Write my resume** then writes it from
+your words exactly as the form does, through every check below. The
+conversation stays on your computer until you press **Start over**, so leaving
+the page loses nothing.
+
+**Fill in a form** is a short interview:
 - the job you want next
 - each job you've had (including part-time, gig and family work): what you did
   on a normal day, what went well (what happened, your part, and how you did
