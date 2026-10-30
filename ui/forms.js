@@ -278,6 +278,11 @@
   const TOPICS = [["My jobs", "My most recent job was "], ["A normal day", "On a normal day I "], ["Something that went well", "Something that went well: "],
     ["Numbers", "Some numbers: about "], ["Tools and machines", "I used "], ["Training people", "I trained "], ["School and training", "For school, I "],
     ["Licenses and certificates", "I have a "], ["Languages", "I speak "], ["Other work", "I also worked "]];
+  // The computer's own dictation types into the box: the app itself never asks for the microphone.
+  const MAC = window.ja && window.ja.platform === "darwin", WIN = window.ja && window.ja.platform === "win32";
+  const VOICE = MAC ? "Click in the message box, then choose Edit &gt; Start Dictation in the menu bar (or press the microphone key, F5 on most Mac keyboards). Talk, and your words appear in the box; press Send when you're done. The first time, your Mac may ask to turn Dictation on."
+    : WIN ? "Click in the message box, then press the Windows key and H together. Talk, and your words appear in the box; press Send when you're done. The first time, Windows may ask to turn on speech recognition."
+      : "";
   function talk(el, cfg, mergeBox, write, cleared) {
     const START = "Tell me about your work, the way you'd tell a friend. Start with your most recent job: where it was, about when, and what you did there. Part-time jobs, gig work, a family business and volunteering all count. Spelling doesn't matter.";
     let state = { turns: [] }, re = "";
@@ -286,9 +291,11 @@
       <div class="chips" data-tideas></div>
       <div class="talk-re" data-tre hidden><span></span><button type="button" class="btn ghost sm" data-tre-x>${icon("x")}I'm telling something else</button></div>
       <div class="fld"><textarea name="t_text" rows="4" aria-label="Your message" placeholder="e.g. I've worked at Corner Market since 2021. I run the register, stock shelves and close the store on weekends."></textarea>
-        <small>${window.ja && window.ja.platform === "darwin" ? "Cmd" : "Ctrl"}+Enter sends. Nothing goes on your resume until you approve it.</small></div>
+        <small>${MAC ? "Cmd" : "Ctrl"}+Enter sends. Nothing goes on your resume until you approve it.${VOICE ? ` <button type="button" class="btn ghost sm" data-tvoice aria-expanded="false">Talk instead of typing</button>` : ""}</small></div>
+      <div class="callout blue" data-tvoice-how hidden style="margin:0"><b>Talk instead of typing</b>${VOICE}</div>
       <div class="chips" style="margin-top:0"><span class="hint">Things you could talk about:</span>${TOPICS.map(([l], i) => `<button type="button" class="tag chip-add" data-topic="${i}">+ ${esc(l)}</button>`).join("")}</div>
       <div data-theard></div>
+      <div data-trecall></div>
       ${mergeBox("t_merge")}
       <div class="row-actions"><button type="button" class="btn" data-tsend>${icon("send")}Send</button><button type="button" class="btn primary" data-twrite>${icon("bolt")}Write my resume</button>
         <button type="button" class="btn ghost sm" data-tclear>${icon("trash")}Start over</button></div>
@@ -300,7 +307,7 @@
     const draw = () => {
       const turns = state.turns, last = turns[turns.length - 1];
       log.innerHTML = [`<div class="talk-msg coach">${esc(START)}</div>`, ...turns.map((t) => (t.who === "you"
-        ? `<div class="talk-msg you">${t.re ? `<div class="talk-asked">${esc(t.re)}</div>` : ""}${esc(t.text)}</div>`
+        ? `<div class="talk-msg you">${t.re || t.about ? `<div class="talk-asked">${esc(t.re || `About: ${t.about}`)}</div>` : ""}${esc(t.text)}</div>`
         : `<div class="talk-msg coach">${esc(t.text)}${t.question ? `<b>${esc(t.question)}</b>` : ""}</div>`))].join("");
       log.scrollTop = log.scrollHeight;
       const ideas = last && last.who === "coach" ? last.ideas || [] : [];
@@ -308,12 +315,34 @@
       el.querySelectorAll("[data-idea]").forEach((b) => b.onclick = () => { setRe(ideas[Number(b.dataset.idea)]); box.focus(); });
       const n = state.notes;
       el.querySelector("[data-theard]").innerHTML = n && (n.jobs.length || n.education.length) ? `<div class="sub-item"><b>What I have so far</b>
-        ${n.jobs.map((j) => `<div>${esc(j.title || "Job title?")}${j.employer ? `, ${esc(j.employer)}` : ""} <span class="muted">${esc(span(j))}</span>${!j.daily && !j.proud ? ` <span class="pill">what you did?</span>` : ""}</div>`).join("")}
+        ${n.jobs.map((j, i) => `<div class="talk-job"><span>${esc(j.title || "Job title?")}${j.employer ? `, ${esc(j.employer)}` : ""} <span class="muted">${esc(span(j))}</span>${!j.daily && !j.proud ? ` <span class="pill">what you did?</span>` : ""}</span>
+          ${j.title ? `<button type="button" class="btn ghost sm" data-trem="${i}">${icon("bolt")}Help me remember</button>` : ""}</div>`).join("")}
         ${n.education.map((e) => `<div>${esc(e.school)}${e.earned ? `, ${esc(e.earned)}` : ""} <span class="muted">${esc(e.year)}</span></div>`).join("")}
         ${[["Licenses", n.certifications], ["Skills", n.skills], ["Languages", n.languages]].filter((x) => x[1]).map(([l, v]) => `<div><span class="muted">${l}:</span> ${esc(v)}</div>`).join("")}
         ${state.left ? `<small class="hint">Only what you said is used: ${state.left} detail${state.left === 1 ? "" : "s"} the AI put in its own words ${state.left === 1 ? "was" : "were"} left out.</small>` : ""}</div>` : "";
+      el.querySelectorAll("[data-trem]").forEach((b) => b.onclick = () => remember(Number(b.dataset.trem)));
       // Typing straight after a question answers it.
       setRe(last && last.who === "coach" ? last.question : "");
+    };
+    // "Help me remember" for a job they told about: the yes/no questions from what people in that job usually do.
+    // What they say yes to is sent as their message, so the coach files it under that job and can dig into it.
+    const recallHost = el.querySelector("[data-trecall]");
+    const remember = (i) => {
+      const j = state.notes.jobs[i];
+      recallHost.innerHTML = `<div class="sub-item"><div class="row-actions" style="justify-content:space-between"><b>Help me remember: ${esc(j.title)}${j.employer ? `, ${esc(j.employer)}` : ""}</b>
+        <button type="button" class="btn ghost sm" data-rclose>${icon("x")}Close</button></div><div data-rbox></div>
+        <div class="row-actions" data-radd-row hidden><button type="button" class="btn sm primary" data-radd>${icon("send")}Send what I said yes to</button></div></div>`;
+      const rbox = recallBox(recallHost.querySelector("[data-rbox]"), () => ({ title: j.title, employer: j.employer, daily: j.daily, proud: j.proud, tools: j.tools }));
+      recallHost.querySelector("[data-rclose]").onclick = () => { recallHost.innerHTML = ""; };
+      recallHost.querySelector("[data-radd]").onclick = async () => {
+        const confirmed = rbox.confirmed();
+        if (!confirmed.length) return msg(tm, "err", "Say Yes to at least one thing first, or press Close.");
+        if (await send("", { job: i, confirmed })) recallHost.innerHTML = "";
+      };
+      const ask = recallHost.querySelector("[data-recall]");
+      ask.addEventListener("click", () => { recallHost.querySelector("[data-radd-row]").hidden = false; });
+      ask.click();
+      recallHost.scrollIntoView({ block: "nearest" });
     };
     // The AI didn't answer their last message (it failed, or the app closed while it was thinking).
     const failed = (why) => {
@@ -324,30 +353,41 @@
       if (again) again.onclick = () => send("");
     };
     const busy = (on) => el.querySelectorAll("[data-tsend], [data-twrite], [data-tclear]").forEach((b) => { b.disabled = on; });
-    const send = async (text) => {
-      const answering = re;
+    // recall: { job, confirmed } sends what they said yes to instead of a typed message. -> whether it went through.
+    const send = async (text, recall = null) => {
+      const answering = recall ? "" : re;
       busy(true);
       cleared();
       if (text) { state.turns.push({ who: "you", text, ...(answering ? { re: answering } : {}) }); box.value = ""; }
+      if (recall) state.turns.push({ who: "you", text: `Yes, I did these:\n${recall.confirmed.map((c) => `- ${c.q}${c.detail ? ` (${c.detail})` : ""}`).join("\n")}` });
       draw();
       msg(tm, "info", "Reading what you said...");
-      const r = await api("/api/resume/talk", { text, re: answering });
+      const r = await api("/api/resume/talk", recall ? { recall } : { text, re: answering });
       busy(false);
       if (r.error) {
         state = await api("/api/resume/talk");
         const kept = state.turns.some((t) => t.who === "you" && t.text === text);
         if (text && !kept) box.value = text;
         draw();
-        return failed(r.error);
+        failed(r.error);
+        return false;
       }
       state = r;
       draw();
       failed();
       box.focus();
+      return true;
     };
     el.querySelector("[data-tsend]").onclick = () => { const t = box.value.trim(); if (!t) { msg(tm, "err", "Type something first."); return box.focus(); } send(t); };
     box.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); el.querySelector("[data-tsend]").click(); } });
     el.querySelector("[data-tre-x]").onclick = () => { setRe(""); box.focus(); };
+    const voice = el.querySelector("[data-tvoice]");
+    if (voice) voice.onclick = () => {
+      const how = el.querySelector("[data-tvoice-how]");
+      how.hidden = !how.hidden;
+      voice.setAttribute("aria-expanded", String(!how.hidden));
+      box.focus();
+    };
     el.querySelectorAll("[data-topic]").forEach((b) => b.onclick = () => {
       const start = TOPICS[Number(b.dataset.topic)][1];
       box.value = box.value.trim() ? `${box.value.trimEnd()}\n${start}` : start;
@@ -366,6 +406,7 @@
       if (!sure) { b.lastChild.textContent = "Sure? Press again to start over"; sure = setTimeout(() => { sure = null; b.lastChild.textContent = "Start over"; }, 4000); return; }
       clearTimeout(sure); sure = null; b.lastChild.textContent = "Start over";
       state = await api("/api/resume/talk/clear", {});
+      recallHost.innerHTML = "";
       draw();
       failed();
     };

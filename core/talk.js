@@ -16,7 +16,8 @@ const str = (x, n = 2000) => (typeof x === "string" ? x.trim().slice(0, n) : "")
 // One message, the messages in one chat, and all they type together: what one paid call reads stays bounded.
 export const LIMITS = { chars: 4000, turns: 40, total: 30000 };
 
-// turns: [{ who: "you", text, re }] and [{ who: "coach", text, question, ideas }]. re: the question a message answers.
+// turns: [{ who: "you", text, re, about }] and [{ who: "coach", text, question, ideas }]. re: the question a message
+// answers; about: the job their yes answers are about (context for the coach, not their words).
 // What they said, with the question each answer was to: "4" means something only next to "How many did you train?".
 export const theirWords = (turns) => arr(turns).filter((t) => t.who === "you").map((t) => (t.re ? `(asked: ${t.re}) ${t.text}` : t.text)).join("\n");
 
@@ -92,7 +93,7 @@ const SYS = `You are a friendly resume coach in a chat. The person is telling yo
 
 Return two things.
 
-1. "notes": everything they have said so far, sorted into jobs (newest first), school and skills, in THEIR OWN WORDS. Copy their phrases (fix spelling, drop filler like "um" or "like"); never summarize, reword, add, guess or improve. Anything they didn't say stays empty. Part-time jobs, gig work, a family business and volunteering are jobs too. An answer to a question goes with the job the question was about. When they correct something, use the correction.
+1. "notes": everything they have said so far, sorted into jobs (newest first), school and skills, in THEIR OWN WORDS. Copy their phrases (fix spelling, drop filler like "um" or "like"); never summarize, reword, add, guess or improve. Anything they didn't say stays empty. Part-time jobs, gig work, a family business and volunteering are jobs too. An answer to a question goes with the job the question was about, and a message "about their job as ..." lists things they confirmed doing at that job (under daily, with any detail in brackets under numbers). When they correct something, use the correction.
    - title: the job title as they said it. If they never said one, the plainest title for what they described.
    - start, end: as they said them ("Jun 2023", "2021"). current: true only if they said they still work there.
    - daily: what they did on a normal day. proud: what went well, their part and how they did it. numbers: the numbers they gave, with the words around them. tools: tools, machines, vehicles and software they named, comma-separated.
@@ -109,7 +110,7 @@ Return JSON only:
 
 export const transcriptText = (turns) => arr(turns).map((t) => (t.who === "coach"
   ? `COACH: ${t.text}${t.question ? ` ${t.question}` : ""}${arr(t.ideas).length ? ` (Other ideas: ${t.ideas.join(" ")})` : ""}`
-  : `PERSON${t.re ? ` (answering "${t.re}")` : ""}: ${t.text}`)).join("\n");
+  : `PERSON${t.re ? ` (answering "${t.re}")` : ""}${t.about ? ` (about their job as ${t.about})` : ""}: ${t.text}`)).join("\n");
 
 // The coach's answer to the conversation so far: its turn, and the checked notes.
 export async function coach(turns, { target = "" } = {}) {
@@ -131,9 +132,32 @@ const FILE = "talk.json";
 export const getTalk = () => { const t = readJSON(FILE, null); return t && Array.isArray(t.turns) ? t : { turns: [] }; };
 export const clearTalk = () => writeJSON(FILE, { turns: [] });
 
+// "Help me remember" in the chat: what they said yes to, sent as their own message, so the coach files it under
+// that job and can dig into it. confirmed: [{ q: "Did you ...?", detail }] from the yes/no questions. Which job
+// it's about goes with it separately: the job's title is the AI's reading, never something they said.
+export function yesText(confirmed) {
+  const items = arr(confirmed).slice(0, 15).map((c) => {
+    const q = str(c && c.q, 300), d = str(c && c.detail, 200);
+    if (!q) return "";
+    const did = /^did you\s+/i.test(q) ? q.replace(/^did you\s+/i, "").replace(/\?$/, "") : `${q} Yes`;
+    return `- ${did}${d ? ` (${d})` : ""}`;
+  }).filter(Boolean);
+  return items.length ? `Yes, I did these:\n${items.join("\n")}` : "";
+}
+
 // Their next message (or none, to ask the coach again after a failed try) -> the conversation as saved.
-export async function say(text, re, { target = "" } = {}) {
+// recall: { job: index into the notes' jobs, confirmed } sends what they said yes to instead.
+export async function say(text, re, { target = "", recall = null } = {}) {
   const t = getTalk();
+  let about = "";
+  if (recall) {
+    const j = arr(t.notes && t.notes.jobs)[Number(recall.job)];
+    if (!j) throw new Error("That job is gone. Send a message about it first.");
+    text = yesText(recall.confirmed);
+    if (!text) throw new Error("Say yes to at least one thing first.");
+    about = `${j.title}${j.employer ? ` at ${j.employer}` : ""}`;
+    re = "";
+  }
   const msg = str(text, LIMITS.chars);
   if (msg) {
     const mine = t.turns.filter((x) => x.who === "you");
@@ -141,7 +165,7 @@ export async function say(text, re, { target = "" } = {}) {
     // Only a question the coach just asked can be the one they're answering.
     const last = [...t.turns].reverse().find((x) => x.who === "coach");
     const asked = last ? [last.question, ...arr(last.ideas)] : [];
-    t.turns.push({ who: "you", text: msg, ...(re && asked.includes(re) ? { re } : {}) });
+    t.turns.push({ who: "you", text: msg, ...(re && asked.includes(re) ? { re } : {}), ...(about ? { about } : {}) });
     writeJSON(FILE, { turns: t.turns });
   }
   if (!t.turns.length || t.turns[t.turns.length - 1].who !== "you") return t;

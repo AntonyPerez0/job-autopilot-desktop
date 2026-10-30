@@ -492,6 +492,7 @@ details.card-fold[open] > summary h2::before, details.card-fold[open] > summary 
 .talk-asked { color: var(--color-muted); font-size: var(--text-xs); margin-bottom: var(--space-3xs); }
 .talk-re { display: flex; flex-wrap: wrap; gap: var(--space-xs); align-items: center; font-size: var(--text-sm); color: var(--color-ink-2); }
 .talk .chips { margin-top: 0; align-items: center; }
+.talk-job { display: flex; flex-wrap: wrap; gap: var(--space-xs); align-items: center; justify-content: space-between; }
 .talk .chips .chip-add { white-space: normal; text-align: left; min-height: 28px; }
 
 /* ---------- smaller windows ---------- */

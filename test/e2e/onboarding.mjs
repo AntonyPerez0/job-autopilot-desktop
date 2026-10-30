@@ -352,6 +352,23 @@ try {
   await win.waitForSelector('#sec-create .talk-msg.coach:has-text("Is \\"Delivery Driver\\" the right job title")');
   assert.ok(await win.isVisible('#sec-create [data-tideas] button:has-text("What did you do there, other than drive?")'), "the coach's own question becomes an idea");
   assert.ok(await win.isVisible('#sec-create [data-theard]:has-text("Initech Foods")'), "what it picked up is shown");
+  // Help me remember, for a job told about in the chat: the yes answers go in as the person's own message.
+  await win.click('#sec-create [data-theard] [data-trem="0"]');
+  await win.waitForSelector('#sec-create [data-trecall] .recall-item:has-text("restock shelves")');
+  await win.click('#sec-create [data-trecall] .recall-item:has-text("restock shelves") [data-yes]');
+  await win.fill('#sec-create [data-trecall] .recall-item:has-text("restock shelves") [data-detail]', "about twice a shift");
+  await shot("12c-talk-remember");
+  await win.click('#sec-create [data-radd]');
+  await win.waitForSelector('#sec-create .talk-msg.you:has-text("restock shelves when they ran low (about twice a shift)")');
+  await win.waitForSelector('#sec-create [data-trecall] .recall-item', { state: "detached" });
+  const said = JSON.parse(fs.readFileSync(path.join(data, "talk.json"), "utf8")).turns.find((t) => t.about);
+  assert.strictEqual(said.about, "Delivery Driver at Initech Foods", "the yes answers are about that job");
+  assert.ok(!/Delivery Driver/.test(said.text), "and the title the AI guessed isn't put in the person's mouth");
+  // Talking instead of typing: the computer's own dictation (macOS and Windows).
+  if (["darwin", "win32"].includes(process.platform)) {
+    await win.click('#sec-create [data-tvoice]');
+    assert.ok(await win.isVisible(`#sec-create [data-tvoice-how]:has-text("${process.platform === "darwin" ? "Start Dictation" : "Windows key and H"}")`), "how to dictate, for this computer");
+  }
   await win.click('#sec-create [data-twrite]');
   await win.waitForSelector('#sec-create [data-cmsg] .msg.err:has-text("Delivery Driver")');
   await win.fill('#sec-create [name=t_text]', "yes");

@@ -351,7 +351,14 @@ did you help on a busy day?", "What did you do to get the new hires up to
 speed?"), then what people leave out (other jobs, school, licenses,
 languages). A few other questions sit under it if you'd rather answer one of
 those, and **Things you could talk about** starts a message for you. **What I
-have so far** shows the jobs, school and licenses it picked up.
+have so far** shows the jobs, school and licenses it picked up, and **Help me
+remember** next to each job asks the yes/no questions described below; what you
+say yes to goes into the chat as your answer, under that job.
+
+Rather talk than type? **Talk instead of typing** shows how to use your
+computer's own dictation (on a Mac, Edit > Start Dictation; on Windows, the
+Windows key and H). Your words appear in the box as you speak. The app itself
+never uses the microphone.
 
 Only your own words count. The AI's notes are checked against what you typed,
 with no AI involved: a number, a name, a tool or a claim ("managed",

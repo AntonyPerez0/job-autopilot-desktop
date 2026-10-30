@@ -111,6 +111,31 @@ test("limits: a message that would go over is refused and not kept; a failed rep
   assert.deepStrictEqual(t.turns.map((x) => x.who), ["you", "coach"]);
 });
 
+test("Help me remember in the chat: what they said yes to is their message, under that job", async () => {
+  assert.strictEqual(T.yesText([{ q: "Did you count the cash drawer at the end of a shift?" }, { q: "Were you trusted with the store keys?", detail: "" },
+    { q: "Did you restock shelves when they ran low?", detail: "about twice a shift" }, { q: "" }]),
+  "Yes, I did these:\n- count the cash drawer at the end of a shift\n- Were you trusted with the store keys? Yes\n- restock shelves when they ran low (about twice a shift)");
+  assert.strictEqual(T.yesText([]), "");
+  T.clearTalk();
+  const notes = (daily) => ({ jobs: [{ title: "Cashier", employer: "Corner Market", daily }, { title: "Stock Associate", employer: "Corner Market", daily: "stock shelves" }] });
+  reply = () => ({ reply: "ok", question: "How long have you worked there?", ideas: [], notes: notes("run the register") });
+  await T.say("I'm a cashier at Corner Market, I run the register", "");
+  await assert.rejects(T.say("", "", { recall: { job: 3, confirmed: [{ q: "Did you count the drawer?" }] } }), /That job is gone/);
+  await assert.rejects(T.say("", "", { recall: { job: 0, confirmed: [] } }), /Say yes/);
+  reply = () => ({ reply: "ok", question: "About how many times a shift?", ideas: [], notes: notes("run the register; count the cash drawer at the end of a shift; restock shelves when they ran low") });
+  const t = await T.say("ignored", "How long have you worked there?", { recall: { job: 0, confirmed: [{ q: "Did you count the cash drawer at the end of a shift?" }, { q: "Did you restock shelves when they ran low?" }] } });
+  const mine = t.turns[2];
+  assert.match(mine.text, /^Yes, I did these:\n- count the cash drawer/);
+  assert.strictEqual(mine.about, "Cashier at Corner Market");
+  assert.strictEqual(mine.re, undefined, "yes answers don't answer the coach's question");
+  assert.strictEqual(t.notes.jobs[0].daily, "run the register; count the cash drawer at the end of a shift; restock shelves when they ran low", "the yes answers count as their words");
+  assert.match(seen[seen.length - 1][1].content, /PERSON \(about their job as Cashier at Corner Market\): Yes, I did these/);
+  // The job it's about is the AI's reading: a title they never used stays theirs to confirm.
+  const again = await T.say("", "", { recall: { job: 1, confirmed: [{ q: "Did you unload deliveries?" }] } });
+  assert.deepStrictEqual(again.unsure.map((u) => u.title), ["Stock Associate"]);
+  assert.doesNotMatch(T.theirWords(again.turns), /Stock Associate/);
+});
+
 test("Write my resume: the chat's notes become the creator's interview", async () => {
   await handle("/api/resume/talk/clear", {});
   reply = (sys) => {

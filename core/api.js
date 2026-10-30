@@ -302,7 +302,8 @@ const ROUTES = {
   "POST /api/resume/talk/clear": () => clearTalk(),
   "POST /api/resume/talk": async (b) => {
     if (!aiSettings().apiKey) return bad("Connect an AI first (Settings > AI).");
-    try { return await say(cut(b.text, LIMITS.chars), cut(b.re, 300), { target: (getPrefs().titles || [])[0] || "" }); } catch (e) { return bad(e.message); }
+    const recall = b.recall && typeof b.recall === "object" ? { job: Number(b.recall.job), confirmed: upTo(b.recall.confirmed, 15).map((c) => strings(c, 500)) } : null;
+    try { return await say(cut(b.text, LIMITS.chars), cut(b.re, 300), { target: (getPrefs().titles || [])[0] || "", recall }); } catch (e) { return bad(e.message); }
   },
   "POST /api/resume/talk/write": async (b) => {
     if (!aiSettings().apiKey) return bad("Connect an AI first (Settings > AI).");
