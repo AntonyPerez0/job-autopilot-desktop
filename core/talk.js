@@ -34,6 +34,10 @@ const nameOk = (s, words) => said(s, words) || (share(s, words) >= 0.6 && numsOk
 const titleOk = (s, words) => said(s, words) || (lineWords(s).size > 0 && [...lineWords(s)].every((w) => lineWords(words).has(w)));
 const itemOk = (s, words) => said(s, words) || (lineWords(s).size > 0 && [...lineWords(s)].every((w) => lineWords(words).has(w)) && !addedFacts(s, [words]).length);
 
+// "city of Sacramento sign shop" -> "City of Sacramento Sign Shop": names are said casually, a resume writes them properly.
+const SMALL = /^(of|and|the|at|for|in|on|a|an|to|de|la)$/;
+export const nameCase = (s) => String(s).split(/(\s+)/).map((w, i) => (i && SMALL.test(w) ? w : /^[a-z]/.test(w) && w === w.toLowerCase() ? w[0].toUpperCase() + w.slice(1) : w)).join("");
+
 const PARTS = /\s*[;\n]+\s*|(?<=[.!?])\s+|,\s+(?=\D)/;
 // "Jun 2023" stays only when they gave that year (and the month, or it becomes "2023").
 function dateOf(d, words) {
@@ -64,16 +68,18 @@ export function checkNotes(notes, turns) {
   const jobs = [];
   for (const j of arr(n.jobs).slice(0, 20)) {
     if (!j || typeof j !== "object") continue;
-    const title = str(j.title, 120), employer = str(j.employer, 120);
-    const job = { title, employer: nameOk(employer, words) ? employer : "", location: nameOk(str(j.location, 120), words) ? str(j.location, 120) : "",
+    const title = nameCase(str(j.title, 120)), employer = str(j.employer, 120), location = str(j.location, 120);
+    const job = { title, employer: nameOk(employer, words) ? nameCase(employer) : "", location: nameOk(location, words) ? nameCase(location) : "",
       start: dateOf(j.start, words), end: j.current === true ? "" : dateOf(j.end, words), current: j.current === true,
       daily: keep(j.daily), proud: keep(j.proud), numbers: keep(j.numbers), tools: list(j.tools) };
     if (!job.title && !job.employer) continue;
     if (title && !titleOk(title, words)) unsure.push({ title, employer: job.employer, question: `Is "${title}" the right job title for your work${job.employer ? ` at ${job.employer}` : ""}? If not, what was it called?` });
+    // No title at all: it heads the job on the resume, so it's the next thing asked.
+    if (!title) unsure.push({ title: "", employer: job.employer, question: `What was your job title at ${job.employer}?` });
     jobs.push(job);
   }
   const education = arr(n.education).slice(0, 10).filter((e) => e && nameOk(str(e.school, 200), words))
-    .map((e) => ({ school: str(e.school, 200), earned: itemOk(str(e.earned, 120), words) ? str(e.earned, 120) : "", year: numsOk(str(e.year, 40), words) ? str(e.year, 40) : "" }));
+    .map((e) => ({ school: nameCase(str(e.school, 200)), earned: itemOk(str(e.earned, 120), words) ? str(e.earned, 120) : "", year: numsOk(str(e.year, 40), words) ? str(e.year, 40) : "" }));
   const target = str(n.target, 200);
   const iv = { target: share(target, words) >= 0.5 && numsOk(target, words) ? target : "", jobs, education,
     certifications: list(n.certifications), skills: list(n.skills), languages: list(n.languages) };
@@ -93,14 +99,15 @@ const SYS = `You are a friendly resume coach in a chat. The person is telling yo
 
 Return two things.
 
-1. "notes": everything they have said so far, sorted into jobs (newest first), school and skills, in THEIR OWN WORDS. Copy their phrases (fix spelling, drop filler like "um" or "like"); never summarize, reword, add, guess or improve. Anything they didn't say stays empty. Part-time jobs, gig work, a family business and volunteering are jobs too. An answer to a question goes with the job the question was about, and a message "about their job as ..." lists things they confirmed doing at that job (under daily, with any detail in brackets under numbers). When they correct something, use the correction.
+1. "notes": everything they have said so far, sorted into jobs (newest first), school and skills, in THEIR OWN WORDS. Copy their phrases (fix spelling, drop filler like "um" or "like"); never summarize, reword, add, guess or improve. Anything they didn't say stays empty. Part-time jobs, gig work, a family business and volunteering are jobs too. An answer to a question goes with the job the question was about, and a message "about their job as ..." lists things they confirmed doing at that job (under daily). When they correct something, use the correction. You get your notes so far: keep every detail in them (what they did, how they did it, every number), add what's new, and change something only when they corrected it.
    - title: the job title as they said it. If they never said one, the plainest title for what they described.
    - start, end: as they said them ("Jun 2023", "2021"). current: true only if they said they still work there.
-   - daily: what they did on a normal day. proud: what went well, their part and how they did it. numbers: the numbers they gave, with the words around them. tools: tools, machines, vehicles and software they named, comma-separated.
+   - daily: what they did on a normal day, every task, also the ones that name a vehicle or a tool ("drive a flatbed" is a task, and the flatbed is a tool too). proud: what went well, their part and how they did it. numbers: the numbers they gave, with the words around them. tools: tools, machines, vehicles and software they named, comma-separated.
+   - school: the school's whole name as they said it ("Hiram Johnson High School" when they said they finished high school at Hiram Johnson). earned: what they finished or earned, in their words ("high school", "GED", "CNA certificate").
    - certifications, skills, languages: comma-separated, only ones they named. target: the kind of job they want next, if they said.
 
 2. Coach them:
-   - "reply": one or two short, plain sentences back about what they just said. No flattery or praise words ("impressive", "amazing"), and no claims they didn't make.
+   - "reply": one short, plain sentence saying back what you understood from their last message. No opinion about it ("strong", "solid", "good", "impressive", "great story"), and no conclusion they didn't draw ("shows you're trusted").
    - "question": the one question that would help their resume most right now. In this order: what's missing for a job (its title, the employer, about when, what they did on a normal day); then digging into something they mentioned (what went well, what their part was and how they did it; how many, how often, how much; which tools or machines; training others; being trusted with keys, cash, opening or closing; recognition); then what people leave out (other jobs, school or training, licenses and certificates, languages).
    - "ideas": up to 3 other short questions they could answer instead, each about something different.
    Each question asks one thing, in plain words anyone understands, about something they mentioned or something common in that kind of job. Questions only ask: never assume they did something. Never ask about something they already told you, and never about pay, age, health, family or anything private.
@@ -112,9 +119,11 @@ export const transcriptText = (turns) => arr(turns).map((t) => (t.who === "coach
   ? `COACH: ${t.text}${t.question ? ` ${t.question}` : ""}${arr(t.ideas).length ? ` (Other ideas: ${t.ideas.join(" ")})` : ""}`
   : `PERSON${t.re ? ` (answering "${t.re}")` : ""}${t.about ? ` (about their job as ${t.about})` : ""}: ${t.text}`)).join("\n");
 
-// The coach's answer to the conversation so far: its turn, and the checked notes.
-export async function coach(turns, { target = "" } = {}) {
-  const r = await ask([{ role: "system", content: SYS }, { role: "user", content: `${target ? `THE JOB THEY'RE LOOKING FOR (from their settings): ${target}\n\n` : ""}${transcriptText(turns)}` }]);
+// The coach's answer to the conversation so far: its turn, and the checked notes. notes: the checked notes from the
+// last turn, which the AI updates instead of starting over (starting over each time loses details).
+export async function coach(turns, { target = "", notes = null } = {}) {
+  const before = notes && (arr(notes.jobs).length || arr(notes.education).length) ? `YOUR NOTES SO FAR:\n${JSON.stringify(notes)}\n\n` : "";
+  const r = await ask([{ role: "system", content: SYS }, { role: "user", content: `${target ? `THE JOB THEY'RE LOOKING FOR (from their settings): ${target}\n\n` : ""}${before}CONVERSATION:\n${transcriptText(turns)}` }]);
   const checked = checkNotes(r.notes, turns);
   const q = (x) => str(typeof x === "string" ? x : x && x.q, 300);
   let question = q(r.question);
@@ -169,7 +178,7 @@ export async function say(text, re, { target = "", recall = null } = {}) {
     writeJSON(FILE, { turns: t.turns });
   }
   if (!t.turns.length || t.turns[t.turns.length - 1].who !== "you") return t;
-  const r = await coach(t.turns, { target });
+  const r = await coach(t.turns, { target, notes: t.notes });
   const saved = { turns: [...t.turns, r.turn], notes: r.iv, unsure: r.unsure, left: r.left.length };
   writeJSON(FILE, saved);
   return saved;

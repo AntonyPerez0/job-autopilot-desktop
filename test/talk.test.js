@@ -64,6 +64,24 @@ test("notes count only where they're the person's own words", () => {
   assert.match(T.notReady({ iv: { jobs: [], education: [] }, unsure: [] }), /at least one job/);
 });
 
+test("names written properly; a job without a title is asked about first", () => {
+  assert.deepStrictEqual(["city of Sacramento sign shop", "iPhone repair tech", "the home depot"].map(T.nameCase), ["City of Sacramento Sign Shop", "iPhone Repair Tech", "The Home Depot"]);
+  const { iv, unsure } = T.checkNotes({ jobs: [{ title: "", employer: "city sign shop", daily: "made street signs" }], education: [{ school: "hiram johnson high school", earned: "high school" }] },
+    [you("i made street signs at the city sign shop. finished high school at hiram johnson")]);
+  assert.strictEqual(iv.jobs[0].employer, "City Sign Shop");
+  assert.deepStrictEqual(iv.education[0], { school: "Hiram Johnson High School", earned: "high school", year: "" });
+  assert.strictEqual(unsure[0].question, "What was your job title at City Sign Shop?");
+  assert.match(T.notReady({ iv, unsure }), /job title at City Sign Shop/);
+});
+
+test("the coach updates its notes instead of starting over", async () => {
+  T.clearTalk();
+  reply = () => ({ reply: "ok", question: "And then?", ideas: [], notes: { jobs: [{ title: "Cashier", employer: "Corner Market", daily: "run the register" }] } });
+  await T.say("I'm a cashier at Corner Market, I run the register", "");
+  await T.say("about 150 customers a day", "And then?");
+  assert.match(seen[seen.length - 1][1].content, /YOUR NOTES SO FAR:\n\{"target":"","jobs":\[\{"title":"Cashier","employer":"Corner Market"/);
+});
+
 test("a month they didn't say: only the year is kept", () => {
   const { iv } = T.checkNotes({ jobs: [{ title: "Driver", start: "Jun 2020", end: "Aug 2022", daily: "drove the van" }] }, [you("I was a driver from 2020 to august 2022, drove the van")]);
   assert.deepStrictEqual([iv.jobs[0].start, iv.jobs[0].end], ["2020", "Aug 2022"]);
