@@ -172,3 +172,36 @@ test("U.S. citizenship comes only from the person's answer; unanswered goes to t
   assert.strictEqual(check("Are you a U.S. citizen?", "Yes", ["Yes", "No"], { citizen: "no" }).k.value, "No");
   assert.strictEqual(check("Are you a United States citizen?", "No", ["Yes", "No"], { citizen: "yes" }).k.value, "Yes");
 });
+
+// From a diagnostics report: answers the rules rewrote that were never theirs to rewrite.
+test("a job's or a school's Start Date, and a yes/no question that mentions a date, are left alone", () => {
+  const { a, facts } = setup();
+  const kit = [{ label: "Start Date", value: "09/2024", kind: "text", fieldIndex: 0 }, { label: "End Date", value: "", kind: "text", fieldIndex: 1 }];
+  assert.deepStrictEqual(truthGuard(kit, [{ label: "Start Date" }, { label: "End Date" }], facts, a), []);
+  assert.strictEqual(kit[0].value, "09/2024", "work history start date");
+  const months = ["Month...", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  assert.strictEqual(check("Start Date", "", months).notes.length, 0, "a list of months is a school's or job's dates");
+  const r = check("Are you currently enrolled in full-time education, and if so, is your graduation date over 2 months away?: Yes No", "No", undefined);
+  assert.deepStrictEqual([r.k.value, r.notes.length], ["No", 0]);
+});
+
+test("a box that takes a date gets the day the person could start, not a sentence", () => {
+  const r = check("Date Available", "Two weeks after accepting an offer", undefined, { startAvailability: "Two weeks after accepting an offer" });
+  assert.match(r.k.value, /^\d{2}\/\d{2}\/\d{4}$/);
+  assert.strictEqual(check("Date Available", "11/18/2026", undefined).notes.length, 0, "a date is kept");
+});
+
+test("\"I do not want to answer\" declines", () => {
+  const label = "Disability status Select ... Yes, I have a disability No, I do not have a disability I do not want to answer";
+  assert.strictEqual(check(label, "I do not want to answer", ["Select ...", "Yes, I have a disability", "No, I do not have a disability", "I do not want to answer"]).notes.length, 0);
+});
+
+test("a background check the AI left to the person gets their standing answer", () => {
+  const { a, facts } = setup({ screenings: "yes" });
+  const kit = [{ label: "I understand that a background check will be performed if I receive an offer.*", value: "", kind: "decide", fieldIndex: 0 }];
+  truthGuard(kit, [{ label: kit[0].label, options: ["Yes", "No"] }], facts, a);
+  assert.deepStrictEqual([kit[0].kind, kit[0].value], ["text", "Yes"]);
+  const ask = [{ ...kit[0], value: "", kind: "decide" }];
+  truthGuard(ask, [{ label: kit[0].label, options: ["Yes", "No"] }], facts, setup().a);
+  assert.strictEqual(ask[0].kind, "decide", "\"always ask me\" still asks");
+});

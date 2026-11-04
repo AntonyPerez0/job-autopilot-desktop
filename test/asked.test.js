@@ -89,3 +89,26 @@ test("the choices of a stopped question: read from the page, matched despite sma
   assert.strictEqual(noList[0].choice, true, "a list whose choices couldn't be read says so");
   assert.deepStrictEqual(noList[0].options, []);
 });
+
+// From a diagnostics report: a ZIP code typed for one form ("ZIP *") was asked again by the next ("Zip Code:*").
+test("an answer to a question every form asks (ZIP, street, county) goes into About you, for every form", () => {
+  store.saveAnswers({ zip: "", street: "", county: "", city: "Fremont", yourAnswers: [
+    { key: "zip", label: "ZIP *", value: "94538", scope: "all" }, { key: "address", label: "Address *", value: "4141 Main St Apt 3", scope: "all" },
+    { key: "why us", label: "Why us?", value: "Because", scope: "one-job" }] });
+  assert.deepStrictEqual(A.promoteYourAnswers(), { zip: "94538", street: "4141 Main St Apt 3" });
+  assert.strictEqual(store.getAnswers().zip, "94538");
+  assert.deepStrictEqual(A.promoteYourAnswers(), {}, "once");
+  A.saveYourAnswers({ slug: "paylocity-1", company: "Initech" }, [{ label: "County", value: "Alameda", remember: false }, { label: "Address Line 1", value: "4141 Main St Apt 3, Fremont, CA 94538", remember: true }]);
+  assert.deepStrictEqual([store.getAnswers().county, store.getAnswers().street], ["Alameda", "4141 Main St Apt 3"]);
+  for (const [l, k] of [["Zip Code:*", "zip"], ["Postal code", "zip"], ["Address Line 1", "street"], ["Email address", null], ["Address Line 2(optional)", null], ["Are you a U.S. citizen?", "citizen"]]) assert.strictEqual(A.standardKey(l), k, l);
+});
+
+test("a kept answer that isn't one of a form's choices isn't forced on it", () => {
+  const kit = [{ label: "How did you hear about us?(optional)", value: "Online Job Board", kind: "text", fieldIndex: 0 }];
+  const fields = [{ label: "How did you hear about us?(optional)", type: "radio", options: ["Online Job Board", "Company Website", "Social Media", "Other"] }];
+  const notes = A.applyYourAnswers(kit, fields, [{ key: A.labelKey("How did you hear about us?"), label: "How did you hear about us?", value: "linkedin", scope: "all" }]);
+  assert.strictEqual(kit[0].value, "Online Job Board");
+  assert.match(notes[0], /isn't one of the choices/);
+  // The same question with its yes/no buttons read into the label is the same question.
+  assert.strictEqual(A.labelKey("Are you enrolled?: Yes No"), A.labelKey("Are you enrolled?"));
+});

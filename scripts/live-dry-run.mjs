@@ -28,8 +28,9 @@ store.saveProfile(approvedExample(Profile));
 
 async function pick(arg) {
   if (arg && /^https?:/.test(arg)) {
-    const src = /greenhouse/.test(arg) ? "greenhouse" : /lever\.co/.test(arg) ? "lever" : /ashbyhq/.test(arg) ? "ashby" : null;
-    return { slug: "manual-" + Date.now(), title: "(from URL)", company: "(from URL)", location: "", source: src, apply_url: await applyUrl(src, arg), details: "{}" };
+    const { classify } = await import("../core/ats.js");
+    const src = classify(arg).ats;
+    return { slug: "manual-" + Date.now(), title: "(from URL)", company: "(from URL)", location: "", source: src, url: arg, apply_url: await applyUrl(src, arg).catch(() => null) || arg, details: "{}" };
   }
   let d;
   if (arg) d = await call("get_job", { slug: arg });

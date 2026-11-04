@@ -180,6 +180,7 @@ try {
   assert.strictEqual(await win.inputValue("input[name=firstName]"), "Jordan");
   assert.strictEqual(await win.inputValue("input[name=email]"), "jordan.lee@example.com");
   await win.fill("input[name=city]", "Austin");
+  await win.fill("input[name=zip]", "78701");
   // Legal answers are never pre-filled: the app refuses to go on until the person picks them.
   assert.ok(!(await win.isChecked("input[name=workAuthorized][value=yes]")), "work authorization is not pre-filled");
   assert.ok(!(await win.isVisible("input[name=ytype]")), "only the required questions during setup");

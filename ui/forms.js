@@ -1008,7 +1008,8 @@
       <div class="section-t">Required</div>
       <div class="form-row">${fld("First name", inp("firstName", a.firstName, 'autocomplete="given-name"'))}${fld("Last name", inp("lastName", a.lastName, 'autocomplete="family-name"'))}</div>
       <div class="form-row">${fld("Email", inp("email", a.email, 'type="email" autocomplete="email"'), "Employers write to this address.")}${fld("Phone", inp("phone", a.phone, 'type="tel" autocomplete="tel"'))}</div>
-      <div class="form-row">${fld("City", inp("city", a.city))}${fld("State", inp("state", a.state))}${fld("ZIP code", inp("zip", a.zip))}${fld("Country", inp("country", a.country))}</div>
+      <div class="form-row">${fld("City", inp("city", a.city))}${fld("State", inp("state", a.state))}${fld("ZIP code", inp("zip", a.zip, 'autocomplete="postal-code"'))}${fld("Country", inp("country", a.country))}</div>
+      <div class="form-row">${fld("Street address", inp("street", a.street, 'autocomplete="street-address" placeholder="e.g. 12 Oak St, Apt 3"'), "Many forms require it. It only goes into forms that ask.")}${fld("County (optional)", inp("county", a.county), "A few forms ask.")}</div>
       <div class="form-row">${fld(`Are you allowed to work in ${esc(/^united (states|kingdom)|netherlands|philippines/i.test(a.authCountry || "United States") ? "the " + (a.authCountry || "United States") : a.authCountry)}?`, radios("workAuthorized", a.workAuthorized, [["yes", "Yes"], ["no", "No"]]))}
         ${fld("Will you need a visa sponsor, now or later?", radios("needsSponsorship", a.needsSponsorship, [["no", "No"], ["yes", "Yes"]]))}
         ${fld("Are you 18 or older?", radios("over18", a.over18, [["yes", "Yes"], ["no", "No"]]))}</div>
@@ -1036,10 +1037,9 @@
         ${fld("Years of experience", `<div class="sub-list" data-years-list>${(a.years || []).map(yearsRow).join("")}</div><div><button type="button" class="btn sm" data-add-years>${icon("plus")}Add a kind of work</button></div>`,
           "Forms often ask \"how many years of X\". The app uses exactly these numbers, never more; anything not listed waits for you.")}
         ${fld("All work experience, any kind (years)", inp("totalYears", a.totalYears, 'type="number" min="0" step="0.5"'))}`, office)}
-      ${more("Links and address", "LinkedIn, website, street address", `
+      ${more("Links", "LinkedIn, website, how you heard about jobs", `
         <div class="form-row">${fld("LinkedIn", inp("linkedin", a.linkedin, 'placeholder="https://www.linkedin.com/in/..."'))}${fld("Website or portfolio", inp("website", a.website))}${fld("GitHub", inp("github", a.github))}</div>
         ${fld("Other links", inp("otherLinks", a.otherLinks), "Separate with spaces.")}
-        ${fld("Street address", inp("street", a.street), "Only used when a form requires it.")}
         <div class="form-row">${fld("Preferred first name", inp("preferredName", a.preferredName))}${fld("Country you're applying to work in", inp("authCountry", a.authCountry))}
           ${fld("How you heard about the job", inp("heardAbout", a.heardAbout), "\"Job board\" unless you change it.")}</div>`)}
       ${more("Legal questions", "Arbitration, background checks, criminal history", `
@@ -1069,7 +1069,7 @@
     return {
       async save() {
         const out = {};
-        for (const k of ["firstName", "lastName", "preferredName", "email", "phone", "linkedin", "github", "website", "otherLinks", "street", "city", "state", "zip", "country",
+        for (const k of ["firstName", "lastName", "preferredName", "email", "phone", "linkedin", "github", "website", "otherLinks", "street", "city", "state", "zip", "county", "country",
           "authCountry", "workAuthorized", "needsSponsorship", "travel", "over18", "citizen", "currentEmployer", "currentTitle", "noticePeriod", "startAvailability", "relocation", "heardAbout",
           "salary", "arbitration", "screenings", "convictions", "hoursWanted", "transportation", "driversLicense", "canLift", "ownVehicle", "drivingRecord", "over21"]) out[k] = val(el, k);
         out.daysAvailable = [...el.querySelectorAll("[name=days]:checked")].map((x) => x.value);
@@ -1086,6 +1086,8 @@
         need("email", /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(out.email), "a valid email address");
         need("phone", out.phone, "your phone number");
         need("city", out.city, "your city");
+        // Most forms in the US ask for it, and an application stops without it.
+        need("zip", out.zip || !/^(united states|usa?|u\.s\.a?\.?)$/i.test(out.country || "United States"), "your ZIP code");
         need("workAuthorized", out.workAuthorized, "whether you're allowed to work there");
         need("needsSponsorship", out.needsSponsorship, "whether you'll need a visa sponsor");
         need("over18", out.over18, "whether you're 18 or older");

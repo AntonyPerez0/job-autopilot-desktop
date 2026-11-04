@@ -100,8 +100,15 @@ async function readResults(page, url) {
   return pp.ssrHits || [];
 }
 
+// When HiringCafe's bot check turns the app away, the rest of that round's searches would be too: they're skipped,
+// and HiringCafe is left alone for a few hours. The other job sources still run.
+const BOT_PAUSE_MS = 6 * 3600e3;
+let blockedUntil = 0;
+export const hiringCafePause = { get until() { return blockedUntil; }, set until(v) { blockedUntil = v; } };
+
 // browser: { page() -> a Playwright page, done(page) }
 export async function search(prefs, { browser, progress = () => {}, log = () => {} }) {
+  if (Date.now() < blockedUntil) return [];
   const page = await browser.page();
   const out = [];
   try {
@@ -123,7 +130,14 @@ export async function search(prefs, { browser, progress = () => {}, log = () => 
           if (remote && j.work_mode !== "remote") continue;
           out.push(j);
         }
-      } catch (e) { log(`HiringCafe search "${title}" failed: ${e.message}`); }
+      } catch (e) {
+        if (/bot check/.test(e.message)) {
+          blockedUntil = Date.now() + BOT_PAUSE_MS;
+          log(`HiringCafe's bot check turned the app away, so its searches are skipped for the next ${BOT_PAUSE_MS / 3600e3} hours; the other job sources still run`);
+          break;
+        }
+        log(`HiringCafe search "${title}" failed: ${e.message}`);
+      }
     }
     if (runs.length > MAX_SEARCHES) log(`HiringCafe: only the first ${MAX_SEARCHES} of ${runs.length} searches run each round, to stay gentle`);
   } finally { await browser.done(page); }

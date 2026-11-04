@@ -104,7 +104,17 @@ function status() {
   return { state: st, counts, appliedToday: appliedToday(), settings: s, model: s.ai.model, serverNow: Date.now(), next, firstFilled, toAnswer: { count: toAnswer.length, first: toAnswer[0] || null },
     codes: { count: codes.length, first: codes[0] || null },
     replies: { unseen: replies.length, act: replies.filter((r) => ["offer", "interview", "assessment", "info"].includes(r.kind)).length, first: replies[0] || null, checkedAt: s.repliesCheckedAt || null, mailbox: !!(s.mailbox && getSecret("mailPassword")) }, search: lastSearch.at ? { ...lastSearch, nextAt: state.nextSearch || null, skipped: lastSearch.done && !counts.queued ? skipSummary(db) : null } : null, version: VERSION,
-    browser: { open: browserOpen(), mode: windowModeOf(s) }, update: updater ? updater.state() : null };
+    browser: { open: browserOpen(), mode: windowModeOf(s) }, update: updater ? updater.state() : null, missingAnswers: missingAnswers() };
+}
+
+// Answers most forms ask for that the person hasn't given: each one stops applications until it's there.
+function missingAnswers(a = getAnswers(), prefs = getPrefs()) {
+  const us = /^(united states|usa?|u\.s\.a?\.?)$/i.test(a.country || "United States");
+  const out = [];
+  if (us && !String(a.zip || "").trim()) out.push("your ZIP code");
+  if (!String(a.street || "").trim()) out.push("your street address");
+  if (prefs.jobKind !== "hourly" && !(a.years || []).some((y) => y && y.type)) out.push("your years of experience");
+  return out;
 }
 
 // First and last name, links, city and school found in an imported resume, to start the common questions with.

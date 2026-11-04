@@ -48,7 +48,7 @@ export function degreeText(d) {
 
 export const fullName = (a) => [a.firstName, a.lastName].filter(Boolean).join(" ").trim();
 
-const US_ABBR = { alabama: "AL", alaska: "AK", arizona: "AZ", arkansas: "AR", california: "CA", colorado: "CO", connecticut: "CT", delaware: "DE",
+export const US_ABBR = { alabama: "AL", alaska: "AK", arizona: "AZ", arkansas: "AR", california: "CA", colorado: "CO", connecticut: "CT", delaware: "DE",
   florida: "FL", georgia: "GA", hawaii: "HI", idaho: "ID", illinois: "IL", indiana: "IN", iowa: "IA", kansas: "KS", kentucky: "KY",
   louisiana: "LA", maine: "ME", maryland: "MD", massachusetts: "MA", michigan: "MI", minnesota: "MN", mississippi: "MS", missouri: "MO",
   montana: "MT", nebraska: "NE", nevada: "NV", "new hampshire": "NH", "new jersey": "NJ", "new mexico": "NM", "new york": "NY",
@@ -94,6 +94,8 @@ export function standardAnswers(a) {
   add("State", a.state);
   add("ZIP code", a.zip);
   add("Postal code", a.zip);
+  add("County", a.county);
+  if (a.street && a.city) add("Full mailing address", `${a.street}, ${a.city}${a.state ? ", " + a.state : ""}${a.zip ? " " + a.zip : ""}`);
   add("Country", a.country);
   add(`Legally authorized to work in ${a.authCountry === "United States" ? "the US" : a.authCountry || "the country of the job"}`, yn(a.workAuthorized));
   add("Requires employer sponsorship now or in the future", yn(a.needsSponsorship));

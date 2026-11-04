@@ -84,7 +84,7 @@ export const PREFS_DEFAULTS = {
 export const ANSWERS_DEFAULTS = {
   firstName: "", lastName: "", preferredName: "", email: "", phone: "",
   linkedin: "", github: "", website: "", otherLinks: "",
-  street: "", city: "", state: "", zip: "", country: "United States",
+  street: "", city: "", state: "", zip: "", county: "", country: "United States",
   workAuthorized: "", needsSponsorship: "", authCountry: "United States", // legal answers: never pre-filled
   education: [],             // [{ school, degree, field, start: "YYYY-MM", end: "YYYY-MM" }]
   years: [],                 // [{ type: "Software engineering", years: 2 }]

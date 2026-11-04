@@ -10,8 +10,9 @@ import { dataDir, getAnswers, getPrefs, getSettings } from "./store.js";
 import { mailDomainsFor, waitForCode, waitForLink } from "./mail.js";
 import { isWorkday, siteAccounts, workdayAccount, workdayApplyManually } from "./accounts.js";
 import { withinRadius } from "./geo.js";
+import { US_ABBR as US_STATES } from "./facts.js";
 import { hostOf, isApplicationSystem, isGovUrl } from "./ats.js";
-import { applyYourAnswers, yourAnswersFor } from "./asked.js";
+import { applyYourAnswers, promoteYourAnswers, yourAnswersFor } from "./asked.js";
 import { LOGIN_WALL_JS } from "./ats.js";
 
 // The steps of one application, in order, as the dashboard shows them.
@@ -129,7 +130,8 @@ export const COMBOS_JS = `(() => {${RS_CORE}
     // a React dropdown says itself whether something is chosen (text typed into it but not picked isn't an answer)
     const rs = rsOf(el), v = rs && rs.props.value;
     if (rs ? v != null && v !== "" && (typeof v.length !== "number" || v.length > 0) : String(el.value || '').trim()) continue;
-    if (!rs && entry.querySelector('[class*=single-value], [class*=singleValue], [class*=multi-value], [class*=chip]')) continue;
+    const chosen = !rs && entry.querySelector('[class*=single-value], [class*=singleValue], [class*=multi-value], [class*=chip]');
+    if (chosen && !/^(select|choose|please)\b/i.test((chosen.innerText || '').trim())) continue;
     const lab = entry.querySelector('label, legend, [class*=title]');
     const label = ((lab && lab.innerText) || el.getAttribute('aria-label') || el.placeholder || '').replace(/\\s+/g, ' ').trim();
     const cid = 'c' + (n++);
@@ -250,6 +252,77 @@ export async function fillCombos(page, kit, regionHint = "") {
   }
   return left;
 }
+
+// Lists that show their choice beside a search box and keep their options in a list of their own, with no
+// role=option (Paylocity's Country and State): [{ cid, label, shown, list, required }].
+export const LIST_SELECTS_JS = `(() => {
+  const out = [];
+  let n = 0;
+  for (const el of document.querySelectorAll('input[aria-autocomplete=list]')) {
+    if (el.disabled || el.getAttribute('role') === 'combobox') continue;
+    let owner = null;
+    for (let x = el.parentElement, i = 0; x && i < 5 && !owner; x = x.parentElement, i++) if (x.getAttribute('aria-owns') || x.getAttribute('aria-controls')) owner = x;
+    if (!owner) continue;
+    const list = owner.getAttribute('aria-owns') || owner.getAttribute('aria-controls');
+    const lab = el.closest('label') || (el.id && document.querySelector('label[for="' + CSS.escape(el.id) + '"]'));
+    const own = lab ? [...lab.childNodes].filter((c) => !c.contains || !c.contains(el)).map((c) => c.textContent).join(' ') : '';
+    const label = (own || el.getAttribute('aria-label') || '').replace(/\\s+/g, ' ').replace(/\\(optional\\)/i, '').trim();
+    const sv = owner.querySelector('[class*=single-value], [class*=singleValue]');
+    const shown = sv ? sv.innerText.trim() : '';
+    const cid = 'l' + (n++);
+    owner.setAttribute('data-ap-list', cid);
+    out.push({ cid, label, list, shown: /^(select|choose|please)\\b/i.test(shown) ? '' : shown, required: el.required || owner.hasAttribute('required') });
+  }
+  return out;
+})()`;
+const LIST_TEXTS_JS = (id) => `(() => { const l = document.getElementById(${JSON.stringify(String(id))}); if (!l) return [];
+  return [...l.querySelectorAll('*')].filter((x) => x.children.length === 0 && x.innerText && x.innerText.trim()).map((x) => x.innerText.trim()).filter((t) => !/^no results/i.test(t)).slice(0, 300); })()`;
+
+// Set those lists the way a person does: open, type the start, click the entry. A state is tried as written and as
+// its two-letter code ("California" / "CA"), since lists use either.
+export async function fillListSelects(page, kit, a = {}) {
+  const left = [], seen = new Set();
+  for (const f of formFrames(page)) {
+    for (const c of await f.evaluate(LIST_SELECTS_JS).catch(() => [])) {
+      // The same label again is another section's (an employer's State), not the person's.
+      if (seen.has(nk(c.label))) continue;
+      seen.add(nk(c.label));
+      if (c.shown || !c.label) continue;
+      const k = kitAnswer(kit, c.label);
+      const fb = /^state|province/i.test(c.label) ? a.state : /^country/i.test(c.label) ? a.country : "";
+      const value = (k && k.value) || fb;
+      if (!value) { if (c.required) left.push(c.label); continue; }
+      const wants = [...new Set([value, ...stateNames(value)])];
+      let done = false;
+      for (const w of wants) {
+        try {
+          const box = f.locator(`[data-ap-list="${c.cid}"]`);
+          await box.click({ timeout: 5000, force: true });
+          await box.locator("input").first().fill("", { timeout: 3000 }).catch(() => {});
+          await page.keyboard.press("ArrowDown").catch(() => {});
+          await page.keyboard.type(w.slice(0, 30), { delay: 40 });
+          await sleep(900);
+          const texts = await f.evaluate(LIST_TEXTS_JS(c.list)).catch(() => []);
+          let i = texts.findIndex((t) => nk(t) === nk(w));
+          if (i < 0) i = texts.findIndex((t) => nk(t).startsWith(nk(w) + " "));
+          if (i < 0) { await page.keyboard.press("Escape").catch(() => {}); continue; }
+          await f.locator(`[id="${c.list}"]`).getByText(texts[i], { exact: true }).first().click({ timeout: 4000 });
+          await sleep(400);
+          done = true;
+          break;
+        } catch { await page.keyboard.press("Escape").catch(() => {}); }
+      }
+      if (!done && c.required) left.push(c.label);
+    }
+  }
+  return left;
+}
+const stateNames = (v) => {
+  const t = String(v || "").trim(), low = t.toLowerCase();
+  if (US_STATES[low]) return [US_STATES[low]];
+  const name = Object.keys(US_STATES).find((n) => US_STATES[n] === t.toUpperCase());
+  return name ? [name.replace(/\b\w/g, (c) => c.toUpperCase())] : [];
+};
 
 // Dropdowns the add-on could not set (a long option in a Greenhouse react-select): open
 // it by its label, type the start of the answer, and click the option with that exact text.
@@ -792,12 +865,17 @@ async function loginWall(page) {
   return (pw > 0 && fields < 8) || (signIn && fields < 3);
 }
 
+// Said anywhere on a page with no form (SmartRecruiters puts it on the Apply button, far down the page).
+const EXPIRED_RX = /sorry, this job has expired|this job (posting )?(has expired|is no longer available)|no longer accepting applications/i;
+const BOT_CHECK_RX = /verification required|verify (that )?you are (a )?human|are you a robot|unusual activity from your (device|network)|just a moment\.\.\.|checking your browser|press (and|&) hold/i;
 const CLOSED_RX = /no longer (accepting|available|open)|position (has been )?filled|job (is )?closed|page not found|job not found|job you requested was not found|posting (is )?(closed|expired)|this job (has )?expired/i;
 const MAX_PAGES = 8;
 
 // hooks: progress(stepKey), onFilled(page), status(text), opts: { dryRun, settings, answers, prefs, mailbox, browser }
 export async function applyTo(job, hooks = {}, opts = {}) {
   const settings = opts.settings || getSettings();
+  // Answers kept from earlier stops (a ZIP code typed for one form) become About you answers, for every form.
+  if (!opts.answers) promoteYourAnswers();
   const a = opts.answers || getAnswers();
   const prefs = opts.prefs || getPrefs();
   const dryRun = opts.dryRun ?? settings.dryRun;
@@ -858,7 +936,8 @@ export async function applyTo(job, hooks = {}, opts = {}) {
       if (unsafePage()) return unsafePage();
       ({ text, fields } = await scrapeAll(page));
     }
-    if (CLOSED_RX.test(text.slice(0, 3000)) && fields.length < 5) return { ...result, status: "skipped", reason: "posting is closed" };
+    if ((CLOSED_RX.test(text.slice(0, 3000)) || EXPIRED_RX.test(text)) && fields.length < 5) return { ...result, status: "skipped", reason: "posting is closed" };
+    if (fields.length < 3 && BOT_CHECK_RX.test(text.slice(0, 2000))) return { ...manual(`${hostOf(page.url()).replace(/^www\./, "")} showed a bot check ("prove you're a person") instead of the form, so the app can't fill it. Open it and apply yourself`), screenshot: await shot(page, job.slug, "botcheck") };
     if (isWorkday(page.url()) && await workdayApplyManually(page)) ({ text, fields } = await scrapeAll(page));
     // A Workday site, and the user let the app make accounts: sign up (or sign in) with their email and password.
     const creds = siteAccounts(settings);
@@ -1108,6 +1187,7 @@ async function fillPage(page, b, fields, resume, a, job) {
   await ensureResume(page, resume.named);
   await answerGroups(page, b.kit);
   await fillCombos(page, b.kit, a.state || a.country || "");
+  await fillListSelects(page, b.kit, a);
   const stuck = second.flatMap((r) => [...(r.missing || []), ...(r.decide || []).filter((x) => /^Could not set it/.test(x.note || ""))])
     .map((x) => x.label).filter((l) => !BINDING.test(l));
   if (stuck.length) await fixDropdowns(page, b.kit, stuck);
@@ -1136,7 +1216,11 @@ async function fillPage(page, b, fields, resume, a, job) {
   ];
   for (const f of formFrames(page)) {
     const empty = await f.evaluate(CHECK_JS).catch(() => []);
-    for (const l of empty) if (!blocking.some((x) => x.includes(l))) blocking.push(`still empty: ${l}`);
+    for (const l of empty) if (l && !blocking.some((x) => x.includes(l))) blocking.push(`still empty: ${l}`);
   }
-  return { rep, blocking, notes };
+  // A required box with no question to show the person can't be answered by them: the site's own check on Submit
+  // says what it is, if anything.
+  const unlabeled = blocking.filter((x) => !x.replace(/^(required, no answer|needs you|still empty):/, "").trim());
+  if (unlabeled.length) { notes.push(`${unlabeled.length} required box${unlabeled.length === 1 ? "" : "es"} with no question text left as the site had ${unlabeled.length === 1 ? "it" : "them"}`); log(job.slug, notes[notes.length - 1]); }
+  return { rep, blocking: blocking.filter((x) => !unlabeled.includes(x)), notes };
 }

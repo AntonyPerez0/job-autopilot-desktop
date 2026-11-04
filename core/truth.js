@@ -9,7 +9,7 @@ const yes = (v) => /^\s*(yes|y|true)\b/i.test(String(v || ""));
 const no = (v) => /^\s*(no|n|false|none)\b/i.test(String(v || ""));
 const pick = (options, test) => (options || []).find(test);
 const nk = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9+]+/g, " ").trim();
-export const DECLINE_RX = /decline|prefer not|don.?t wish|do not wish|not to (say|answer|disclose|self.?identify)|choose not|rather not|not specified|no answer/i;
+export const DECLINE_RX = /decline|prefer not|don.?t wish|do not wish|(don.?t|do not) want to (say|answer|disclose|share|self.?identify)|not to (say|answer|disclose|self.?identify)|choose not|rather not|not specified|no answer/i;
 
 // "0-1 years", "Less than 1 year", "3+", "5 or more", "1 to 3 years", "None", "2" -> { lo, hi } (hi inclusive).
 export function parseRange(text) {
@@ -117,12 +117,13 @@ export function rules(facts, a, ctx = {}) {
       fix: (o) => (o && o.length ? pick(o, (x) => nk(x) === nk(a.noticePeriod) || sameWeeks(x, a.noticePeriod)) || null : a.noticePeriod || null),
     },
     {
-      name: "start date", label: /when (can|could|would|will|are|do) .{0,30}(start|begin)|earliest .{0,35}(start|begin|available)|start date|available to start|availability to start/i,
+      name: "start date", label: /when (can|could|would|will|are|do) .{0,30}(start|begin)|earliest .{0,35}(start|begin|available)|start date|available to start|availability to start|date available|available date|availability date/i,
       skip: /education|school|degree|employment (start|end)|job (start|end)|month|year/i,
-      bad: (v) => nk(v) !== nk(a.startAvailability) && !(sameWeeks(v, a.startAvailability)) && !/negotiable|flexible/i.test(String(v)),
+      // A box that takes a date gets one: the day the person's notice runs out, counted from today.
+      bad: (v) => (dateBox(ctx.label) ? !DATEISH.test(String(v)) : nk(v) !== nk(a.startAvailability) && !(sameWeeks(v, a.startAvailability)) && !/negotiable|flexible/i.test(String(v))),
       fix: (o) => (o && o.length
         ? pick(o, (x) => nk(x) === nk(a.startAvailability) || sameWeeks(x, a.startAvailability)) || pick(o, (x) => /negotiable|flexible/i.test(x)) || null
-        : a.startAvailability || null),
+        : dateBox(ctx.label) ? availableOn(a, ctx.type) : a.startAvailability || null),
     },
     {
       name: "graduation date", label: /graduat(ion|e) (date|year|month)|when (did|do|will) you graduate|expected graduation|degree (completion|conferred)/i,
@@ -156,6 +157,25 @@ export function rules(facts, a, ctx = {}) {
     });
   }
   return out;
+}
+
+// "Start Date" next to an "End Date" is a job's or a school's dates; a list of months is too.
+const MONTHS_RX = /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i;
+const isRange = (label, f, fields) => /^\s*start date\b/i.test(label) && ((fields || []).some((x) => /^\s*end date\b/i.test(x.label || "")) ||
+  ((f.options || []).filter((o) => MONTHS_RX.test(o)).length >= 6));
+const yesNoQuestion = (k, f) => (yes(k.value) || no(k.value)) && (!(f.options && f.options.length) || f.options.every((x) => yes(x) || no(x) || /^(select|choose)/i.test(x)));
+const DATEISH = /\b\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}\b|\b\d{4}-\d{2}-\d{2}\b/;
+const dateBox = (label) => /\bdate\b/i.test(String(label || "")) && !/\b(when|earliest)\b/i.test(String(label || ""));
+// The date someone who starts "two weeks after an offer" could start, counted from today.
+export function availableOn(a, type = "", now = new Date()) {
+  const own = String(a.startAvailability || "");
+  let d = DATEISH.test(own) ? new Date(own) : null;
+  if (!d || isNaN(d)) {
+    const w = weeksOf(own) ?? weeksOf(a.noticePeriod) ?? 2;
+    d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + w * 7);
+  }
+  const p = (n) => String(n).padStart(2, "0");
+  return type === "date" ? `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}` : `${p(d.getMonth() + 1)}/${p(d.getDate())}/${d.getFullYear()}`;
 }
 
 const matchesWant = (v, want) => { const V = nk(v), W = nk(want); return !!W && (V === W || V.startsWith(W + " ") || (W.length > 3 && V.includes(W))); };
@@ -207,9 +227,18 @@ export function truthGuard(kit, fields, facts, answers, ctx = {}) {
     // Standard answers (no field index) are the user's own words; only the model's answers are checked.
     if (!k || k.kind === "file" || k.kind === "blank" || k.fieldIndex === undefined) continue;
     const f = (fields || []).find((x) => x.label === k.label) || {};
-    ctx.label = k.label;
+    ctx.label = k.label; ctx.type = f.type || "";
     for (const rule of R) {
       if (!rule.label.test(k.label) || (rule.skip && rule.skip.test(k.label))) continue;
+      // "Is your graduation date over 2 months away?: Yes No" is a yes/no question, not a date.
+      if ((rule.name === "start date" || rule.name === "graduation date") && (yesNoQuestion(k, f) || isRange(k.label, f, fields))) continue;
+      // A background check or a plain conviction question the person answered once in About you: the AI leaves those
+      // to them, and their standing answer is it.
+      if (k.kind === "decide" && rule.name === "legal agreement") {
+        const own = rule.fix(f.options);
+        if (own) { notes.push(`${rule.name}: your standing answer "${own}" used on "${k.label.slice(0, 80)}"`); Object.assign(k, { value: own, kind: "text", note: "your answer under About you" }); }
+        break;
+      }
       if (k.kind === "decide") break;
       let fixed, why = "";
       if (rule.years) {

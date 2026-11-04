@@ -710,6 +710,10 @@ function todoItems() {
   const codes = st.codes || { count: 0 };
   if (codes.count && !rp.mailbox) add({ urgent: true, tone: "amber", icon: "mail", title: `Connect your mailbox to finish ${codes.count === 1 ? "an application" : codes.count + " applications"}`,
     text: "The employer emailed a code or a link to confirm. With your mailbox connected, the app reads it and finishes the application.", actions: `<button class="btn sm primary" onclick="openSettings('mailbox')">Connect my mailbox</button>` });
+  const gaps = st.missingAnswers || [];
+  if (gaps.length && !(s.dismissed || []).includes("missing-answers")) add({ tone: "amber", icon: "user", title: `Add ${gaps.length === 1 ? gaps[0] : gaps.slice(0, -1).join(", ") + " and " + gaps[gaps.length - 1]}`,
+    text: "Most application forms ask for this. Without it, each one stops and waits for you; added once, it goes into every form.",
+    actions: `<button class="btn sm primary" onclick="openSettings('questions')">Add ${gaps.length === 1 ? "it" : "them"}</button><button class="btn sm ghost" onclick="dismiss('missing-answers')">Not now</button>` });
   const mine = c.manual || 0;
   if (mine) add({ tone: "amber", icon: "ext", title: `${mine} good match${mine === 1 ? "" : "es"} for you to apply to yourself`, text: "These sites need your own account or use a chat bot, so the app can't apply there. Each takes a few minutes.",
     actions: `<button class="btn sm" onclick="go('manual')">Show them</button>` });

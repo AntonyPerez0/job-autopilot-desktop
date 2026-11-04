@@ -149,13 +149,15 @@
     if (anc === el.parentNode.host) cur = anc;
     for (let depth = 0; anc && depth < 7 && anc !== document.body; depth++) {
       const cands = anc.querySelectorAll("label, legend, h1, h2, h3, h4, h5, p, span, div, [class*='label' i], [class*='question' i]");
-      let best = "";
+      let best = "", bestEl = null;
       for (const c of cands) {
         if (c.contains(cur) || (exclude && exclude.some((x) => c.contains(x) || x.contains(c)))) continue;
         if (!(c.compareDocumentPosition(cur) & Node.DOCUMENT_POSITION_FOLLOWING)) continue;
         if (c.querySelector("input, select, textarea")) continue;
+        // a part of the one already chosen ("First Name" and its "(required)") is not a label of its own
+        if (bestEl && bestEl.contains(c)) continue;
         const t = txt(c);
-        if (t.length >= 2 && t.length <= 400 && !GENERIC.test(t)) best = t; // keep the last one before el
+        if (t.length >= 2 && t.length <= 400 && !GENERIC.test(t)) { best = t; bestEl = c; } // keep the last one before el
       }
       if (best) return best;
       if (anc.parentElement) anc = anc.parentElement;
@@ -173,10 +175,25 @@
       byIds(host.getAttribute("aria-labelledby"), host) || "";
   }
 
+  // A label that wraps its control (Paylocity's "Country" around a list showing "United States"): its own words only.
+  function ownText(lab, el) {
+    if (!lab.contains(el)) return txt(lab);
+    const parts = [];
+    const walk = (n) => {
+      for (const c of n.childNodes) {
+        if (c.nodeType === 3) parts.push(c.textContent);
+        else if (c.nodeType === 1 && !c.contains(el) && !c.querySelector("input, select, textarea") && !/^(INPUT|SELECT|TEXTAREA)$/.test(c.tagName)) parts.push(c.innerText || c.textContent);
+        else if (c.nodeType === 1 && c.contains(el) && c !== el && parts.join("").trim() === "") walk(c);
+      }
+    };
+    walk(lab);
+    return clean(parts.join(" ")) || txt(lab);
+  }
+
   function labelOf(el) {
     const ok = (t) => (t = clean(t)) && !GENERIC.test(t) ? t : "";
     const t = ok(byIds(el.getAttribute("aria-labelledby"), el)) ||
-      ok(el.labels && [...el.labels].map(txt).join(" ")) ||
+      ok(el.labels && [...el.labels].map((l) => ownText(l, el)).join(" ")) ||
       ok(el.getAttribute("aria-label")) || ok(hostLabel(el)) || ok(nearbyLabel(el)) ||
       ok(el.placeholder || el.title) || clean((el.name || el.id || "").replace(/[_\-\[\]]+/g, " "));
     return t.slice(0, 400);
@@ -218,7 +235,7 @@
   function required(el) {
     const host = rootOf(el).host;
     return !!(el.required || el.getAttribute("aria-required") === "true" || (host && (host.hasAttribute("required") || host.getAttribute("aria-required") === "true")) ||
-      /\*\s*$/.test(labelOf(el)));
+      /\*\s*$|\(required\)/i.test(labelOf(el)));
   }
 
   function tag(el) {
@@ -386,7 +403,24 @@
       const gl = groupLabel(f.inputs);
       return { type: f.type === "radio" ? "radio" : "checkboxes", el: f.inputs[0], inputs: f.inputs,
         label: gl, options, required: f.inputs.some((i) => i.required) || /\*\s*$/.test(gl) };
-    }).filter((f) => f.label || f.type === "file");
+    }).filter((f) => f.label || f.type === "file").map((f, i, all) => {
+      // The same label again later (Paylocity asks your address, then each employer's): named after its section.
+      if (f.label && all.slice(0, i).some((x) => x.label === f.label)) { const sec = sectionOf(f.el, f.label); if (sec) f.label = `${sec}: ${f.label}`; }
+      return f;
+    });
+  }
+
+  // The short heading before a field's block ("Work History 1"), skipping the rows of other fields.
+  function sectionOf(el, own) {
+    const start = (el.closest && el.closest("label")) || el;
+    for (let n = start, d = 0; n && d < 10; n = n.parentElement, d++) {
+      for (let s = n.previousElementSibling; s; s = s.previousElementSibling) {
+        if (s.matches("label") || s.querySelector("input, select, textarea, [role=combobox], label")) continue;
+        const t = txt(s);
+        if (t && t.length <= 40 && t !== own && !/\*|\(required\)|^(select|choose)\b/i.test(t)) return t;
+      }
+    }
+    return "";
   }
 
   async function scrape() {
@@ -614,8 +648,13 @@
       case "combo": {
         const rs = reactSelect(el);
         if (rs) return !rsHasValue(rs);
-        const box = el.closest("[class*=control]") || el.parentElement;
-        return !el.value && !(box && box.querySelector("[class*=single-value], [class*=singleValue], [class*=multi-value]"));
+        if (el.value) return false;
+        for (let n = el.parentElement, i = 0; n && i < 4; n = n.parentElement, i++) {
+          const v = n.querySelector("[class*=single-value], [class*=singleValue], [class*=multi-value]");
+          if (v) return !txt(v) || /^(select|choose|please)\b/i.test(txt(v));
+          if (n.matches("label, fieldset, [class*=control]")) break;
+        }
+        return true;
       }
       default: return !el.value.trim();
     }
@@ -668,7 +707,16 @@
       }
       case "combo": {
         const r = await rsPick(el, v);
-        return r === null ? pickFromList(el, v, true) : r;
+        if (r !== null) return r;
+        // A street address box that suggests addresses as you type takes the address as typed: a suggestion that
+        // shares the words can be another town's street, and picking it fills that town's county and ZIP.
+        if (el.tagName === "INPUT" && /\b(address|street)\b/i.test(f.label) && !/e-?mail/i.test(f.label)) {
+          setValue(el, v);
+          await sleep(300);
+          el.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true }));
+          return !!el.value;
+        }
+        return pickFromList(el, v, true);
       }
       case "listbox": return pickFromList(el, v, false);
       default:

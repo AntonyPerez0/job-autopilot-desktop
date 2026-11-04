@@ -168,3 +168,23 @@ test("a location the site guessed is cleared when it is not the user's city", as
   assert.strictEqual(await page.evaluate(`(${CLEAR_STALE_JS})(${JSON.stringify(["City", ["austin"]])})`), null, "the user's own city stays");
   await page.close();
 });
+
+// From a diagnostics report: Paylocity's labels wrap their lists, so "Country" read as "Country United States", the
+// list showing "United States" read as empty, and State (a list of two-letter codes, no role=option) was never set.
+test("paylocity.html: labels are the label's own words; a list shows its choice; State is picked by clicking", async () => {
+  const page = await open("paylocity.html");
+  const { fields } = await send(page, { type: "scrape" });
+  const labels = fields.map((f) => f.label);
+  for (const l of ["First Name (required)", "Country", "Address Line 1", "County", "State", "Zip Code"]) assert.ok(labels.includes(l), `${l} in ${JSON.stringify(labels)}`);
+  assert.ok(fields.find((f) => f.label === "First Name (required)").required, "(required) means required");
+  const kit = { header: {}, fields: [["First Name (required)", "Jordan"], ["Country", "United States"], ["Address Line 1", "100 Example St"], ["County", "Travis"], ["Zip Code", "78701"]]
+    .map(([label, value]) => ({ label, value, kind: "text" })) };
+  const rep = await send(page, { type: "fill", kit, resume: resume("r.pdf") });
+  assert.ok(!rep.missing.some((x) => x.label === "Country"), "the list already shows United States");
+  assert.strictEqual(await page.$eval("#addr", (e) => e.value), "100 Example St", "an address box with no suggestions keeps the address");
+  const { fillListSelects } = await import("../core/apply.js");
+  const left = await fillListSelects(page, [{ label: "State", value: "Texas", kind: "text" }], { state: "TX", country: "United States" });
+  assert.deepStrictEqual(left, []);
+  assert.strictEqual(await page.$eval("#state-shown", (e) => e.textContent), "TX", "Texas is TX in a list of codes");
+  await page.close();
+});

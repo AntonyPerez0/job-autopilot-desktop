@@ -1,0 +1,25 @@
+<!doctype html><html><body><form>
+<!-- Shaped like Paylocity's application (recruiting.paylocity.com), November 2026. -->
+<div class="form-group form-required"><label>First Name<span><em> (required)</em></span></label><input id="info.firstName" type="text"></div>
+<div class="form-group"><label>Middle Name</label><input id="info.middleName" type="text"></div>
+<div data-automation-id="public-site-address-country-wrapper"><label for="country"><span>Country</span>
+  <div><div class="pcty-input-select-full-container" aria-haspopup="listbox" aria-owns="country-list" required="" id="country-wrap">
+    <div><div class="input-select-input-single-value">United States</div><div class="pcty-input-select__input"><input aria-autocomplete="list" id="country" required type="text" value=""></div></div></div></div></label></div>
+<div><label for="addr"><span>Address Line 1</span><div><input role="combobox" aria-autocomplete="list" aria-controls="addr-list" id="addr" required type="text" value=""></div></label></div>
+<div><label for="county"><span>County</span><div><input id="county" required type="text" value=""></div></label></div>
+<div><label for="state"><span>State</span>
+  <div><div class="pcty-input-select-full-container" aria-haspopup="listbox" aria-owns="state-list" required="" id="state-wrap">
+    <div><div class="input-select-input-single-value" id="state-shown">Select a state</div><div class="pcty-input-select__input"><input aria-autocomplete="list" id="state" required type="text" value=""></div></div></div></div></label></div>
+<div><label for="zip"><span>Zip Code</span><div><input id="zip" required type="text" value=""></div></label></div>
+</form>
+<div id="state-list" role="list"></div>
+<script>
+  const STATES = ["AL", "AK", "AZ", "CA", "CO", "CT", "TX"];
+  const wrap = document.getElementById("state-wrap"), inp = document.getElementById("state"), list = document.getElementById("state-list");
+  const show = () => { const q = inp.value.toUpperCase(); const hits = STATES.filter((s) => s.startsWith(q));
+    list.innerHTML = `<div><div>${hits.length ? hits.map((s) => `<div class="opt">${s}</div>`).join("") : "<div>No Results Found</div>"}</div></div>`; };
+  wrap.addEventListener("click", () => { inp.focus(); show(); });
+  inp.addEventListener("keydown", (e) => { if (e.key === "ArrowDown") show(); });
+  inp.addEventListener("input", show);
+  list.addEventListener("click", (e) => { const o = e.target.closest(".opt"); if (!o) return; document.getElementById("state-shown").textContent = o.textContent; inp.value = ""; list.innerHTML = ""; });
+</script></body></html>
