@@ -26,6 +26,7 @@ import { addRecalled, applySuggestion, checklist, createFromInterview, progress 
 import { importProjects, listRepos, placeProjects, usernameOf } from "./github.js";
 import { LIMITS, clearTalk, getTalk, notReady, say } from "./talk.js";
 import { cancelConnect, connectOpenRouter } from "./oauth.js";
+import { diagnostics } from "./diagnostics.js";
 import { asksFor, removeYourAnswer, saveYourAnswers } from "./asked.js";
 import { monthUse, testKey as testSerpKey } from "./sources/google.js";
 import { testKey as testUsajobsKey } from "./sources/usajobs.js";
@@ -321,6 +322,9 @@ const ROUTES = {
   "POST /api/replies/check": async () => {
     try { const n = await checkReplies({ force: true }); return n === null ? bad("Connect your mailbox first (Settings > Mailbox).") : { added: n }; } catch (e) { return bad(e.message); }
   },
+  // A diagnostics report: what the app tried and where it stopped, personal details left out unless asked for.
+  "POST /api/diagnostics": (b) => diagnostics({ personal: b.personal === true, app: { version: VERSION, packaged: !!(updater && updater.state().packaged) },
+    state: { now: state.now, job: state.job }, lastSearch: { ...lastSearch } }),
   // Answers the user gave to questions the app stopped on.
   "GET /api/your-answers": () => (getAnswers().yourAnswers || []),
   "POST /api/your-answers/remove": (b) => { removeYourAnswer(String(b.key || ""), b.scope); return getAnswers().yourAnswers || []; },

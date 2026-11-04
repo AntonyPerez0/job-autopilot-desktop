@@ -153,6 +153,18 @@ app.whenReady().then(async () => {
     fs.copyFileSync(src, r.filePath);
     return r.filePath;
   });
+  // A diagnostics report, saved where the person chooses (Downloads by default), then shown in its folder.
+  handle("save-diagnostics", async (_e, personal) => {
+    const report = await api.handle("/api/diagnostics", { personal: personal === true });
+    if (!report || report.error) throw new Error((report && report.error) || "The report couldn't be made.");
+    const stamp = new Date().toISOString().slice(0, 16).replace(/[T:]/g, "-");
+    const r = await dialog.showSaveDialog(win, { title: "Save the diagnostics report", defaultPath: path.join(app.getPath("downloads"), `job-autopilot-diagnostics-${stamp}.json`),
+      filters: [{ name: "Diagnostics report", extensions: ["json"] }] });
+    if (r.canceled || !r.filePath) return null;
+    fs.writeFileSync(r.filePath, JSON.stringify(report, null, 1));
+    shell.showItemInFolder(r.filePath);
+    return { file: r.filePath, stopped: report.stopped.length, bytes: fs.statSync(r.filePath).size };
+  });
   handle("pick-folder", async () => {
     const r = await dialog.showOpenDialog(win, { title: "Where to keep your application history", properties: ["openDirectory", "createDirectory"] });
     return r.canceled ? null : r.filePaths[0];

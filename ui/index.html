@@ -381,7 +381,7 @@ function renderList() {
       <td class="hide-md"><span class="tag">${esc(SOURCE[j.source] || j.source)}</span></td>
       <td>${badge(category(j))}${j.reply ? `<div style="margin-top:4px">${replyBadge(j.reply)}</div>` : ""}${j.status !== "applied" ? `<div class="reason">${esc(humanReason(j))}</div>` : ""}</td>
       <td class="hide-md time">${fmtTime(j.applied_at || j.updated_at)}</td></tr>`).join("")}
-  </tbody></table>`;
+  </tbody></table>${view === "failed" ? `<p class="hint" style="padding:12px 16px;margin:0">Lots of these, or the same question over and over? <a href="#help" data-go="help">Make a diagnostics report</a> (on the Help page) and send it to whoever helps you with the app.</p>` : ""}`;
 }
 
 // ---------- activity ----------
@@ -854,11 +854,27 @@ const HELP = [
   ["The AI stopped working, or my credit ran out.", "Go to <b>Settings</b> > AI. If your OpenRouter credit ran out, add a few dollars on OpenRouter's Credits page; $5 lasts for hundreds of applications. Then press <b>Connect again</b> or <b>Test key</b>."],
   ["Where is my information kept?", "On this computer only, except what goes to the AI and to the job sites you apply to. <b>Settings</b> > Your data shows the folder."],
 ];
+// A diagnostics report: one file with what the app tried and where it stopped, to send to whoever helps.
+async function saveDiagnostics(btn) {
+  const m = $("diag-msg");
+  btn.disabled = true;
+  Forms.msg(m, "info", "Making the report...");
+  try {
+    const r = await window.ja.saveDiagnostics($("diag-personal").checked);
+    if (!r) return Forms.msg(m, "", "");
+    Forms.msg(m, "ok", `Saved: ${r.file} (${Math.max(1, Math.round(r.bytes / 1024))} KB). Its folder is open: send the file to whoever helps you with the app.`);
+  } catch (e) { Forms.msg(m, "err", "The report couldn't be saved: " + String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, "")); }
+  finally { btn.disabled = false; }
+}
+const diagCard = () => `<div class="card sec" style="margin-top:12px"><h2>Something not working?</h2>
+  <p>Make a <b>diagnostics report</b>: one file with what the app tried and where it stopped. It has the questions each stopped application asked (with the form's own choices) and why the app couldn't answer them, the jobs left for you and why, your settings, and the app's recent activity. Send it to whoever helps you with the app.</p>
+  <label class="check" style="margin:8px 0 12px"><input type="checkbox" id="diag-personal"><span>Include my personal details: my name, contact details and my answers. <span class="muted">Leave this off unless you're asked; without it they're replaced with [name], [email] and so on.</span></span></label>
+  <div class="row-actions"><button class="btn primary" onclick="saveDiagnostics(this)">${icon("file")}Make a diagnostics report</button></div><div id="diag-msg" style="margin-top:10px"></div></div>`;
 function renderHelp() {
   $("main").innerHTML = header() + `<div class="card"><div class="help-list">${HELP.map(([q, a]) => `<details class="more"><summary><b>${q}</b></summary><div class="help-a">${a}</div></details>`).join("")}</div>
     <div class="row-actions" style="padding:16px"><button class="btn" onclick="showTour()">${icon("eye")}Show the tour again</button>
       <button class="btn" data-open-url="https://github.com/AntonyPerez0/job-autopilot-desktop#readme">${icon("ext")}Read the full guide</button>
-      <button class="btn ghost" data-open-url="https://github.com/AntonyPerez0/job-autopilot-desktop/issues/new">${icon("ext")}Report a problem</button></div></div>`;
+      <button class="btn ghost" data-open-url="https://github.com/AntonyPerez0/job-autopilot-desktop/issues/new">${icon("ext")}Report a problem</button></div></div>${diagCard()}`;
 }
 
 // ---------- profile and settings ----------

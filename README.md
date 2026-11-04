@@ -995,6 +995,22 @@ OpenAI-compatible API" with their `http://localhost:.../v1` address and no key.
 
 ## Troubleshooting
 
+**Diagnostics report.** When something keeps going wrong (many applications
+stopping on the same kind of question, say), open **Help** and press **Make a
+diagnostics report**. It saves one file, in your Downloads folder unless you pick
+another place, with what the app tried and where it stopped:
+
+- every application that stopped, with the questions its form asked, the
+  form's own choices, and why the app couldn't answer;
+- how it answered the rest;
+- the jobs left for you and why;
+- your settings and what's set up;
+- the app's recent activity.
+
+Your name, contact details and answers are left out (they read [name], [email]
+and so on) unless you tick **Include my personal details**. Your AI key and
+passwords are never in it. Send the file to whoever helps you with the app.
+
 - **"Your AI account is out of credit."** Add a few dollars at
   [openrouter.ai](https://openrouter.ai) (Settings, then Credits). The app
   shows this on the Overview too when it can't check the jobs a search found.

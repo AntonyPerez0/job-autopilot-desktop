@@ -426,6 +426,15 @@ try {
   await win.click('.nav:has-text("Help")');
   await win.waitForSelector('.help-list summary:has-text("Does it keep working when I close the window?")');
   await shot("13-help");
+  // A diagnostics report: saved where the person picks (the dialog answered here), personal details left out.
+  const diagFile = path.join(OUT, "diagnostics.json");
+  await app.evaluate(({ dialog, shell }, f) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath: f }); shell.showItemInFolder = () => {}; }, diagFile);
+  await win.click('button:has-text("Make a diagnostics report")');
+  await win.waitForSelector('#diag-msg .msg.ok:has-text("Saved")');
+  const diag = JSON.parse(fs.readFileSync(diagFile, "utf8"));
+  assert.strictEqual(diag.format, "job-autopilot/diagnostics@1");
+  assert.ok(diag.activity.length && diag.lookingFor.titles.length, "activity and what it looks for");
+  assert.ok(!fs.readFileSync(diagFile, "utf8").includes("jordan.lee@example.com"), "no email address in it");
 
   // A practice application: "It looks right" starts sending for real after one plain question; then paused at once.
   new DatabaseSync(path.join(data, "autopilot.db")).prepare("INSERT INTO jobs (slug, title, company, location, status, reason, details, attempts) VALUES ('globex-practice', 'Data Analyst', 'Globex', 'Austin, TX', 'filled', 'practice run: filled and checked, not sent', '{}', 1)").run();
