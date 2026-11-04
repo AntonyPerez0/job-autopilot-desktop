@@ -307,6 +307,10 @@ tbody tr:hover { background: var(--color-paper-2); }
 .toast { position: fixed; bottom: var(--space-lg); left: 50%; transform: translate(-50%, 12px); background: var(--color-board); color: var(--color-board-type); padding: var(--space-xs) var(--space-md); border-radius: var(--radius-card); font-size: var(--text-sm); font-weight: 500; opacity: 0; pointer-events: none;
   transition: opacity var(--dur-short) var(--ease-out), transform var(--dur-short) var(--ease-out); z-index: var(--z-toast); }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
+.toast.show.has-action { pointer-events: auto; }
+.toast button { background: none; border: 0; color: inherit; font: inherit; font-weight: 600; text-decoration: underline; margin-left: var(--space-sm); padding: 2px 4px; cursor: pointer; }
+.toast button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.row-skip { margin-top: 6px; }
 .mobile-bar { display: none; }
 
 /* ---------- the application in progress: one sheet of stock ---------- */

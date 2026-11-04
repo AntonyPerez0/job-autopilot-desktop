@@ -638,7 +638,16 @@ async function jobRoute(slug, b) {
     }
     if (b.action === "skip") {
       if (j.status === "applied" || j.status === "submitting") return bad("Already applied.", 409);
-      setJob(slug, { status: "skipped", reason: "skipped from the dashboard" });
+      if (j.status === "working") return bad("It's being filled in right now. Pause the app first, or skip it once it's done.", 409);
+      setJob(slug, { status: "skipped", reason: "you skipped it" });
+      log(slug, "you skipped it");
+    }
+    // Undo a skip: back where it was.
+    if (b.action === "unskip") {
+      if (j.status !== "skipped") return bad("It isn't skipped anymore.", 409);
+      const to = ["queued", "failed", "manual"].includes(b.status) ? b.status : "queued";
+      setJob(slug, { status: to, reason: String(b.reason || "").slice(0, 2000) || "put back by you" });
+      log(slug, "you put it back");
     }
     // From "Apply yourself": the user applied on the site themselves.
     if (b.action === "applied-myself") {

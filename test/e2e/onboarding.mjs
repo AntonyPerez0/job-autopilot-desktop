@@ -293,6 +293,18 @@ try {
   assert.deepStrictEqual(yours.map((x) => [x.value, x.scope]), [["3", "all"], ["No", "all"]], "answers saved for the next applications too");
   await win.click("#drawer .dr-close");
 
+  // Skip, from the list: the job leaves Needs attention without being opened, and Undo puts it back.
+  const statusOf = (slug) => new DatabaseSync(path.join(data, "autopilot.db")).prepare("SELECT status FROM jobs WHERE slug = ?").get(slug).status;
+  await win.click('.nav:has-text("Needs attention")');
+  await win.click('tr:has-text("Web Developer") [data-skip-job]');
+  await win.waitForSelector('#toast.show:has-text("Skipped") button:has-text("Undo")');
+  assert.ok(!(await win.isVisible("#drawer.open")), "the row's Skip doesn't open the job");
+  assert.strictEqual(statusOf("old-job-2"), "skipped");
+  await win.click('#toast button:has-text("Undo")');
+  await win.waitForSelector('tr:has-text("Web Developer") [data-skip-job]');
+  assert.strictEqual(statusOf("old-job-2"), "failed", "Undo puts it back where it was");
+  await shot("8e-skip");
+
   // Simple (the default) hides statistics, activity and the extra pages; Advanced shows everything.
   await win.click('.nav:has-text("Overview")');
   assert.ok(!(await win.isVisible('.nav:has-text("Skipped")')), "Simple: no Skipped page in the sidebar");
