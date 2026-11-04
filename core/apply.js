@@ -11,6 +11,7 @@ import { mailDomainsFor, waitForCode, waitForLink } from "./mail.js";
 import { isWorkday, siteAccounts, workdayAccount, workdayApplyManually } from "./accounts.js";
 import { withinRadius } from "./geo.js";
 import { US_ABBR as US_STATES } from "./facts.js";
+import { HEARD_RX, heardOption } from "./truth.js";
 import { hostOf, isApplicationSystem, isGovUrl } from "./ats.js";
 import { applyYourAnswers, promoteYourAnswers, yourAnswersFor } from "./asked.js";
 import { LOGIN_WALL_JS } from "./ats.js";
@@ -50,6 +51,8 @@ export const CHECK_JS = `(() => {
     // Dropdown widgets keep their value outside the input; content.js reports those itself.
     if (el.getAttribute('role') === 'combobox' || el.getAttribute('aria-autocomplete') || el.closest('[class*=select__], [class*=combobox], [role=combobox]')) continue;
     if (el.type !== 'file' && el.type !== 'radio' && el.type !== 'checkbox' && !el.getClientRects().length) continue;
+    // A styled box hides itself but not its label; one in a hidden part of the form (the next step's questions) hides both.
+    if ((el.type === 'radio' || el.type === 'checkbox') && ![el, el.closest('label'), el.parentElement].some((n) => n && n.getClientRects().length)) continue;
     // A checkbox or radio group is answered when any box in it is ticked (Greenhouse marks every box required).
     let group = el.parentElement;
     for (let i = 0; i < 8 && group && group.querySelectorAll('input[type=checkbox], input[type=radio]').length < 2; i++) group = group.parentElement;
@@ -132,7 +135,9 @@ export const COMBOS_JS = `(() => {${RS_CORE}
     if (rs ? v != null && v !== "" && (typeof v.length !== "number" || v.length > 0) : String(el.value || '').trim()) continue;
     const chosen = !rs && entry.querySelector('[class*=single-value], [class*=singleValue], [class*=multi-value], [class*=chip]');
     if (chosen && !/^(select|choose|please)\b/i.test((chosen.innerText || '').trim())) continue;
-    const lab = entry.querySelector('label, legend, [class*=title]');
+    // the nearest label: a School box inside an "Education History" block is "School"
+    let lab = null;
+    for (let x = el.parentElement; x && !lab; x = x === entry ? null : x.parentElement) lab = x.querySelector('label, legend, [class*=title]');
     const label = ((lab && lab.innerText) || el.getAttribute('aria-label') || el.placeholder || '').replace(/\\s+/g, ' ').trim();
     const cid = 'c' + (n++);
     el.setAttribute('data-ap-combo', cid);
@@ -323,6 +328,33 @@ const stateNames = (v) => {
   const name = Object.keys(US_STATES).find((n) => US_STATES[n] === t.toUpperCase());
   return name ? [name.replace(/\b\w/g, (c) => c.toUpperCase())] : [];
 };
+
+// A type-to-search list found by its question: each answer in turn is typed, and the first entry that is that
+// answer is picked. Returns the entry picked, or null.
+async function pickByTyping(page, label, answers) {
+  const name = String(label).replace(/\*\s*$/, "").trim();
+  for (const f of formFrames(page)) {
+    const box = f.locator("fieldset, [class*=fieldEntry], [class*=field-entry], [class*=question]").filter({ has: f.locator("label, legend", { hasText: name }) })
+      .last().locator("input[role=combobox], input[aria-autocomplete=list]").first();
+    if (!(await box.count().catch(() => 0))) continue;
+    for (const w of [...new Set(answers.filter(Boolean).map(String))]) {
+      try {
+        await box.click({ timeout: 4000 });
+        await box.fill("");
+        await box.pressSequentially(w.slice(0, 30), { delay: 40 });
+        await sleep(1200);
+        const opts = f.locator("[role=option]:visible");
+        const texts = (await opts.allInnerTexts()).map((t) => t.trim());
+        const i = texts.findIndex((t) => nk(t) === nk(w) || nk(t).startsWith(nk(w) + " "));
+        if (i >= 0) { await opts.nth(i).click(); await sleep(300); return texts[i]; }
+        await page.keyboard.press("Escape").catch(() => {});
+      } catch { /* the next answer */ }
+    }
+    await box.fill("").catch(() => {});
+    return null;
+  }
+  return null;
+}
 
 // Dropdowns the add-on could not set (a long option in a Greenhouse react-select): open
 // it by its label, type the start of the answer, and click the option with that exact text.
@@ -817,7 +849,7 @@ export const NEXT_JS = `(() => {
 })()`;
 
 // Buttons and links that open the form from a posting page. Never "Apply with LinkedIn/Indeed".
-const APPLY_RX = /^\s*(apply( now| online| here| today)?|apply for (this|the) (job|position|role)|apply to this (job|position)|i'?m interested|start (your |my )?application|begin application)\s*[>→»]?\s*$/i;
+const APPLY_RX = /^\s*(apply( now| online| here| today)?|apply (for|to) (this |the )?(job|position|role)|i'?m interested|start (your |my )?application|begin application)\s*[>→»]?\s*$/i;
 
 // Cookie banners cover the page and swallow clicks. Decline the optional ones; accept only when there is no other way.
 const COOKIE_NO = /^\s*(decline all|reject all|decline|reject|reject optional|only necessary|necessary only|use necessary cookies only|deny|refuse all)\s*$/i;
@@ -866,7 +898,9 @@ async function loginWall(page) {
 }
 
 // Said anywhere on a page with no form (SmartRecruiters puts it on the Apply button, far down the page).
-const EXPIRED_RX = /sorry, this job has expired|this job (posting )?(has expired|is no longer available)|no longer accepting applications/i;
+const EXPIRED_RX = /sorry, this job has expired|this job (posting )?(has expired|is no longer available)|no longer accepting applications|job does not exist or is not currently active/i;
+// A posting that's gone can send the app to the employer's list of jobs instead (Greenhouse does).
+const JOB_LIST_RX = /^\s*\d+ (open )?(jobs|positions|openings|roles)\s*$/im;
 const BOT_CHECK_RX = /verification required|verify (that )?you are (a )?human|are you a robot|unusual activity from your (device|network)|just a moment\.\.\.|checking your browser|press (and|&) hold/i;
 const CLOSED_RX = /no longer (accepting|available|open)|position (has been )?filled|job (is )?closed|page not found|job not found|job you requested was not found|posting (is )?(closed|expired)|this job (has )?expired/i;
 const MAX_PAGES = 8;
@@ -937,6 +971,8 @@ export async function applyTo(job, hooks = {}, opts = {}) {
       ({ text, fields } = await scrapeAll(page));
     }
     if ((CLOSED_RX.test(text.slice(0, 3000)) || EXPIRED_RX.test(text)) && fields.length < 5) return { ...result, status: "skipped", reason: "posting is closed" };
+    const jobId = (String(link).match(/\d{6,}/) || [])[0];
+    if (fields.length < 3 && jobId && !page.url().includes(jobId) && JOB_LIST_RX.test(text)) return { ...result, status: "skipped", reason: "posting is closed (the site showed its list of jobs instead)" };
     if (fields.length < 3 && BOT_CHECK_RX.test(text.slice(0, 2000))) return { ...manual(`${hostOf(page.url()).replace(/^www\./, "")} showed a bot check ("prove you're a person") instead of the form, so the app can't fill it. Open it and apply yourself`), screenshot: await shot(page, job.slug, "botcheck") };
     if (isWorkday(page.url()) && await workdayApplyManually(page)) ({ text, fields } = await scrapeAll(page));
     // A Workday site, and the user let the app make accounts: sign up (or sign in) with their email and password.
@@ -1190,6 +1226,17 @@ async function fillPage(page, b, fields, resume, a, job) {
   await fillListSelects(page, b.kit, a);
   const stuck = second.flatMap((r) => [...(r.missing || []), ...(r.decide || []).filter((x) => /^Could not set it/.test(x.note || ""))])
     .map((x) => x.label).filter((l) => !BINDING.test(l));
+  // A "How did you hear about us?" list the app couldn't read before: read it now and pick the true answer from it.
+  for (const l of stuck.filter((x) => HEARD_RX.test(x))) {
+    const k = b.kit.find((x) => x.label === l);
+    if (!k) continue;
+    const opts = await choicesOn(page, l).catch(() => []);
+    let pick = opts.find((o) => nk(o) === nk(k.value)) || heardOption(opts, a);
+    // A list that shows nothing until you type (Ashby's): try the true answers in order, the way a person would.
+    if (!opts.length) pick = await pickByTyping(page, l, [k.value, a.heardAbout || "Job board", "Job board", "Job site", "Online", "Internet", "Other"]);
+    if (pick && nk(pick) !== nk(k.value)) notes.push(`"${l.slice(0, 50)}": its list has no "${k.value}", so "${pick}"`);
+    if (pick) k.value = pick;
+  }
   if (stuck.length) await fixDropdowns(page, b.kit, stuck);
   for (const n of await verifyCombos(page, b.kit, fields)) { notes.push("list check: " + n); log(job.slug, "list check: " + n); }
   await sleep(2500);

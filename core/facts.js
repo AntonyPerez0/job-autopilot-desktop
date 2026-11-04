@@ -155,7 +155,8 @@ export function candidateFacts(a, profile, prefs) {
     education: (a.education || []).map((e) => `${[degreeText(e.degree), e.field].filter(Boolean).join(", ")} at ${e.school} (${monthYear(e.start) || "?"} to ${monthYear(e.end) || "?"})`),
     graduation: g ? monthYear(g.end) : null,
     stillStudying: stillStudying(a),
-    workHistory: ((profile && profile.experience) || []).map((e) => `${e.title}, ${e.org} (${e.dates})`),
+    // Where each job was, so a form's "employer city/state" is the resume's own.
+    workHistory: ((profile && profile.experience) || []).map((e) => `${e.title}, ${e.org}${e.location ? `, in ${e.location}` : ""} (${e.dates})`),
     yearsByType: Object.fromEntries((a.years || []).filter((y) => y && y.type).map((y) => [y.type, Number(y.years) || 0])),
     // Not given: worked out from the resume's job dates, never assumed to be zero.
     totalYears: Number(a.totalYears) || yearsFromDates((profile && profile.experience) || []),

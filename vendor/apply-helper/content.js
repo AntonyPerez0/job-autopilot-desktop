@@ -416,7 +416,9 @@
     for (let n = start, d = 0; n && d < 10; n = n.parentElement, d++) {
       for (let s = n.previousElementSibling; s; s = s.previousElementSibling) {
         if (s.matches("label") || s.querySelector("input, select, textarea, [role=combobox], label")) continue;
-        const t = txt(s);
+        // its words without its buttons' ("Education" beside a "Delete" button)
+        let t = txt(s);
+        if (s.querySelector("button")) { const c = s.cloneNode(true); c.querySelectorAll("button").forEach((x) => x.remove()); t = clean(c.textContent); }
         if (t && t.length <= 40 && t !== own && !/\*|\(required\)|^(select|choose)\b/i.test(t)) return t;
       }
     }
@@ -612,7 +614,9 @@
         await sleep(200);
         const opts = listOptions(opener);
         if (!opts.length) continue;
-        const i = bestOption(value, opts.map(txt));
+        // An entry can carry more lines than its name ("Western Governors University / United States / wgu.edu").
+        let i = bestOption(value, opts.map(txt));
+        if (i < 0) i = bestOption(value, opts.map((o) => clean(String(o.innerText || o.textContent || "").split("\n")[0]) || txt(o)));
         if (i < 0) break;
         opts[i].dispatchEvent(new MouseEvent("mousedown", { bubbles: true, composed: true }));
         opts[i].click();

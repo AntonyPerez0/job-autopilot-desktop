@@ -139,7 +139,7 @@ export async function search(prefs, { browser, progress = () => {}, log = () => 
         log(`HiringCafe search "${title}" failed: ${e.message}`);
       }
     }
-    if (runs.length > MAX_SEARCHES) log(`HiringCafe: only the first ${MAX_SEARCHES} of ${runs.length} searches run each round, to stay gentle`);
+    if (runs.length > MAX_SEARCHES && Date.now() >= blockedUntil) log(`HiringCafe: only the first ${MAX_SEARCHES} of ${runs.length} searches run each round, to stay gentle`);
   } finally { await browser.done(page); }
   return out;
 }

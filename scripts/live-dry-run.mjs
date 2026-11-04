@@ -22,7 +22,8 @@ const { applyUrl } = await import("../core/discover.js");
 const { call } = await import("../core/freehire.js");
 store.setDataDir(dir);
 store.saveSettings({ headless: process.env.HEADED ? false : true, browser: process.env.JA_BROWSER || "auto", dryRun: true });
-store.saveAnswers(exampleAnswers());
+// JA_ANSWERS='{"city":"Fremont","state":"CA"}' tries the form as someone else would fill it.
+store.saveAnswers({ ...exampleAnswers(), ...JSON.parse(process.env.JA_ANSWERS || "{}") });
 store.savePrefs(examplePrefs());
 store.saveProfile(approvedExample(Profile));
 

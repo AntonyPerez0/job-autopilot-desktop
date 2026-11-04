@@ -188,3 +188,14 @@ test("paylocity.html: labels are the label's own words; a list shows its choice;
   assert.strictEqual(await page.$eval("#state-shown", (e) => e.textContent), "TX", "Texas is TX in a list of codes");
   await page.close();
 });
+
+// From a diagnostics report: Breezy keeps the next step's questions in the page, hidden; they aren't this page's to answer.
+test("required boxes on a hidden next step don't block the page that's showing", async () => {
+  const { CHECK_JS } = await import("../core/apply.js");
+  const page = await browser.newPage();
+  await page.setContent(`<form><label>Full name <input required></label>
+    <div style="display:none"><p>What cloud hosting providers have you used?</p><label><input type="checkbox" name="c" required>AWS</label>
+      <label><input type="radio" name="g" required>Male</label></div></form>`);
+  assert.deepStrictEqual(await page.evaluate(CHECK_JS), ["Full name"]);
+  await page.close();
+});

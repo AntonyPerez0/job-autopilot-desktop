@@ -114,6 +114,8 @@ function missingAnswers(a = getAnswers(), prefs = getPrefs()) {
   if (us && !String(a.zip || "").trim()) out.push("your ZIP code");
   if (!String(a.street || "").trim()) out.push("your street address");
   if (prefs.jobKind !== "hourly" && !(a.years || []).some((y) => y && y.type)) out.push("your years of experience");
+  // Only some forms ask a county; once one has stopped on it, the To do list asks.
+  if (!String(a.county || "").trim() && getDb().prepare("SELECT 1 FROM jobs WHERE status = 'failed' AND reason LIKE '%: County%' LIMIT 1").get()) out.push("your county");
   return out;
 }
 

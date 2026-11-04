@@ -205,3 +205,9 @@ test("a background check the AI left to the person gets their standing answer", 
   truthGuard(ask, [{ label: kit[0].label, options: ["Yes", "No"] }], facts, setup().a);
   assert.strictEqual(ask[0].kind, "decide", "\"always ask me\" still asks");
 });
+
+test("a background investigation and being barred from government programs are the person's to answer", () => {
+  assert.strictEqual(check("Are you comfortable going through a background or security clearance investigation for public trust if needed?", "Yes", ["Yes", "No"]).k.kind, "decide");
+  assert.strictEqual(check("Are you comfortable going through a background or security clearance investigation for public trust if needed?", "No", ["Yes", "No"], { screenings: "yes" }).k.value, "Yes", "unless they consent to background checks");
+  assert.strictEqual(check("Are you currently, or have you ever been, excluded from, debarred or otherwise ineligible to participate in federally funded programs?", "No", ["Yes", "No"]).k.kind, "decide");
+});

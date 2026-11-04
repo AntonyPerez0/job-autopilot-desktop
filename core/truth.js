@@ -54,12 +54,20 @@ export function yearsType(label, facts) {
 }
 
 const decline = (o) => pick(o, (x) => DECLINE_RX.test(x));
-export const LEGAL_RX = /arbitration|waive|waiver|jury|non-?compete|non-?solicit|class action|release of (claims|liability)|background (check|screen)|drug (test|screen)|criminal (record|history|conviction|offen[cs]e)|convicted|felony|misdemeanor/i;
-const SCREENING_RX = /^(?!.*(waive|waiver|jury|class action|release of|arbitration|non-?compete|criminal|convicted|felony|misdemeanor)).*(background (check|screen)|drug (test|screen))/i;
+// Also: being barred from government programs, and background investigations ("a background or security clearance investigation").
+export const LEGAL_RX = /arbitration|waive|waiver|jury|non-?compete|non-?solicit|class action|release of (claims|liability)|background(?: or [a-z ]{1,30})? (check|screen|investigation)|drug (test|screen)|criminal (record|history|conviction|offen[cs]e)|convicted|felony|misdemeanor|debarr|excluded from[^?]{0,60}programs|exclusion list/i;
+const SCREENING_RX = /^(?!.*(waive|waiver|jury|class action|release of|arbitration|non-?compete|criminal|convicted|felony|misdemeanor)).*(background(?: or [a-z ]{1,30})? (check|screen|investigation)|drug (test|screen))/i;
 const screeningOk = (a) => a.screenings === "yes";
 // "Have you ever been convicted of a felony?" asked plainly: the user's own answer, when they gave one.
 const CONVICTION_RX = /^(?!.*(waive|waiver|jury|class action|release of|arbitration|authori[sz]e|consent)).*(convicted|conviction|felony|misdemeanor|criminal (record|history|offen[cs]e))/i;
 const noRecord = (a) => a.convictions === "none";
+
+// "How did you hear about us?" as a list: the person's own answer, else a job board, a job site, online, other.
+export const HEARD_RX = /how did you (first )?(hear|find|learn|come across)|where did you (hear|find|see)|referral source|^source\b|how were you referred/i;
+export function heardOption(options, a) {
+  const r = rules({}, a).find((x) => x.name === "how you heard");
+  return (options || []).length ? r.fix(options) : null;
+}
 
 // Each rule: which questions it covers, whether an answer is wrong, and the true answer.
 export function rules(facts, a, ctx = {}) {
@@ -106,7 +114,7 @@ export function rules(facts, a, ctx = {}) {
       years: true,
     },
     {
-      name: "how you heard", label: /how did you (hear|find|learn|come across)|where did you (hear|find|see)|referral source|^source\b|how were you referred/i,
+      name: "how you heard", label: HEARD_RX,
       bad: (v) => !new RegExp(`job ?board|job ?site|online|internet|other|${heard.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i").test(String(v)),
       fix: (o) => pick(o, (x) => nk(x) === nk(heard)) || pick(o, (x) => /job ?board/i.test(x)) || pick(o, (x) => /job ?site|online job|job search/i.test(x)) ||
         pick(o, (x) => /^internet|online/i.test(x)) || pick(o, (x) => /^other/i.test(x)) || (o && o.length ? null : heard),
