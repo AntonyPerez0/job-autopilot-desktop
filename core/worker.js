@@ -20,8 +20,8 @@ const searchBrowser = {
 };
 import { isLocal, plainAiError } from "./llm.js";
 import { call } from "./freehire.js";
-import { findConfirmation } from "./mail.js";
-import { dataDir, getSecret, getSettings } from "./store.js";
+import { classifyReply, findConfirmation, mailSince, maybeEmployer, replyJob, replySnippet } from "./mail.js";
+import { dataDir, getSecret, getSettings, saveSettings } from "./store.js";
 
 const CONFIG = new Proxy({}, { get: (_, k) => getSettings()[k] });
 const db = new Proxy({}, { get: (_, k) => { const d = getDb(); return typeof d[k] === "function" ? d[k].bind(d) : d[k]; } });
@@ -98,6 +98,34 @@ export async function stillOpen(job) {
     // freehire only knows its own postings: "not_found" (every HiringCafe job, for one) says nothing about whether it's open.
     return !j || j.status !== "closed";
   } catch { return true; }
+}
+
+// Replies from employers: at most once an hour, the mailbox is read (never changed) for emails from the employers
+// the person applied to in the last 120 days. Each is matched to its application and sorted without AI (mail.js);
+// "thanks for applying" emails aren't kept. force: now, whatever the time. -> how many new replies, or null.
+export const REPLY_EVERY_MINUTES = 60;
+export async function checkReplies({ force = false, read = mailSince } = {}) {
+  const m = mailbox();
+  if (!m) return null;
+  const last = Date.parse(getSettings().repliesCheckedAt || "") || 0;
+  if (!force && Date.now() - last < REPLY_EVERY_MINUTES * 60000) return null;
+  const jobs = db.prepare(`${APPLIED_SQL.replace(" FROM jobs WHERE ", " FROM jobs WHERE applied_at > datetime('now', '-120 days') AND (")})`).all();
+  saveSettings({ repliesCheckedAt: new Date().toISOString() });
+  if (!jobs.length) return 0;
+  const first = Math.min(...jobs.map((j) => Date.parse(j.applied_at) || Date.now()));
+  const since = new Date(Math.max(first - 86400000, last ? last - 2 * 86400000 : 0, Date.now() - 120 * 86400000));
+  const mails = (await read(m, since, (x) => maybeEmployer(x.from, jobs))) || [];
+  let added = 0;
+  for (const mail of mails) {
+    const j = replyJob(mail, jobs);
+    if (!j) continue;
+    const kind = classifyReply(mail.subject, mail.text);
+    if (kind === "received") continue;
+    const r = db.prepare("INSERT OR IGNORE INTO replies (id, slug, at, sender, subject, kind, snippet) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(String(mail.id).slice(0, 500), j.slug, mail.date, String(mail.from).slice(0, 300), String(mail.subject).slice(0, 300), kind, replySnippet(mail.text));
+    if (r.changes) { added++; log(j.slug, `reply from ${j.company}: ${kind} ("${String(mail.subject).slice(0, 120)}")`); }
+  }
+  return added;
 }
 
 // run(signal): when the time is up, the signal is aborted (applyTo stops at its next step) and the wait ends.
@@ -216,6 +244,8 @@ export async function run() {
   log(null, `autopilot started (${CONFIG.dryRun ? "dry run" : "live"}, cap ${CONFIG.dailyCap}/day)`);
   while (!stopping) {
     try {
+      // Replies are read while paused too: the person still wants to hear back.
+      try { await checkReplies(); } catch (e) { log(null, "reading replies failed: " + e.message, "warn"); }
       // The browser stays open between applications, and closes whenever there is a long wait.
       if (CONFIG.paused) { state.now = "paused"; state.progress = null; await closeBrowser(); await sleep(30000); continue; }
       const due = !state.lastSearch || Date.now() - state.lastSearch > CONFIG.searchEveryMinutes * 60000;

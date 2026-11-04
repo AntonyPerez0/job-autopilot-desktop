@@ -31,8 +31,13 @@ w("answers.json", { firstName: "Jordan", lastName: "Lee", email: "jordan@example
 const db = new DatabaseSync(path.join(data, "autopilot.db"));
 db.exec(fs.readFileSync(path.join(ROOT, "core", "db.js"), "utf8").match(/CREATE TABLE IF NOT EXISTS jobs[\s\S]*?\);\nCREATE TABLE IF NOT EXISTS events[\s\S]*?\);/)[0]);
 const job = db.prepare("INSERT INTO jobs (slug, title, company, location, source, url, status, reason, details, applied_at, attempts) VALUES (?, ?, ?, ?, 'greenhouse', ?, ?, ?, ?, ?, 1)");
+// What a posting asks for (checked without the AI) and freehire's evidence about it, on the applied job.
+const fit = { check: { met: 1, checked: 2, items: [{ text: "Experience with Python", priority: "required", status: "met", why: "your resume shows python" },
+  { text: "Kubernetes", priority: "preferred", status: "missing", why: "not on your resume: kubernetes" }, { text: "Valid driver's license", priority: "required", status: "form", why: "you answer this on the application" }] },
+  real: { reality: "stale", level: "possible", criteria: ["evergreen_posting"], notes: ["It has been up a while: freehire first saw it Aug 10, 2026.", "Possibly not being filled: it's reposted again and again."] },
+  similarTo: "Software Engineer at Initech" };
 const J = [
-  ["globex-1", "Software Engineer", "Globex", "Austin, TX", "applied", "", {}, "2026-10-20 10:00:00"],
+  ["globex-1", "Software Engineer", "Globex", "Austin, TX", "applied", "", fit, "2026-10-20 10:00:00"],
   ["initech-2", "Backend Engineer", "Initech", "Remote", "failed", "could not fill every required field: required, no answer: How did you hear about us?; still empty: Preferred shift",
     { fields: [{ type: "select", label: "How did you hear about us?", options: ["Select...", "LinkedIn", "Job board"] }, { type: "listbox", label: "Preferred shift" }] }, null],
   ["acme-3", "Data Analyst", "Acme", "Austin, TX", "filled", "dry run: filled and checked", { kit: [{ label: "Name", value: "Jordan Lee", kind: "text" }, { label: "Why us?", value: "I like the product.", kind: "draft" }], audit: ["kept to your facts"] }, null],
@@ -42,6 +47,9 @@ const J = [
 ];
 for (const [slug, title, company, location, status, reason, details, at] of J) job.run(slug, title, company, location, `https://example.com/${slug}`, status, reason, JSON.stringify(details), at);
 db.prepare("INSERT INTO events (slug, level, message) VALUES (?, ?, ?)").run("globex-1", "info", "applied: the employer confirmed it");
+// A reply from an employer, not opened yet: the Overview's banner and card, the job's panel, the Applied list.
+db.prepare("INSERT INTO replies (id, slug, at, sender, subject, kind, snippet) VALUES (?, ?, ?, ?, ?, ?, ?)").run("<r1@globex.test>", "globex-1", "2026-10-25T10:00:00Z",
+  "Globex Recruiting <jobs@globex.test>", "Next steps for Software Engineer", "interview", "Hi Jordan, we'd like to set up a 30 minute phone screen. What times work for you this week?");
 db.close();
 
 const args = process.env.JA_APP_EXE ? [] : [ROOT];
@@ -73,12 +81,20 @@ for (const size of process.env.QUICK ? [] : [{ width: 900, height: 700 }, { widt
       await audit(`${v} (${scheme}, ${size.width}px)`);
       if (size.width > 1000 && scheme === "dark") await win.screenshot({ path: path.join(OUT, `${v}-${scheme}-${size.width}.png`), fullPage: true });
     }
-    for (const slug of ["initech-2", "acme-3"]) {
-      await go(slug === "initech-2" ? "failed" : "filled");
+    for (const slug of ["initech-2", "acme-3", "globex-1"]) {
+      await go(slug === "initech-2" ? "failed" : slug === "acme-3" ? "filled" : "applied");
       await win.evaluate((s) => openJob(s), slug);
       await win.waitForSelector("#drawer.open");
       await win.waitForTimeout(500);
       await audit(`job panel ${slug} (${scheme}, ${size.width}px)`);
+      // The Fit tab: what the posting asks for and whether it looks real.
+      if (slug === "globex-1") {
+        await win.click("#tab-fit");
+        await win.waitForSelector(".req-list");
+        await audit(`job panel ${slug}, Fit (${scheme}, ${size.width}px)`);
+        if (size.width > 1000 && scheme === "dark") await win.screenshot({ path: path.join(OUT, `job-fit-${scheme}-${size.width}.png`) });
+        await win.click("#tab-answers");
+      }
       await win.keyboard.press("Escape");
       await win.waitForSelector("#drawer.open", { state: "detached" }).catch(() => {});
     }
@@ -106,6 +122,7 @@ for (let i = 0; i < 80 && !opened; i++) {
     await win.keyboard.press("Escape");
     await win.waitForTimeout(600);
     returned = await win.evaluate((slug) => document.activeElement && document.activeElement.dataset.job === slug, f.job);
+    if (!returned) console.log(`closing ${f.job} left the focus on:`, await win.evaluate(() => document.activeElement && document.activeElement.outerHTML.slice(0, 200)));
   }
 }
 await app.close();

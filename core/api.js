@@ -3,7 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { getDb, getJob, setJob, appliedToday, log } from "./db.js";
-import { state, kick, forceSearch, searchBrowser } from "./worker.js";
+import { state, kick, forceSearch, searchBrowser, checkReplies } from "./worker.js";
 import {
   dataDir, getAnswers, getPrefs, getProfile, getSecret, getSettings, saveAnswers, savePrefs, saveProfile, saveSettings, setSecret,
 } from "./store.js";
@@ -90,7 +90,11 @@ function status() {
   const firstFilled = db.prepare("SELECT slug, title, company FROM jobs WHERE status = 'filled' ORDER BY updated_at ASC LIMIT 1").get() || null;
   const toAnswer = db.prepare("SELECT slug, title, company FROM jobs WHERE status = 'failed' AND reason LIKE 'could not fill every required field%' ORDER BY updated_at DESC").all();
   const { wake, ...st } = state;
-  return { state: st, counts, appliedToday: appliedToday(), settings: s, model: s.ai.model, serverNow: Date.now(), next, firstFilled, toAnswer: { count: toAnswer.length, first: toAnswer[0] || null }, search: lastSearch.at ? { ...lastSearch, nextAt: state.nextSearch || null, skipped: lastSearch.done && !counts.queued ? skipSummary(db) : null } : null, version: VERSION,
+  // Replies from employers the person hasn't opened yet, the ones asking something of them first.
+  const replies = db.prepare(`SELECT r.slug, r.kind, r.subject, r.at, j.company, j.title FROM replies r JOIN jobs j ON j.slug = r.slug WHERE r.seen = 0
+    ORDER BY CASE r.kind WHEN 'offer' THEN 0 WHEN 'interview' THEN 1 WHEN 'assessment' THEN 2 WHEN 'info' THEN 3 ELSE 4 END, r.at DESC`).all();
+  return { state: st, counts, appliedToday: appliedToday(), settings: s, model: s.ai.model, serverNow: Date.now(), next, firstFilled, toAnswer: { count: toAnswer.length, first: toAnswer[0] || null },
+    replies: { unseen: replies.length, act: replies.filter((r) => ["offer", "interview", "assessment", "info"].includes(r.kind)).length, first: replies[0] || null, checkedAt: s.repliesCheckedAt || null, mailbox: !!(s.mailbox && getSecret("mailPassword")) }, search: lastSearch.at ? { ...lastSearch, nextAt: state.nextSearch || null, skipped: lastSearch.done && !counts.queued ? skipSummary(db) : null } : null, version: VERSION,
     browser: { open: browserOpen(), mode: windowModeOf(s) }, update: updater ? updater.state() : null };
 }
 
@@ -128,7 +132,7 @@ const ROUTES = {
   "GET /api/jobs": (_, q) => {
     const st = q.get("status");
     const sql = `SELECT slug, title, company, location, work_mode, source, url, apply_url, salary, posted_at, found_at, status, reason,
-      attempts, updated_at, applied_at, reviewed, resume_file, screenshot FROM jobs ${st ? "WHERE status = ?" : ""}
+      attempts, updated_at, applied_at, reviewed, resume_file, screenshot, (SELECT kind FROM replies r WHERE r.slug = jobs.slug ORDER BY r.at DESC LIMIT 1) AS reply FROM jobs ${st ? "WHERE status = ?" : ""}
       ORDER BY CASE status WHEN 'working' THEN 0 WHEN 'applied' THEN 1 WHEN 'filled' THEN 2 WHEN 'queued' THEN 3 WHEN 'failed' THEN 4 ELSE 5 END,
       COALESCE(applied_at, updated_at) DESC LIMIT 1000`;
     return st ? getDb().prepare(sql).all(st) : getDb().prepare(sql).all();
@@ -285,6 +289,12 @@ const ROUTES = {
     const next = b.clear ? [] : code && !cur.some((x) => x.code === code) ? [...cur, { code, title: String(b.title || code).slice(0, 80) }] : cur;
     savePrefs({ notForMe: next });
     return { notForMe: next };
+  },
+  // Replies from employers, newest first, with the job each answers; "check" reads the mailbox now.
+  "GET /api/replies": () => getDb().prepare(`SELECT r.id, r.slug, r.at, r.sender, r.subject, r.kind, r.snippet, r.seen, j.company, j.title FROM replies r JOIN jobs j ON j.slug = r.slug
+    ORDER BY r.at DESC LIMIT 200`).all(),
+  "POST /api/replies/check": async () => {
+    try { const n = await checkReplies({ force: true }); return n === null ? bad("Connect your mailbox first (Settings > Mailbox).") : { added: n }; } catch (e) { return bad(e.message); }
   },
   // Answers the user gave to questions the app stopped on.
   "GET /api/your-answers": () => (getAnswers().yourAnswers || []),
@@ -617,5 +627,8 @@ async function jobRoute(slug, b) {
   const d = JSON.parse(out.details || "{}");
   const asks = asksFor(out, d);
   delete d.fields;
-  return { ...out, details: d, asks };
+  const replies = getDb().prepare("SELECT id, at, sender, subject, kind, snippet, seen FROM replies WHERE slug = ? ORDER BY at DESC").all(slug);
+  // Opened: its replies have been seen.
+  if (!b && replies.some((r) => !r.seen)) getDb().prepare("UPDATE replies SET seen = 1 WHERE slug = ?").run(slug);
+  return { ...out, details: d, asks, replies };
 }

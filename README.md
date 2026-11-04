@@ -115,6 +115,24 @@ key (about a cent per application) or a free model on your own computer.
 
 </td>
 </tr>
+<tr>
+<td valign="top">
+
+**Checks the fit before it costs anything**<br>
+Licenses, certificates, degrees and tools a posting asks for, checked against
+your resume without the AI ("Meets 5 of 7"). A job that needs a license you
+don't hold is skipped for free, and so is one that likely isn't being filled.
+
+</td>
+<td valign="top">
+
+**Tells you when employers write back**<br>
+With your mailbox connected, replies are put with their applications and
+sorted: wants to talk, a test, needs something from you, an offer, or a no.
+Read only; you answer from your own email.
+
+</td>
+</tr>
 </table>
 
 <table>
@@ -549,7 +567,7 @@ promise any employer will like it.
 | Source | What it has | Notes |
 |---|---|---|
 | **HiringCafe** (on by default) | Jobs of every kind, collected straight from employers' own career sites | The app reads it in its own browser window like a person would, with one results page per search and a few searches every couple of hours. |
-| **freehire** | Office, tech and professional jobs | Off by default for hourly-only searches. |
+| **freehire** (on by default) | Jobs of every kind straight from employers' own application systems: Paycom, Paylocity, CareerPlug, Hireology, BambooHR, Greenhouse, Lever and about 20 more the app can fill in (and Workday, with [Job site accounts](#job-site-accounts-workday) on) | Through freehire's public server. It also finds postings like the ones you applied to (**More like this**), and tells the app when a posting looks like it isn't really being filled. |
 | **Simplify lists** | New-graduate jobs and internships, mostly tech | Read from Simplify's free lists on GitHub. Simplify's own website forbids automated use, so the app never visits it. |
 | **Google Jobs** | What Google's job search shows, from many sites | Google has no public jobs API and blocks automated searches, so this goes through [SerpApi](https://serpapi.com) with your own key. Its free plan has 250 searches a month; the app stays under 200 and spreads them over the month. |
 | **USAJOBS** | Federal government jobs near you and remote | Through the official USAJOBS listings, with your own free key: press **Get a free key** under USAJOBS, fill in the short form, and paste the key that arrives by email. Applying on USAJOBS needs a Login.gov account and the agency's own questions, so these jobs go to **Apply yourself** with the closing date and a **Make my resume for this job** button. |
@@ -574,7 +592,35 @@ sells data to companies.
 
 Every job the app finds goes through the same checks: your titles, your city
 and radius, your levels, companies you excluded, and jobs you already applied
-to. Then the AI reads it against your facts. Only good fits go on.
+to. Then the app reads what the posting asks for against your approved resume
+and your About-you answers, without the AI (see [What the posting asks
+for](#what-the-posting-asks-for)). Then the AI reads it against your facts.
+Only good fits go on.
+
+### What the posting asks for
+
+Each posting's requirements (freehire's list, or the lines under the posting's
+own Requirements heading) are checked against your approved resume and your
+About-you answers, with plain rules and no AI:
+
+- **Licenses and certificates** (a CNA, a Class A CDL, CPR, a food handler card,
+  a forklift certification, CompTIA A+ and others), **degrees**, **a driver's
+  license** and **a minimum age**. A required one you clearly don't have skips the
+  job, with the reason ("the posting requires a CNA certification, and your
+  resume doesn't list one"), before any AI is paid for. One you can get after
+  you're hired ("CPR within 30 days of hire"), a preferred one, or a degree with
+  "or equivalent experience" never skips a job.
+- **Tools, systems and skills** it names ("Experience with Excel and
+  QuickBooks"): shown as on your resume or not.
+- **Lifting, schedules, background checks**: you answer those on the form.
+
+Open a job and its **Fit** tab shows every line and how your resume covers it
+("Meets 5 of 7"), and, for freehire jobs, **Is this job real?**: when freehire
+first saw the posting, whether its date was refreshed to look new, when it was
+last confirmed open on the employer's own site, and any signs that it isn't
+being filled (reposted again and again, gone from the employer's own job board,
+people who applied heard nothing back). The ones freehire calls likely not
+being filled are skipped, with the reason.
 
 ### Which jobs the app applies to, and which you apply to
 
@@ -783,6 +829,21 @@ reads the code and finishes the application. Without it, those jobs wait in
 Needs attention. The app also uses the mailbox to spot employers' "thank you
 for applying" emails.
 
+**Replies from employers.** About once an hour, the app looks for emails from
+the employers you applied to in the last 120 days, and puts each one with its
+application, sorted by what it says:
+
+- **Wants to talk** (an interview or a call), **Test or task** (an assessment),
+  **Needs something from you** (references, a form), **Offer**, or **Not moving
+  forward**.
+
+They show on the Overview (**Replies from employers**, with **Check now**), in
+the Applied list, and on the job. A banner tells you when one wants something
+from you. An email counts only when it really comes from that employer or its
+application system (signed by it, the way your mailbox provider checks), and
+names the employer. They're sorted by their own words, without the AI, and stay
+on your computer. The app never answers them: you reply from your own email.
+
 The connection is read-only: the app never sends, deletes, moves or marks
 anything. It needs an **app password**, which is a separate password just for
 this app. You can only create one when two-step verification is turned on.
@@ -848,7 +909,8 @@ The app only sends data to:
   screens jobs, plans each application and fact-checks answers. With a local
   model (Ollama or LM Studio) this stays on your computer.
 - **The job sources you turned on**: the job titles, places and filters you
-  search for, and nothing about you. That means freehire.me, HiringCafe
+  search for, and nothing about you. For **More like this**, freehire.me also
+  gets the ids of its own postings you applied to. That means freehire.me, HiringCafe
   (searched in the app's browser), GitHub (Simplify's lists) and, with your
   key, SerpApi for Google Jobs.
 - **The job sites themselves** (the employers and their application sites):

@@ -1005,7 +1005,7 @@
   const LEVELS = [["junior", "No experience needed or entry level"], ["middle", "Some experience (mid level)"], ["senior", "Senior"], ["lead", "Manager or team lead"], ["intern", "Internships"]];
   const BOARDS = [
     ["hiringcafe", "HiringCafe", "Jobs of every kind, straight from employers' own sites. Best for most people."],
-    ["freehire", "freehire", "Office, tech and professional jobs."],
+    ["freehire", "freehire", "Office, tech and everyday jobs, from employers' own application systems (Paycom, Paylocity, CareerPlug, Greenhouse and more)."],
     ["simplify", "Simplify lists", "New-graduate jobs and internships, mostly tech (Simplify's free lists on GitHub)."],
     ["google", "Google Jobs", "What Google's job search shows, including many state, county and city jobs. Needs a free SerpApi key (250 searches a month)."],
     ["usajobs", "USAJOBS (federal government)", "Federal jobs near you and remote, from the official USAJOBS listings. Needs a free USAJOBS key. You apply on USAJOBS yourself; the app finds them, checks the fit and makes your resume."],
@@ -1253,7 +1253,7 @@
     const draw = () => {
       const pr = presets[preset];
       el.innerHTML = `<div class="form">
-        <p class="hint" style="margin:0">Optional. Greenhouse sometimes emails a security code that must be typed into the form; with your mailbox connected the app reads it and finishes the application. It also uses employers' "thank you for applying" emails to avoid applying twice. The app only reads; it never sends, deletes or marks anything.</p>
+        <p class="hint" style="margin:0">Optional. Greenhouse sometimes emails a security code that must be typed into the form; with your mailbox connected the app reads it and finishes the application. It also uses employers' "thank you for applying" emails to avoid applying twice, and shows you when an employer writes back about an application (an interview, a test, a question or a no). The app only reads; it never sends, deletes or marks anything.</p>
         ${fld("Email provider", radios("preset", preset, Object.entries(presets).map(([k, v]) => [k, v.name])))}
         <div class="callout ${pr.unsupported ? "amber" : "blue"}" style="margin:0"><div><b>${pr.unsupported ? "Not supported directly" : "Create an app password"}</b><ol style="margin:6px 0 0;padding-left:18px">${pr.steps.map((s) => `<li>${esc(s)}</li>`).join("")}</ol>
           ${pr.appPasswordUrl ? `<button type="button" class="btn sm" style="margin-top:8px" data-open="${esc(pr.appPasswordUrl)}">${icon("ext")}Open ${esc(pr.name)} settings</button>` : ""}</div></div>

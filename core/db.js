@@ -24,6 +24,14 @@ CREATE TABLE IF NOT EXISTS jobs (
   details TEXT              -- JSON: plan summary, answers, report
 );
 CREATE INDEX IF NOT EXISTS jobs_status ON jobs(status);
+-- Replies from employers, found in the connected mailbox: kept on this computer only.
+CREATE TABLE IF NOT EXISTS replies (
+  id TEXT PRIMARY KEY,      -- the email's Message-ID
+  slug TEXT, at TEXT, sender TEXT, subject TEXT,
+  kind TEXT,                -- offer | interview | assessment | info | rejection | other
+  snippet TEXT, seen INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS replies_slug ON replies(slug);
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   at TEXT DEFAULT (datetime('now')),

@@ -80,6 +80,9 @@ const RULES = [
   ["google", "board", /(^|\.)google\.[a-z.]+$/],
 ];
 
+// Every application system whose form the app fills without an account.
+export const FILLABLE = RULES.filter(([, kind]) => kind === "auto").map(([ats]) => ats);
+
 export const KIND_TEXT = {
   account: "makes you create an account first",
   chat: "applies through a chat bot",

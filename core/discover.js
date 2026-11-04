@@ -13,7 +13,8 @@ import { KIND_TEXT } from "./ats.js";
 import { payPerHour } from "./suggest.js";
 import { siteAccounts } from "./accounts.js";
 import { SOURCES, enabledSources } from "./sources/index.js";
-import { searchesFor } from "./sources/freehire.js";
+import { boardsFor, searchesFor } from "./sources/freehire.js";
+import { checkRequirements } from "./requirements.js";
 
 // Recruiting agencies and repost aggregators: the application never reaches the employer.
 export const AGENCIES = ["jobgether", "synergisticit", "jobot", "cybercoders", "revature", "dice", "true talent", "crossover", "lensa", "jobright"];
@@ -89,8 +90,12 @@ export async function applyUrl(source, official) {
   return u;
 }
 
+// The freehire postings they applied to (newest first), for "more like this".
+export const similarSeeds = (db) => db.prepare(`SELECT slug, title, company FROM jobs WHERE (status IN ('applied', 'submitting') OR (status = 'filled' AND reviewed = 1))
+  AND details LIKE '%"board":"freehire"%' ORDER BY COALESCE(applied_at, updated_at) DESC LIMIT 20`).all();
+
 // What freehire is asked, per title and place (kept for the tests and the Settings preview).
-export const searches = (prefs) => searchesFor(prefs).map((s) => ({ ...s, sources: ["greenhouse", "lever", "ashby", "smartrecruiters", "workable"], posted_within_days: prefs.postedWithinDays, limit: 50 }));
+export const searches = (prefs) => searchesFor(prefs).map((s) => ({ ...s, sources: boardsFor(), posted_within_days: prefs.postedWithinDays, limit: 50 }));
 
 // Inside the radius, by the job's own coordinates when the source gives them, else by its location text.
 export function locationOk(j, prefs) {
@@ -195,7 +200,7 @@ export async function discover(progress = () => {}, ctx = {}) {
     const warnings = [];
     try {
       const list = await src.search(prefs, {
-        browser: ctx.browser,
+        browser: ctx.browser, seeds: src.id === "freehire" ? similarSeeds(db) : [],
         progress: (u) => progress({ phase: "search", i: si, n: sources.length, label: u.label || src.name }),
         log: (m) => { warnings.push(m); log(null, m, "warn"); },
       });
@@ -211,10 +216,12 @@ export async function discover(progress = () => {}, ctx = {}) {
   const dollars = (n) => "$" + (n >= 100 ? Math.round(n).toLocaleString("en-US") : (Math.round(n * 100) / 100).toString());
   let added = 0, toYou = 0, ji = 0, screenedOk = 0;
   const failed = [];
-  const insertJob = (j, key, status, reason, apply) => db.prepare(`INSERT OR IGNORE INTO jobs (slug, key, title, company, location, work_mode, source, url, apply_url, salary, posted_at, status, reason, details)
+  const insertJob = (j, key, status, reason, apply, check = null) => db.prepare(`INSERT OR IGNORE INTO jobs (slug, key, title, company, location, work_mode, source, url, apply_url, salary, posted_at, status, reason, details)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(j.slug, key, j.title, j.company, j.location || "", j.work_mode || "",
       j.ats || "", j.url, apply, j.salary || null, j.posted_at || j.posted_text || "", status, reason,
-      JSON.stringify({ description: j.description || "", requirements: j.requirements || [], board: j.board, kind: j.kind, freehire: j.freehire }));
+      JSON.stringify({ description: j.description || "", requirements: j.requirements || [], board: j.board, kind: j.kind, freehire: j.freehire,
+        ...(check && check.items.length ? { check: { met: check.met, checked: check.checked, items: check.items.map(({ text, priority, status, why }) => ({ text, priority, status, why })) } } : {}),
+        ...(j.real ? { real: j.real } : {}), ...(j.similarTo ? { similarTo: j.similarTo } : {}) }));
   const list = [...found.values()];
   for (let j of list) {
     progress({ phase: "review", i: ji++, n: list.length, label: `${j.title} at ${j.company}`, added });
@@ -228,15 +235,18 @@ export async function discover(progress = () => {}, ctx = {}) {
       try { j = { ...j, ...(await j.details()) }; } catch (e) { log(j.slug, "reading the posting failed: " + e.message, "warn"); continue; }
     }
     const fam = familyKey(j.company, j.title);
+    // What the posting asks for, against the approved resume and the About-you answers: no AI.
+    const check = checkRequirements(j, profile, a);
     let status = "queued", reason = null;
     if (excludedCompany(j.company, prefs)) { status = "skipped"; reason = "excluded company, recruiter or repost aggregator"; }
-    else if (j.ghost) { status = "skipped"; reason = "freehire says this posting is likely a ghost listing"; }
+    else if (j.ghost) { status = "skipped"; reason = `freehire says this posting is likely not being filled${j.real && j.real.criteria.length ? ` (${(j.real.notes.find((n) => /^Likely/.test(n)) || "").replace(/^Likely not being filled: /, "").replace(/\.$/, "")})` : ""}`; }
     else if (inAppliedList(manual, { ...j, apply_url: j.apply_url || j.url })) { status = "skipped"; reason = "already applied (your history or your already-applied list)"; }
     else if (!j.url) { status = "skipped"; reason = "no link to the employer's application"; }
     else if (floor && payPerHour(j.salary) && payPerHour(j.salary).max < floor - 0.005) {
       status = "skipped"; reason = `pays at most ${dollars(payPerHour(j.salary).max)} an hour, under the ${prefs.minPayPer === "year" ? dollars(Number(prefs.minPay)) + " a year" : dollars(floor) + " an hour"} you asked for`;
     }
     else if (licenseGap(j.title, profile)) { status = "skipped"; reason = licenseGap(j.title, profile); }
+    else if (check.gaps.length) { status = "skipped"; reason = `the posting requires ${check.gaps[0]} (checked without the AI)`; }
     else if (count(families, j.url, fam) >= PER_FAMILY) { status = "skipped"; reason = `the same job at another location: ${PER_FAMILY} of these are already in your list`; }
     else {
       // Workday needs an account; with the user's go-ahead the app makes it, so the job is the app's to apply to.
@@ -256,7 +266,7 @@ export async function discover(progress = () => {}, ctx = {}) {
       }
     }
     const apply = status === "skipped" ? null : await applyUrl(j.ats, j.apply_url || j.url);
-    insertJob(j, key, status, reason, apply);
+    insertJob(j, key, status, reason, apply, check);
     addTo(keys, j.url, key);
     addTo(roles, j.url, roleKey(j.company, j.title));
     if (j.url) urls.add(cleanUrl(j.url));

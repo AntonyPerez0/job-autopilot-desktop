@@ -122,6 +122,18 @@ function category(j) {
   return { label: j.status, tone: "gray" };
 }
 const badge = (c) => `<span class="badge ${c.tone}"><span class="dot ${c.pulse ? "pulse" : ""}"></span>${esc(c.label)}</span>`;
+// Replies from employers, found in the connected mailbox.
+const REPLY = { offer: ["Offer", "green"], interview: ["Wants to talk", "green"], assessment: ["Test or task", "blue"], info: ["Needs something from you", "amber"], rejection: ["Not moving forward", "gray"], other: ["Replied", "blue"] };
+const replyBadge = (k) => (k && REPLY[k] ? `<span class="badge ${REPLY[k][1]} reply-badge">${icon("mail", 'style="width:13px;height:13px"')}${REPLY[k][0]}</span>` : "");
+const replyItem = (r) => `<div class="list-item" data-open-job="${esc(r.slug)}">${avatar(r.company)}<div class="li-main"><div class="t">${jobLink(r)}</div><div class="s">${meta(esc(r.company), esc(r.subject))}</div></div>
+  ${replyBadge(r.kind)}<span class="time hide-md">${ago(r.at)}</span></div>`;
+async function checkReplies(btn) {
+  btn.disabled = true;
+  const r = await api("/api/replies/check", {});
+  btn.disabled = false;
+  toast(r.error || (r.added ? `${r.added} new repl${r.added === 1 ? "y" : "ies"} from employers` : "No new replies"));
+  refresh(true);
+}
 function humanReason(j) {
   const r = j.reason || "";
   if (j.status === "applied") return "Submitted and confirmed by the employer.";
@@ -278,7 +290,8 @@ function tickProgress() { const h = $("progress-host"); if (h) h.innerHTML = pro
 
 // ---------- overview ----------
 async function renderOverview() {
-  const [applied, queue, failed, ev] = await Promise.all([api("/api/jobs?status=applied"), api("/api/jobs?status=queued"), api("/api/jobs?status=failed"), api("/api/events")]);
+  const [applied, queue, failed, ev, replies] = await Promise.all([api("/api/jobs?status=applied"), api("/api/jobs?status=queued"), api("/api/jobs?status=failed"), api("/api/events"), api("/api/replies")]);
+  const rs = st.replies || {};
   const c = st.counts, s = st.settings;
   const done = (c.applied || 0), stopped = (c.failed || 0);
   const rate = done + stopped ? Math.round((100 * done) / (done + stopped)) : 0;
@@ -300,6 +313,9 @@ async function renderOverview() {
   </div>
   <div class="grid-2">
     <div class="stack">
+      ${rs.mailbox || (replies || []).length ? `<div class="card"><div class="card-h"><h2>Replies from employers</h2><span class="sub">${rs.checkedAt ? `Checked ${ago(rs.checkedAt)}` : "Read from your mailbox"}</span>
+        <span class="right">${rs.mailbox ? `<button class="btn ghost sm" onclick="checkReplies(this)">${icon("refresh")}Check now</button>` : ""}</span></div>
+        ${(replies || []).length ? replies.slice(0, 5).map(replyItem).join("") : empty("mail", "No replies yet", "When an employer writes back about an application, it shows here: an interview, a test, a question, or a no.")}</div>` : ""}
       <div class="card"><div class="card-h"><h2>Recent applications</h2><span class="right"><button class="btn ghost sm" onclick="go('applied')">View all</button></span></div>
         ${applied.length ? applied.slice(0, 6).map(item).join("") : empty("send", "No applications yet", "The first ones will appear here as soon as an employer confirms.")}</div>
       <div class="card adv"><div class="card-h"><h2>Applications per day</h2><span class="sub">Last 14 days</span></div>
@@ -321,7 +337,7 @@ const kpi = (to, label, val, foot) => `<a class="kpi ${KPI_TONE[to] || ""}" href
 // A job's title is a link, so the keyboard reaches it; the whole row still opens it with a click.
 const jobLink = (j) => `<a href="#" class="job-link" data-job="${esc(j.slug)}" data-open-job="${esc(j.slug)}">${esc(cleanTitle(j.title))}</a>`;
 const item = (j) => `<div class="list-item" data-open-job="${esc(j.slug)}">${avatar(j.company)}<div class="li-main"><div class="t">${jobLink(j)}</div><div class="s">${meta(esc(j.company), esc(j.location))}</div></div>
-  ${badge(category(j))}<span class="time hide-md">${ago(j.applied_at || j.updated_at)}</span></div>`;
+  ${replyBadge(j.reply) || badge(category(j))}<span class="time hide-md">${ago(j.applied_at || j.updated_at)}</span></div>`;
 const empty = (ic, t, s) => `<div class="empty"><div class="ico">${icon(ic)}</div><h3>${t}</h3><div>${s}</div></div>`;
 const important = (e) => !/^(queued|skipped): /.test(e.message) || /^queued/.test(e.message);
 function evTone(e) {
@@ -354,7 +370,7 @@ function renderList() {
       <td><div class="co-cell">${avatar(j.company)}<div><div class="t">${jobLink(j)}</div><div class="s">${meta(esc(j.company), j.salary ? esc(j.salary.replace(/^USD /, "$").replace(/\/year$/, "")) : "")}</div></div></div></td>
       <td class="hide-md muted">${esc(j.location)}${j.work_mode ? `<div class="reason">${esc(j.work_mode)}</div>` : ""}</td>
       <td class="hide-md"><span class="tag">${esc(SOURCE[j.source] || j.source)}</span></td>
-      <td>${badge(category(j))}${j.status !== "applied" ? `<div class="reason">${esc(humanReason(j))}</div>` : ""}</td>
+      <td>${badge(category(j))}${j.reply ? `<div style="margin-top:4px">${replyBadge(j.reply)}</div>` : ""}${j.status !== "applied" ? `<div class="reason">${esc(humanReason(j))}</div>` : ""}</td>
       <td class="hide-md time">${fmtTime(j.applied_at || j.updated_at)}</td></tr>`).join("")}
   </tbody></table>`;
 }
@@ -370,7 +386,7 @@ async function renderLog() {
 async function openJob(slug) {
   open = await api("/api/job/" + encodeURIComponent(slug));
   if (!open || open.error) return;
-  if (!["answers", "resume", "shots", "posting"].includes(dtab) || (open.asks || []).length) dtab = "answers";
+  if (!["answers", "fit", "resume", "shots", "posting"].includes(dtab) || (open.asks || []).length) dtab = "answers";
   const wasOpen = $("drawer").classList.contains("open");
   if (!wasOpen) opener = document.activeElement;
   renderDrawer();
@@ -411,7 +427,7 @@ function closeDrawer() {
 }
 function renderDrawer() {
   const j = open, d = j.details || {}, c = category(j);
-  const tabs = [["answers", "Answers"], ["resume", "Resume"], ["shots", "Screenshots"], ["posting", "Posting"]];
+  const tabs = [["answers", "Answers"], ["fit", "Fit"], ["resume", "Resume"], ["shots", "Screenshots"], ["posting", "Posting"]];
   const toneCallout = { green: "green", red: "red", amber: "amber", blue: "blue", violet: "blue", gray: "gray" }[c.tone];
   const actions = [
     `<a class="btn sm" href="${esc(j.url)}" target="_blank" rel="noopener">${icon("ext")}Posting</a>`,
@@ -431,12 +447,18 @@ function renderDrawer() {
         <button class="btn ghost sm dr-close" onclick="closeDrawer()" aria-label="Close">${icon("x")}</button></div>
       <div class="chips">${badge(c)}${j.location ? `<span class="tag">${icon("pin", 'style="width:13px;height:13px"')}${esc(j.location)}</span>` : ""}
         ${j.salary ? `<span class="tag">${icon("dollar", 'style="width:13px;height:13px"')}${esc(j.salary.replace(/^USD /, "$"))}</span>` : ""}
-        ${j.source ? `<span class="tag">${esc(SOURCE[j.source] || j.source)}</span>` : ""}${j.posted_at ? `<span class="tag">Posted ${ago(j.posted_at)}</span>` : ""}</div>
+        ${j.source ? `<span class="tag">${esc(SOURCE[j.source] || j.source)}</span>` : ""}${j.posted_at ? `<span class="tag">Posted ${ago(j.posted_at)}</span>` : ""}
+        ${d.check && d.check.checked ? `<button type="button" class="tag tag-btn" data-tab="fit">${icon("check", 'style="width:13px;height:13px"')}Meets ${d.check.met} of ${d.check.checked}</button>` : ""}
+        ${d.real && d.real.level ? `<button type="button" class="tag tag-btn warn" data-tab="fit">${icon("alert", 'style="width:13px;height:13px"')}${d.real.level === "likely" ? "Likely" : "Possibly"} not being filled</button>` : ""}</div>
       <div class="callout ${toneCallout}"><div><b>${esc(c.label)}${j.applied_at ? ", " + fmtTime(j.applied_at) : ""}</b>${esc(humanReason(j))}</div></div>
+      ${(j.replies || []).length ? `<div class="replies"><div class="section-t">Replies from ${esc(j.company)}</div>${j.replies.map((r) => `<div class="reply">
+        <div class="reply-h">${replyBadge(r.kind)}<b>${esc(r.subject)}</b><span class="time">${fmtTime(r.at)}</span></div>
+        <div class="muted">${esc(r.sender.replace(/\s*<[^>]*>/, "") || r.sender)}</div>${r.snippet ? `<div class="reply-t">${esc(r.snippet)}</div>` : ""}</div>`).join("")}
+        <small class="hint">From your mailbox. Answer the employer from your own email; the app never replies for you.</small></div>` : ""}
       <div class="dr-actions">${actions}</div>
     </div>
     <div class="tabs" role="tablist" aria-label="About this application">${tabs.map(([k, l]) => `<button type="button" role="tab" id="tab-${k}" aria-selected="${dtab === k}" class="${dtab === k ? "on" : ""}" data-tab="${k}">${l}</button>`).join("")}</div>
-    <div class="dr-body" role="tabpanel" aria-labelledby="tab-${dtab}">${drawerTab(j, d)}</div>`;
+    <div class="dr-body" role="tabpanel" tabindex="0" aria-labelledby="tab-${dtab}">${drawerTab(j, d)}</div>`;
 }
 // Questions the app stopped on: the user answers them here and the job goes back in the queue.
 function askForm(j) {
@@ -484,6 +506,7 @@ function drawerTab(j, d) {
     if ((p.notClaimed || []).length) h += `<div class="section-t adv">Deliberately not claimed</div><ul class="bul adv">${p.notClaimed.map((n) => `<li>${esc(n.what)} <span>${esc(n.why || "")}</span></li>`).join("")}</ul>`;
     return ask + h || empty("list", "No answers recorded", j.status === "queued" ? "This job has not been attempted yet." : j.status === "manual" ? "You apply to this one yourself: Make my resume for this job, then Open the application." : "This job stopped before the form was filled.");
   }
+  if (dtab === "fit") return fitTab(d);
   if (dtab === "resume") {
     if (!j.resume_file) return empty("file", "No resume built", "A resume is tailored when the application starts.");
     const r = d.resume || {};
@@ -497,6 +520,21 @@ function drawerTab(j, d) {
   }
   if (dtab === "posting") return d.description ? `<div class="posting">${esc(d.description)}</div>` : empty("file", "No posting text", "");
   return "";
+}
+// What the posting asks for against the resume (checked without the AI), and whether the job looks real (freehire).
+const REQ = { met: ["check", "Your resume shows it"], missing: ["x", "Not on your resume"], later: ["clock", "After you're hired"], form: ["list", "On the application"], unchecked: ["eye", "Left to the AI"] };
+// Each line's own words, with its status first when they don't already say it ("Not on your resume: a master's degree").
+const reqWhy = (x) => { const w = String(x.why || ""), label = (REQ[x.status] || REQ.unchecked)[1]; const t = /resume|\byou\b|\bAI\b/i.test(w) ? w : `${label}: ${w}`; return t.charAt(0).toUpperCase() + t.slice(1); };
+function fitTab(d) {
+  const c = d.check, r = d.real;
+  let h = d.similarTo ? `<div class="msg info" style="margin-bottom:12px">Found because it's like ${esc(d.similarTo)}, which you applied to.</div>` : "";
+  if (c && c.items.length) h += `<div class="section-t">What the posting asks for</div>
+    <p class="hint" style="margin:0 0 8px">${c.checked ? `Your resume shows ${c.met} of the ${c.checked} things the app could check.` : "Nothing here the app could check on its own."} Checked against your approved resume and your About-you answers, without the AI.</p>
+    <ul class="req-list">${c.items.map((x) => `<li class="req ${esc(x.status)}"><span class="req-mark" aria-hidden="true">${icon((REQ[x.status] || REQ.unchecked)[0])}</span>
+      <div><div>${esc(x.text)}${x.priority === "preferred" ? ` <span class="pill">preferred</span>` : ""}</div><small>${esc(reqWhy(x))}</small></div></li>`).join("")}</ul>`;
+  if (r && (r.notes || []).length) h += `<div class="section-t">Is this job real?</div><ul class="bul">${r.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>
+    <small class="hint">From freehire, which watches the employer's own job board.</small>`;
+  return h || empty("list", "Nothing to show yet", "Jobs found from now on show what the posting asks for and how your resume covers it.");
 }
 async function act(action) {
   const r = await api("/api/job/" + encodeURIComponent(open.slug), { action });
@@ -549,6 +587,8 @@ window.addEventListener("hashchange", () => { const v = location.hash.slice(1); 
 async function refresh(full) {
   st = await api("/api/status");
   if (st.serverNow) skew = st.serverNow - Date.now();
+  // A job the keyboard is on keeps the focus when its list is drawn again.
+  const had = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.job : "";
   renderNav(); renderControls();
   $("main").dataset.view = view;
   document.title = `${TITLES[view] ? TITLES[view][0] + " - " : ""}Job Autopilot`;
@@ -556,6 +596,7 @@ async function refresh(full) {
   else if (view === "log") await renderLog();
   else if (view === "profile" || view === "settings") { if (full || !$("cfg-host")) await renderConfig(); else { const c = $("main").querySelector(".top .live"); if (c) c.outerHTML = liveChip(); const bh = $("banner-host"); if (bh) bh.innerHTML = banners(); } }
   else { if (full) $("main").innerHTML = ""; await renderListView(); }
+  if (had && (!document.activeElement || document.activeElement === document.body)) { const el = document.querySelector(`#main [data-job="${CSS.escape(had)}"]`); if (el) el.focus(); }
 }
 if (!TITLES[view]) view = "overview";
 refresh(true);
@@ -634,6 +675,12 @@ function banners() {
   if (!st) return "";
   const s = st.settings;
   let h = updateBanner();
+  const rp = st.replies || {};
+  if (rp.act && rp.first) {
+    const f = rp.first, k = REPLY[f.kind] || REPLY.other;
+    h += `<div class="banner green">${icon("mail")}<div><b>${rp.act === 1 ? `${esc(f.company)}: ${esc(k[0].toLowerCase())}` : `${rp.act} employers wrote back about your applications`}</b>${esc(f.subject)}. Open it to read the reply; then answer it from your own email.</div>
+      <div class="right"><button class="btn sm primary" data-open-job="${esc(f.slug)}">Read it</button></div></div>`;
+  }
   const waiting = st.toAnswer || { count: 0 };
   if (waiting.count && waiting.first) h += `<div class="banner amber">${icon("alert")}<div><b>${waiting.count} application${waiting.count === 1 ? " is" : "s are"} waiting for your answer</b>The app stopped on questions only you can answer. Answer them and it carries on with your answers.</div>
     <div class="right"><button class="btn sm primary" data-open-job="${esc(waiting.first.slug)}">Answer now</button></div></div>`;
@@ -757,7 +804,7 @@ async function renderConfig() {
       ${card("prefs", "Jobs to look for", "Job titles, where, and which sites to search", true)}
       ${card("questions", "About you", "The answers application forms ask for")}
       ${card("ai", "AI", "The AI service the app uses")}
-      ${card("mailbox", "Mailbox", "Optional: email codes and spotting jobs you already applied to")}
+      ${card("mailbox", "Mailbox", "Optional: email codes, jobs you already applied to, and replies from employers")}
       ${card("accounts", "Job site accounts", "Optional: let the app make accounts on Workday sites and apply there too", false, true)}
       ${card("running", "Pace and browser", "How many a day, and the browser window", false, true)}
       <div class="card adv" style="margin-bottom:12px"><div class="card-h"><h2>Application history</h2><span class="sub">So you never apply twice, even after a reinstall</span></div><div class="sec" id="sec-history"></div></div>

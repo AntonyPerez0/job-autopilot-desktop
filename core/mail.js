@@ -256,6 +256,8 @@ const ATS_MAIL = [
   [/(^|\.)teamtailor\.com$/, ["teamtailor.com"]], [/(^|\.)recruitee\.com$/, ["recruitee.com"]], [/(^|\.)breezy\.hr$/, ["breezy.hr"]],
   [/(^|\.)applytojob\.com$/, ["applytojob.com", "jazzhr.com"]], [/(^|\.)(ats\.rippling\.com|rippling-ats\.com)$/, ["rippling.com"]],
   [/(^|\.)jobs\.personio\.(de|com)$/, ["personio.de", "personio.com"]], [/(^|\.)comeet\.(co|com)$/, ["comeet.co", "comeet.com"]],
+  [/(^|\.)careerplug\.com$/, ["careerplug.com"]], [/(^|\.)hireology\.com$/, ["hireology.com"]], [/(^|\.)applicantpro\.com$/, ["applicantpro.com"]],
+  [/(^|\.)hrmdirect\.com$/, ["hrmdirect.com"]], [/(^|\.)isolvedhire\.com$/, ["isolvedhire.com"]], [/(^|\.)pinpointhq\.com$/, ["pinpointhq.com"]], [/^jobs\.gusto\.com$/, ["gusto.com"]],
 ];
 // Where the system a page is on sends its mail from; for a form on the employer's own site, that site.
 export function mailDomainsFor(url) {
@@ -278,6 +280,105 @@ export function confirmationOk(mail, job) {
   if (!signer || !dkimPassFor(mail.headers, [signer])) return false;
   const display = String(mail.from || "").replace(/<[^>]*>|\S+@\S+/g, " ");
   return [mail.subject, display].some((t) => { const w = words(t); return name.every((x) => w.includes(x)); });
+}
+
+// ---------- replies from employers (the idea of freehire's mail inbox, on this computer) ----------
+
+// What a reply says, by its own words; no AI. The strongest first: a rejection that mentions the interview is
+// still a rejection. Sentences about what might happen later ("if your background fits, we'll reach out to
+// schedule an interview") don't count: they're how a "thanks for applying" email talks.
+const OFFER = /\b(pleased|happy|excited|delighted|thrilled) to (extend|offer)\b|\boffer (letter|of employment)\b|\bjob offer\b|\bverbal offer\b/i;
+const REJECT = /\bunfortunately\b|\bnot (to )?(be )?(moving|move|proceeding|proceed) forward\b|\bdecided (not to (move|proceed)|to (move|proceed|go|pursue)[^.]{0,30}\b(other|another|different) (candidates?|applicants?|direction))|\bother candidates whose\b|\bnot (been )?selected\b|\bposition (has been|was|is now) filled\b|\bno longer (under consideration|being considered)\b|\bregret to inform\b|\bnot (a|the right) (match|fit)\b|\bwon't be (moving|proceeding)\b|\bwill not be (moving|proceeding|advancing)\b/i;
+const INTERVIEW = /\binterview\b|\bphone screen\b|\b(schedule|set up|book|find) (a |an )?(time|call|chat|meeting|conversation)\b|\byour availability\b|\bcalendly\.com\b|\bwould (like|love) to (speak|talk|meet|chat|connect)\b|\binvite you to\b|\bavailable (for|to) (a |an )?(call|chat|talk|meet)/i;
+const ASSESS = /\bassessment\b|\bskills? test\b|\bquestionnaire\b|\bcomplete (the|this|a|our) (test|task|assignment|exercise|challenge)\b|\bhirevue\b|\bcodesignal\b|\bhackerrank\b|\bcriteria corp\b|\bpre-?employment test\b/i;
+const INFO = /\b(additional|more|further) (information|details|documents?)\b|\bplease (provide|send|complete|confirm|upload|fill out)\b|\bbackground (check|screening)\b|\breferences\b|\baction (required|needed)\b|\bmissing (information|documents?)\b/i;
+const MAYBE = /\b(if|should|once|whether)\b[^.!?]{0,160}\b(we|you|your|there|qualifications|background|experience|skills)\b|\bwill (be in touch|contact you|reach out|get back to you)\b|\bmay (contact|reach out)\b/i;
+export const REPLY_KINDS = { offer: "Offer", interview: "Wants to talk", assessment: "Test or task", info: "Needs something from you", rejection: "Not moving forward", received: "Application received", other: "Reply" };
+export function classifyReply(subject, text) {
+  const all = `${subject || ""}. ${String(text || "").slice(0, 8000)}`;
+  if (OFFER.test(all)) return "offer";
+  if (REJECT.test(all)) return "rejection";
+  const firm = all.split(/(?<=[.!?])\s+|\n+/).filter((x) => !MAYBE.test(x)).join(" ");
+  if (INTERVIEW.test(firm)) return "interview";
+  if (ASSESS.test(firm)) return "assessment";
+  if (INFO.test(firm)) return "info";
+  if (CONFIRM.test(all)) return "received";
+  return "other";
+}
+
+// The part of a reply worth showing: its own words, without the quoted email it answers or the signature.
+export function replySnippet(text, n = 300) {
+  const lines = [];
+  for (const l of String(text || "").slice(0, 20000).split(/\r?\n/)) {
+    if (/^\s*>/.test(l)) continue;
+    if (/^\s*(on .{5,80} wrote:|-{2,}\s*original message|from: .+@)/i.test(l) || /^\s*--\s*$/.test(l)) break;
+    if (l.trim()) lines.push(l.trim());
+  }
+  const t = lines.join(" ").replace(/\s+/g, " ").trim();
+  return t.length > n ? t.slice(0, n).replace(/\s\S*$/, "") + "..." : t;
+}
+
+// Could this sender be one of these employers (its application system, or a domain named after it)? A quick look
+// at the envelope only, before the message is downloaded.
+export function maybeEmployer(from, jobs) {
+  const d = senderDomain(from);
+  if (!d) return false;
+  if (ALL_ATS_MAIL.some((x) => under(d, x))) return true;
+  const label = siteOf(d).split(".")[0].replace(/[^a-z0-9]/g, "");
+  return jobs.some((j) => { const name = words(j.company); return name.length && (label === name.join("") || label === name[0] || mailDomainsFor(j.apply_url || j.url).some((x) => under(d, x))); });
+}
+
+// Which application a reply answers, or null. Like a confirmation: from the job's application system, an
+// application system the app knows, or a domain named after the employer, signed by it (DKIM pass, the provider's
+// topmost verdict), and naming the employer in full (subject, sender name or the first lines). The same employer
+// more than once: the role it names, else the latest application. Nothing older than the application counts.
+// mail: { from, headers, subject, text, date }; jobs: [{ slug, company, title, url, apply_url, applied_at }].
+export function replyJob(mail, jobs) {
+  const d = senderDomain(mail.from);
+  if (!d) return null;
+  const site = siteOf(d), label = site.split(".")[0].replace(/[^a-z0-9]/g, "");
+  const display = String(mail.from || "").replace(/<[^>]*>|\S+@\S+/g, " ");
+  const named = new Set(words(`${mail.subject} ${display} ${String(mail.text || "").slice(0, 4000)}`));
+  const at = Date.parse(mail.date) || Date.now();
+  const cands = jobs.filter((j) => {
+    const name = words(j.company);
+    if (!name.length || !name.every((x) => named.has(x))) return false;
+    const signer = [...mailDomainsFor(j.apply_url || j.url), ...ALL_ATS_MAIL].find((x) => under(d, x)) || (label === name.join("") || label === name[0] ? site : null);
+    if (!signer || !dkimPassFor(mail.headers, [signer])) return false;
+    return !j.applied_at || !Number.isFinite(Date.parse(j.applied_at)) || at >= Date.parse(j.applied_at) - 86400000;
+  });
+  if (cands.length <= 1) return cands[0] || null;
+  const text = `${mail.subject} ${mail.text}`.toLowerCase();
+  const score = (j) => roleCore(j.title, j.company).filter((w) => new RegExp(`\\b${w}\\b`).test(text)).length;
+  return cands.sort((a, b) => score(b) - score(a) || String(b.applied_at || "").localeCompare(String(a.applied_at || "")))[0];
+}
+
+// Emails since a date (INBOX and Spam), read only, that keep(envelope) wants: { id, from, headers, subject, text, date }.
+export async function mailSince(cfg, since, keep, { max = 400, download = 60 } = {}) {
+  let c;
+  try {
+    c = await connect(cfg);
+    if (!c) return null;
+    const out = [];
+    for (const box of await folders(c)) {
+      try { await c.mailboxOpen(box, { readOnly: true }); } catch { continue; }
+      const uids = ((await c.search({ since }, { uid: true })) || []).slice(-max);
+      if (!uids.length) continue;
+      const want = [];
+      for await (const m of c.fetch(uids.join(","), { envelope: true, internalDate: true }, { uid: true })) {
+        const from = ((m.envelope && m.envelope.from) || []).map((x) => `${x.name || ""} <${x.address || ""}>`).join(", ");
+        const subject = (m.envelope && m.envelope.subject) || "";
+        if (keep({ from, subject })) want.push({ uid: m.uid, from, subject, id: (m.envelope && m.envelope.messageId) || `${box}:${m.uid}`, date: m.internalDate });
+      }
+      for (const w of want.slice(-download)) {
+        const msg = await c.fetchOne(String(w.uid), { source: true }, { uid: true });
+        if (!msg) continue;
+        const t = await textOf(msg.source);
+        out.push({ id: w.id, from: w.from, subject: w.subject, headers: headersOf(msg.source), text: t.plain || t.text, date: (w.date instanceof Date ? w.date : new Date(w.date || Date.now())).toISOString() });
+      }
+    }
+    return out;
+  } finally { if (c) await c.logout().catch(() => {}); }
 }
 
 export async function findConfirmation(cfg, company, title, days = 60, url = "") {

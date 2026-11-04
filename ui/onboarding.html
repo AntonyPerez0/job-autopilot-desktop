@@ -34,7 +34,7 @@ const STEPS = [
   { id: "review", label: "Check it", title: "Approve every piece", lead: "Resumes are only ever assembled from what you approve here, so nothing reaches an employer that you did not write and check." },
   { id: "questions", label: "About you", title: "About you", lead: "Application forms ask these every time. The app always uses your answers here, and corrects the AI if it ever says something different." },
   { id: "prefs", label: "Jobs to look for", title: "What jobs to look for", lead: "Pick job titles, where you want to work, and where the app should look. It checks every job it finds for fit before applying." },
-  { id: "mail", label: "Mailbox", title: "Connect your mailbox (optional)", lead: "For employers that email a security code, and to spot jobs you already applied to." , optional: true },
+  { id: "mail", label: "Mailbox", title: "Connect your mailbox (optional)", lead: "For employers that email a security code, to spot jobs you already applied to, and to show you when an employer writes back." , optional: true },
   { id: "start", label: "Start" },
 ];
 let i = 0, cfg = null, form = null;
@@ -144,7 +144,7 @@ document.getElementById("next").onclick = async () => {
       // The kind of work sets sensible defaults: where to look and which titles to suggest.
       const kind = (document.querySelector("[name=kind]:checked") || {}).value || "both";
       if (kind !== cfg.prefs.jobKind || !cfg.prefs.titles.length) {
-        const boards = { ...cfg.prefs.boards, freehire: kind !== "hourly", hiringcafe: true };
+        const boards = { ...cfg.prefs.boards, freehire: true, hiringcafe: true };
         const seniority = kind === "hourly" ? ["junior", "middle"] : cfg.prefs.seniority;
         cfg.prefs = await window.ja.api("/api/prefs/save", { prefs: { jobKind: kind, boards, seniority } });
       }
