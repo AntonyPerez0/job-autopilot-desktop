@@ -25,6 +25,7 @@ import { addJob } from "./addjob.js";
 import { addRecalled, applySuggestion, checklist, createFromInterview, progress as writing, recallFor, resetAskBudget, rewriteWithAnswer, setProgress, suggestImprovements } from "./studio.js";
 import { importProjects, listRepos, placeProjects, usernameOf } from "./github.js";
 import { LIMITS, clearTalk, getTalk, notReady, say } from "./talk.js";
+import { cancelConnect, connectOpenRouter } from "./oauth.js";
 import { asksFor, removeYourAnswer, saveYourAnswers } from "./asked.js";
 import { monthUse, testKey as testSerpKey } from "./sources/google.js";
 import { testKey as testUsajobsKey } from "./sources/usajobs.js";
@@ -53,11 +54,15 @@ export function capFill(input) {
 const originOfUrl = (u) => { try { const x = new URL(String(u || "")); return x.origin.toLowerCase().replace(/\.(?=:|$)/, ""); } catch { return ""; } };
 const sameOrigin = (a, b) => !!originOfUrl(a) && originOfUrl(a) === originOfUrl(b);
 const sameHost = (a, b) => !!a && String(a).trim().toLowerCase().replace(/\.+$/, "") === String(b || "").trim().toLowerCase().replace(/\.+$/, "");
-const EDITABLE = ["paused", "acceptedTerms", "windowMode", "historyBackup", "historyFolder", "dailyCap", "dayStartsAtHour", "minutesBetweenApplies", "postedWithinDays", "searchEveryMinutes", "headless", "browser", "maxAttempts", "uiMode"];
+const EDITABLE = ["paused", "acceptedTerms", "windowMode", "historyBackup", "historyFolder", "dailyCap", "dayStartsAtHour", "minutesBetweenApplies", "postedWithinDays", "searchEveryMinutes", "headless", "browser", "maxAttempts", "uiMode",
+  "keepRunning", "openAtLogin", "keepAwake", "notifications", "setupStep", "touredAt", "dismissed"];
 const bad = (msg, code = 400) => ({ error: plainAiError(msg), code });
 // main.js plugs in the updater (it needs Electron); without it (tests, scripts) updates are off.
 let updater = null;
 export const setUpdater = (u) => { updater = u; };
+// ... and the person's own browser, for signing in to OpenRouter.
+let opener = null;
+export const setOpener = (fn) => { opener = fn; };
 
 export const VERSION = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 
@@ -89,11 +94,14 @@ function status() {
     ORDER BY (reason LIKE 'you answered %') DESC, (work_mode = 'remote') ASC, posted_at DESC LIMIT 1`).get(s.maxAttempts) || null;
   const firstFilled = db.prepare("SELECT slug, title, company FROM jobs WHERE status = 'filled' ORDER BY updated_at ASC LIMIT 1").get() || null;
   const toAnswer = db.prepare("SELECT slug, title, company FROM jobs WHERE status = 'failed' AND reason LIKE 'could not fill every required field%' ORDER BY updated_at DESC").all();
+  // Applications stopped at an emailed code or confirmation link: the mailbox would finish them.
+  const codes = db.prepare("SELECT slug, title, company FROM jobs WHERE status = 'failed' AND (reason LIKE 'security code:%' OR reason LIKE 'verify email:%') ORDER BY updated_at DESC").all();
   const { wake, ...st } = state;
   // Replies from employers the person hasn't opened yet, the ones asking something of them first.
   const replies = db.prepare(`SELECT r.slug, r.kind, r.subject, r.at, j.company, j.title FROM replies r JOIN jobs j ON j.slug = r.slug WHERE r.seen = 0
     ORDER BY CASE r.kind WHEN 'offer' THEN 0 WHEN 'interview' THEN 1 WHEN 'assessment' THEN 2 WHEN 'info' THEN 3 ELSE 4 END, r.at DESC`).all();
   return { state: st, counts, appliedToday: appliedToday(), settings: s, model: s.ai.model, serverNow: Date.now(), next, firstFilled, toAnswer: { count: toAnswer.length, first: toAnswer[0] || null },
+    codes: { count: codes.length, first: codes[0] || null },
     replies: { unseen: replies.length, act: replies.filter((r) => ["offer", "interview", "assessment", "info"].includes(r.kind)).length, first: replies[0] || null, checkedAt: s.repliesCheckedAt || null, mailbox: !!(s.mailbox && getSecret("mailPassword")) }, search: lastSearch.at ? { ...lastSearch, nextAt: state.nextSearch || null, skipped: lastSearch.done && !counts.queued ? skipSummary(db) : null } : null, version: VERSION,
     browser: { open: browserOpen(), mode: windowModeOf(s) }, update: updater ? updater.state() : null };
 }
@@ -144,6 +152,9 @@ const ROUTES = {
     for (const k of EDITABLE) if (k in b) patch[k] = typeof cur[k] === "number" ? Math.max(0, Number(b[k]) || 0) : typeof cur[k] === "boolean" ? !!b[k] : b[k];
     if ("dailyCap" in patch) patch.dailyCap = Math.min(100, patch.dailyCap);
     if ("dayStartsAtHour" in patch) patch.dayStartsAtHour = Math.min(23, patch.dayStartsAtHour);
+    if ("setupStep" in patch) patch.setupStep = Math.min(10, patch.setupStep);
+    if ("touredAt" in patch) patch.touredAt = b.touredAt ? new Date().toISOString() : null;
+    if ("dismissed" in patch) patch.dismissed = (Array.isArray(b.dismissed) ? b.dismissed : []).filter((x) => typeof x === "string").map((x) => x.slice(0, 60)).slice(0, 50);
     if ("minutesBetweenApplies" in patch) patch.minutesBetweenApplies = Math.max(1, patch.minutesBetweenApplies);
     if (b.dryRun === true) patch.dryRun = true;
     const s = saveSettings(patch);
@@ -185,6 +196,20 @@ const ROUTES = {
     const apiKey = b.apiKey || (sameOrigin(apiBase, saved) ? getSecret("apiKey") : "");
     try { return await listModels({ apiBase, apiKey }); } catch (e) { return bad(e.message); }
   },
+  // Connect with OpenRouter: sign in and authorize in the browser; the key comes back to the app. Then it's tested,
+  // and an account with no credit yet is told how to add some.
+  "POST /api/ai/openrouter": async () => {
+    if (!opener) return bad("Connecting needs the app's window: open Job Autopilot and try again.");
+    let key;
+    try { key = await connectOpenRouter((u) => opener(u)); } catch (e) { return bad(e.message === "cancelled" ? "Cancelled. Press Connect with OpenRouter when you're ready." : e.message); }
+    await setSecret("apiKey", key);
+    const cur = getSettings().ai;
+    const ai = { ...cur, provider: "openrouter", apiBase: PROVIDERS.openrouter.apiBase, model: providerOf(cur) === "openrouter" && cur.model ? cur.model : PROVIDERS.openrouter.model };
+    saveSettings({ ai });
+    try { await testAI({ ...ai, apiKey: key }); return { ok: true, hasKey: true, model: ai.model }; }
+    catch (e) { return { ok: true, hasKey: true, model: ai.model, warning: plainAiError(e.message) }; }
+  },
+  "POST /api/ai/openrouter/cancel": () => { cancelConnect(); return { ok: true }; },
   "POST /api/ai/save": async (b) => {
     const ai = { ...getSettings().ai };
     // A new address without a new key: the old key is cleared rather than paired with somewhere it wasn't meant for.
@@ -616,7 +641,7 @@ async function jobRoute(slug, b) {
       log(slug, `you answered ${n} question${n === 1 ? "" : "s"}; queued again`);
     }
     if (b.action === "reviewed") {
-      if (j.status !== "filled") return bad("Only a filled (dry run) application can be reviewed.", 409);
+      if (j.status !== "filled") return bad("Only a practice application (filled in, not sent) can be checked.", 409);
       setJob(slug, { reviewed: 1 });
       saveSettings({ reviewedDryRun: true });
       log(slug, "you checked this filled application");

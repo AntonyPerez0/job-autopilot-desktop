@@ -59,11 +59,14 @@
       const p = P[prov];
       const base = prov === guess ? s.apiBase : p.apiBase;
       const model = prov === guess ? s.model : p.model || "";
-      el.innerHTML = `<div class="form">
-        ${prov === "openrouter" ? `<ol class="steps-list">
-          <li><b>Make a free OpenRouter account.</b> <button type="button" class="btn sm" data-link="https://openrouter.ai/sign-up">${icon("ext")}Open OpenRouter</button></li>
-          <li><b>Add $5 of credit</b> (Settings, then Credits). That's enough for hundreds of applications.</li>
-          <li><b>Create a key</b> (Settings, then Keys, then Create), copy it, and paste it below. <button type="button" class="btn sm ghost" data-link="https://openrouter.ai/settings/keys">${icon("ext")}Open the Keys page</button></li></ol>` : ""}
+      el.innerHTML = `<div class="form" data-ai-form>
+        ${prov === "openrouter" ? `<div class="connect">
+          <p style="margin:0">The easiest way is an <b>OpenRouter</b> account that you pay for yourself: usually about a cent per application, and $5 of credit lasts for hundreds.</p>
+          <div class="row-actions"><button type="button" class="btn primary" data-connect>${icon("key")}${cfg.hasKey ? "Connect again" : "Connect with OpenRouter"}</button>
+            <button type="button" class="btn ghost" data-connect-cancel hidden>Cancel</button></div>
+          <small class="hint">Your web browser opens OpenRouter. Sign in, or make a free account there, then press <b>Authorize</b>. Come back here once the page says you're connected.</small>
+          <div data-cmsg>${cfg.hasKey && tested ? `<div class="msg ok">Connected to OpenRouter.</div>` : ""}</div></div>` : ""}
+        <details class="more" data-paste ${prov === "openrouter" ? "" : "hidden"}><summary><b>I already have a key, or want another model</b><span>Paste an OpenRouter key, or pick the model</span></summary><div class="form" data-paste-host style="padding:4px 16px 16px"></div></details>
         <details class="more" ${prov === "openrouter" ? "" : "open"}><summary><b>Other ways to connect an AI</b><span>Another service, or a free model on this computer</span></summary>
           <div class="form">${fld("Where the AI runs", radios("prov", prov, [["openrouter", "OpenRouter (recommended)"], ["custom", "Another OpenAI-compatible service"], ["ollama", "Ollama, on this computer"], ["lmstudio", "LM Studio, on this computer"]]))}</div></details>
         ${p.local ? `<div class="callout blue" style="margin:0"><div><b>A model on your own computer</b>
@@ -76,23 +79,54 @@
             : `<li>Install LM Studio and download a model in it.</li><li>Open the Developer tab, load the model with a <b>context length of 16384 or more</b>, and start the server.</li><li>Press <strong>Find models</strong>, pick it, and press <strong>Test</strong>.</li>`}</ol>
           <button type="button" class="btn sm" style="margin-top:8px" data-link="${esc(p.url)}">${icon("ext")}Get ${esc(p.name.replace(/ \(.*/, ""))}</button></div></div>` : ""}
         <div ${prov === "openrouter" ? "hidden" : ""}>${fld("Server address", inp("apiBase", base, 'placeholder="https://api.example.com/v1"'), p.local ? "Leave this as it is unless you changed the port." : "The address that ends in /v1 (for example https://api.openai.com/v1).")}</div>
-        <div ${p.local ? "hidden" : ""}>${fld(prov === "openrouter" ? "Paste your key here" : "API key", `<input name="apiKey" type="password" autocomplete="off" placeholder="${cfg.hasKey ? "Saved. Paste a new key to replace it." : "sk-or-..."}">`,
+        <div data-keybox ${p.local ? "hidden" : ""}>${fld(prov === "openrouter" ? "Paste your key here" : "API key", `<input name="apiKey" type="password" autocomplete="off" placeholder="${cfg.hasKey ? "Saved. Paste a new key to replace it." : "sk-or-..."}">`,
           `Stored encrypted on this computer only.${prov === "openrouter" ? ` <a href="#" data-link="https://openrouter.ai/settings/keys">Get an OpenRouter key</a> (add a few dollars of credit first).` : ""}`)}</div>
-        <div class="form-row" ${prov === "openrouter" ? "data-adv hidden" : ""}>
+        <div class="form-row" data-modelrow ${prov === "openrouter" ? "data-adv hidden" : ""}>
           ${fld("Model", `<input name="model" list="${listId}" value="${esc(model)}" placeholder="${p.local ? "Press Find models" : ""}">`, prov === "openrouter" ? "Default: z-ai/glm-5.3-flash (fast and cheap)." : "")}
           ${prov === "ollama" ? fld("Context length (tokens)", inp("contextLength", s.contextLength || 16384, 'type="number" min="8192" step="1024"'), "16384 fits a posting and your resume. More needs more memory.") : ""}
         </div>
         <datalist id="${listId}"></datalist>
-        <div class="row-actions"><button type="button" class="btn" data-test>${icon("check")}${p.local ? "Test" : "Test key"}</button>
+        <div class="row-actions" data-testrow><button type="button" class="btn" data-test>${icon("check")}${p.local ? "Test" : "Test key"}</button>
           <button type="button" class="btn ghost" data-models ${prov === "openrouter" ? "data-adv hidden" : ""}>${icon("list")}${p.local ? "Find models" : "Show available models"}</button>
           ${prov === "openrouter" ? `<a href="#" class="muted" data-show-adv>Choose a different model</a>` : ""}</div>
         <div data-msg></div></div>`;
+      // OpenRouter: Connect does it all; pasting a key and choosing a model wait in "I already have a key".
+      if (prov === "openrouter") { const host = el.querySelector("[data-paste-host]"); for (const x of ["[data-keybox]", "[data-modelrow]", "datalist", "[data-testrow]", "[data-msg]"]) host.append(el.querySelector(x)); }
       bind();
     };
     const cur = () => ({ provider: prov, apiBase: prov === "openrouter" ? P.openrouter.apiBase : val(el, "apiBase"), apiKey: P[prov].local ? "" : val(el, "apiKey"),
       model: val(el, "model"), contextLength: Number(val(el, "contextLength")) || undefined });
     const bind = () => {
       const m = el.querySelector("[data-msg]");
+      const connect = el.querySelector("[data-connect]");
+      if (connect) {
+        const cm = el.querySelector("[data-cmsg]"), cancel = el.querySelector("[data-connect-cancel]");
+        const credit = (text) => {
+          cm.innerHTML = `<div class="msg err">${esc(text)}</div><div class="row-actions" style="margin-top:8px"><button type="button" class="btn sm primary" data-credit>${icon("ext")}Add credit on OpenRouter</button>
+            <button type="button" class="btn sm" data-recheck>${icon("refresh")}I added it: check again</button></div>`;
+          cm.querySelector("[data-credit]").onclick = () => openUrl("https://openrouter.ai/settings/credits");
+          cm.querySelector("[data-recheck]").onclick = async () => {
+            msg(cm, "info", "Checking...");
+            const r = await api("/api/ai/test", { provider: "openrouter", apiBase: P.openrouter.apiBase, model: (cfg.settings.ai || {}).model || P.openrouter.model });
+            if (r.error) return credit(r.error);
+            tested = true; msg(cm, "ok", "Connected, and your OpenRouter account is ready.");
+          };
+        };
+        connect.onclick = async () => {
+          connect.disabled = true; cancel.hidden = false;
+          msg(cm, "info", "Waiting for you in your web browser: sign in to OpenRouter and press Authorize...");
+          const r = await api("/api/ai/openrouter", {});
+          connect.disabled = false; cancel.hidden = true;
+          if (r.error) return msg(cm, "err", r.error);
+          cfg.hasKey = true;
+          cfg.settings.ai = { ...cfg.settings.ai, provider: "openrouter", apiBase: P.openrouter.apiBase, model: r.model };
+          const box = el.querySelector("[name=model]"); if (box && !box.value) box.value = r.model;
+          if (r.warning) { tested = false; return credit(/credit/i.test(r.warning) ? "Connected, but your OpenRouter account has no credit yet. Add $5 (enough for hundreds of applications), then press I added it." : r.warning); }
+          tested = true;
+          msg(cm, "ok", "Connected to OpenRouter. You're all set: press Continue.");
+        };
+        cancel.onclick = () => api("/api/ai/openrouter/cancel", {});
+      }
       el.querySelectorAll("[name=prov]").forEach((r) => r.onchange = () => { prov = val(el, "prov"); tested = false; draw(); });
       el.querySelectorAll("[data-link]").forEach((a) => a.onclick = (e) => { e.preventDefault(); openUrl(a.dataset.link); });
       const adv = el.querySelector("[data-show-adv]");
@@ -121,7 +155,8 @@
       async save() {
         const c = cur();
         if (!c.apiBase) return "Enter the server address.";
-        if (!P[prov].local && !c.apiKey && !cfg.hasKey) return "Paste your API key.";
+        if (!P[prov].local && !c.apiKey && !cfg.hasKey) return prov === "openrouter" ? "Press Connect with OpenRouter first, and press Authorize in your browser." : "Paste your API key.";
+        if (prov === "openrouter" && !c.model) c.model = (cfg.settings.ai || {}).model || P.openrouter.model;
         if (!c.model) return P[prov].local ? "Press Find models and pick a model." : "Pick a model.";
         if (!tested || c.apiKey) {
           const r = await api("/api/ai/test", c);
@@ -756,11 +791,14 @@
   }
 
   // ---------- 2b. Review: approve every summary, bullet, skill group and layout ----------
-  function review(el, cfg) {
+  // simple: the first-run setup. Each part of the resume reads as it will on the page, with Looks right and Fix this;
+  // layouts and the other extras stay out of the way (layouts aren't claims, so they're approved on save).
+  function review(el, cfg, { simple = false } = {}) {
     const p = cfg.profile;
     if (!p) { el.innerHTML = `<div class="msg info">Upload a resume first.</div>`; return { save: async () => "Upload a resume first." }; }
     const arr = (x) => (Array.isArray(x) ? x : []);
     let bulk = false;
+    const editing = new Set();
     const newId = (list, base) => { let i = 1, id = base; const ids = new Set(arr(list).map((x) => x.id)); while (ids.has(id)) id = `${base}${++i}`; return id; };
     const counts = () => {
       let n = 0, ok = 0;
@@ -779,13 +817,11 @@
     const group = (title, key, body, add) => `<div class="rv-group"><div class="rv-head">${title}<span class="right">
       ${add ? `<button type="button" class="btn ghost sm" data-add="${add}">${icon("plus")}Add</button>` : ""}
       <button type="button" class="btn sm" data-all="${key}">${icon("check")}Approve all</button></span></div>${body || `<div class="rv-item"><span></span><span class="muted">Nothing here.</span></div>`}</div>`;
-    const draw = () => {
-      const c = counts();
-      // After an "approve all", the lines it left for the person stay pointed out until each is ticked or deleted.
-      const heldNow = [...arr(p.summaries), ...["experience", "projects"].flatMap((k) => arr(p[k]).flatMap((e) => arr(e.bullets)))].filter((x) => x.warning && !x.approved).length;
-      let h = `<div class="banner blue"><div style="flex:1"><b>${c.ok} of ${c.n} pieces approved</b>Your resume is only ever made from pieces you approve here. Read each line, fix anything that isn't exactly true, delete what you'd never send, and tick the rest.</div>
-        <div class="right"><button type="button" class="btn sm primary" data-approve-everything>${icon("check")}Everything is true: approve all</button></div></div><div data-held>${bulk && heldNow ? `<div class="msg info">${heldNow} line${heldNow === 1 ? " has" : "s have"} a "Check this" note, so ${heldNow === 1 ? "it was" : "they were"} left unticked. Read ${heldNow === 1 ? "it" : "each one"} (look for the orange note), fix or delete what isn't true, then tick ${heldNow === 1 ? "it" : "them"} yourself.</div>` : ""}</div>`;
-      h += group("Summaries", "summaries", arr(p.summaries).map((s, i) => item(`summaries.${i}.text`, s.text, s.approved, { warning: s.warning })).join(""), "summary");
+    // Every part of the resume: its title, the full editor's rows, the add button, and its lines as they read on the page.
+    const sections = () => {
+      const out = [];
+      out.push({ key: "summaries", title: "Summaries", add: "summary", body: arr(p.summaries).map((s, i) => item(`summaries.${i}.text`, s.text, s.approved, { warning: s.warning })).join(""),
+        lines: arr(p.summaries).map((s, i) => ({ obj: s, path: `summaries.${i}`, text: s.text })), simpleTitle: "Your summary" });
       for (const [k, title] of [["experience", "Experience"], ["projects", "Projects"]]) {
         arr(p[k]).forEach((e, ei) => {
           const head = `<div class="rv-item"><span></span><div class="form-row">
@@ -794,19 +830,55 @@
             <input type="text" data-edit="${k}.${ei}.dates" value="${esc(e.dates || "")}" placeholder="Dates"></div>
             <button type="button" class="btn ghost sm" data-del="${k}.${ei}" title="Delete this entry">${icon("trash")}</button></div>
             ${k === "projects" ? `<div class="rv-item"><span></span><label class="check"><input type="checkbox" data-flag="${k}.${ei}.aiBuilt" ${e.aiBuilt ? "checked" : ""}>Built mostly by AI coding agents (answers must say so, and never "I built it")</label><span></span></div>` : ""}`;
-          h += group(`${title}: ${esc(e.title || "")}${e.org ? ", " + esc(e.org) : ""}`, `${k}.${ei}.bullets`, head + arr(e.bullets).map((b, bi) => item(`${k}.${ei}.bullets.${bi}.text`, b.text, b.approved, { source: b.source, warning: b.warning })).join(""), `bullet:${k}.${ei}`);
+          out.push({ key: `${k}.${ei}.bullets`, title: `${title}: ${esc(e.title || "")}${e.org ? ", " + esc(e.org) : ""}`, add: `bullet:${k}.${ei}`,
+            body: head + arr(e.bullets).map((b, bi) => item(`${k}.${ei}.bullets.${bi}.text`, b.text, b.approved, { source: b.source, warning: b.warning })).join(""),
+            simpleTitle: `${esc(e.title || (k === "projects" ? "Project" : "Job"))}${e.org ? `, ${esc(e.org)}` : ""}`, sub: [e.dates, e.aiBuilt ? "built mostly with AI coding tools" : ""].filter(Boolean).join(", "),
+            lines: arr(e.bullets).map((b, bi) => ({ obj: b, path: `${k}.${ei}.bullets.${bi}`, text: b.text })) });
         });
       }
-      h += group("Skills", "skills", arr(p.skills).map((s, i) => `<div class="rv-item ${s.approved ? "ok" : ""}"><input type="checkbox" class="approve" data-approve="skills.${i}.text" ${s.approved ? "checked" : ""}>
+      out.push({ key: "skills", title: "Skills", add: "skill", body: arr(p.skills).map((s, i) => `<div class="rv-item ${s.approved ? "ok" : ""}"><input type="checkbox" class="approve" data-approve="skills.${i}.text" ${s.approved ? "checked" : ""}>
         <div class="form-row" style="grid-template-columns:200px 1fr"><input type="text" data-edit="skills.${i}.label" value="${esc(s.label)}"><input type="text" data-edit="skills.${i}.items" value="${esc(s.items)}"></div>${s.offPage ? `<small class="hint" style="grid-column:2/-1">Kept off the resume: recruiters skip general abilities like these. Your lines already show them.</small>` : ""}
-        <button type="button" class="btn ghost sm" data-del="skills.${i}">${icon("trash")}</button></div>`).join(""), "skill");
-      h += group("Education (as it appears on the resume)", "education", arr(p.education).map((e, i) => `<div class="rv-item ${e.approved ? "ok" : ""}"><input type="checkbox" class="approve" data-approve="education.${i}.text" ${e.approved ? "checked" : ""}>
+        <button type="button" class="btn ghost sm" data-del="skills.${i}">${icon("trash")}</button></div>`).join(""),
+        lines: arr(p.skills).map((s, i) => ({ obj: s, path: `skills.${i}`, text: `${s.label}: ${s.items}` })) });
+      out.push({ key: "education", title: "Education (as it appears on the resume)", add: "education", simpleTitle: "School and training", body: arr(p.education).map((e, i) => `<div class="rv-item ${e.approved ? "ok" : ""}"><input type="checkbox" class="approve" data-approve="education.${i}.text" ${e.approved ? "checked" : ""}>
         <div class="form-row"><input type="text" data-edit="education.${i}.school" value="${esc(e.school)}" placeholder="School"><input type="text" data-edit="education.${i}.detail" value="${esc(e.detail || "")}" placeholder="Degree"><input type="text" data-edit="education.${i}.dates" value="${esc(e.dates || "")}" placeholder="Dates"></div>
-        <button type="button" class="btn ghost sm" data-del="education.${i}">${icon("trash")}</button></div>`).join(""), "education");
-      h += group("Lines under your name (optional)", "headers", arr(p.headers).map((s, i) => item(`headers.${i}.text`, s.text, s.approved, { input: true })).join(""), "header");
-      h += group(`Resume layouts <small class="hint" style="font-weight:400">which pieces go on the page, in what order; the eye shows a preview</small>`, "bases", arr(p.bases).map((b, i) => item(`bases.${i}.description`, b.description || b.id, b.approved, { input: true, preview: b.id })).join(""));
-      h += `<div class="fld" style="margin-top:6px"><span>A paragraph in your own voice (optional)</span><textarea data-edit="essaySample" rows="3" placeholder="Two or three sentences you wrote yourself. Written answers copy its tone.">${esc(p.essaySample || "")}</textarea></div>
-        <div data-msg style="margin-top:12px"></div>`;
+        <button type="button" class="btn ghost sm" data-del="education.${i}">${icon("trash")}</button></div>`).join(""),
+        lines: arr(p.education).map((e, i) => ({ obj: e, path: `education.${i}`, text: [e.school, e.detail, e.dates].filter(Boolean).join(", ") })) });
+      out.push({ key: "headers", title: "Lines under your name (optional)", add: "header", simpleTitle: "Under your name", body: arr(p.headers).map((s, i) => item(`headers.${i}.text`, s.text, s.approved, { input: true })).join(""),
+        lines: arr(p.headers).map((s, i) => ({ obj: s, path: `headers.${i}`, text: s.text })), hideEmpty: true });
+      out.push({ key: "bases", title: `Resume layouts <small class="hint" style="font-weight:400">which pieces go on the page, in what order; the eye shows a preview</small>`, adv: true,
+        body: arr(p.bases).map((b, i) => item(`bases.${i}.description`, b.description || b.id, b.approved, { input: true, preview: b.id })).join("") });
+      return out;
+    };
+    // A part is checked when every line in it is approved.
+    const checked = (sec) => sec.lines.every((l) => l.obj.approved);
+    const simpleGroup = (sec) => {
+      const fixing = editing.has(sec.key), done = sec.lines.length && checked(sec);
+      return `<div class="rv-group simple ${done && !fixing ? "done" : ""}" data-sec="${esc(sec.key)}"><div class="rv-head"><span>${sec.simpleTitle || sec.title}${sec.sub ? ` <span class="muted" style="font-weight:400">${esc(sec.sub)}</span>` : ""}</span><span class="right">
+        ${fixing ? `${sec.add ? `<button type="button" class="btn ghost sm" data-add="${sec.add}">${icon("plus")}Add a line</button>` : ""}<button type="button" class="btn sm primary" data-sec-done>${icon("check")}Done fixing</button>`
+          : `<button type="button" class="btn sm" data-sec-fix>Fix this</button><button type="button" class="btn sm ${done ? "" : "primary"}" data-sec-ok ${done ? "disabled" : ""}>${icon("check")}${done ? "Checked" : "Looks right"}</button>`}</span></div>
+        ${fixing ? sec.body || `<div class="rv-item"><span></span><span class="muted">Nothing here yet: press Add a line.</span></div>`
+          : `<ul class="rv-lines">${sec.lines.map((l) => `<li class="${l.obj.approved ? "ok" : ""}"><span>${esc(l.text)}</span>${l.obj.warning && !l.obj.approved ? `<div class="warn-line">${icon("alert")} ${esc(l.obj.warning)}</div>
+            <div class="row-actions"><button type="button" class="btn sm" data-true="${esc(l.path)}">${icon("check")}This is true</button><button type="button" class="btn sm ghost" data-sec-fix>Fix it</button></div>` : ""}</li>`).join("") || `<li class="muted">Nothing here.</li>`}</ul>`}</div>`;
+    };
+    const draw = () => {
+      const c = counts(), secs = sections();
+      // After an "approve all", the lines it left for the person stay pointed out until each is ticked or deleted.
+      const heldNow = [...arr(p.summaries), ...["experience", "projects"].flatMap((k) => arr(p[k]).flatMap((e) => arr(e.bullets)))].filter((x) => x.warning && !x.approved).length;
+      const shown = secs.filter((x) => !x.adv && !(x.hideEmpty && !x.lines.length));
+      const parts = shown.filter((x) => x.lines.length), ok = parts.filter(checked).length;
+      let h = simple
+        ? `<div class="banner blue"><div style="flex:1"><b data-count>${ok} of ${parts.length} parts checked</b>Read each part of your resume. Press <strong>Looks right</strong> when it's all true, or <strong>Fix this</strong> to change or delete a line. Only what you approve is ever sent.</div>
+          <div class="right"><button type="button" class="btn sm" data-approve-everything>${icon("check")}It's all true</button></div></div>`
+        : `<div class="banner blue"><div style="flex:1"><b data-count>${c.ok} of ${c.n} pieces approved</b>Your resume is only ever made from pieces you approve here. Read each line, fix anything that isn't exactly true, delete what you'd never send, and tick the rest.</div>
+          <div class="right"><button type="button" class="btn sm primary" data-approve-everything>${icon("check")}Everything is true: approve all</button></div></div>`;
+      h += `<div data-held>${bulk && heldNow ? `<div class="msg info">${heldNow} line${heldNow === 1 ? " has" : "s have"} a "Check this" note, so ${heldNow === 1 ? "it was" : "they were"} left unticked. Read ${heldNow === 1 ? "it" : "each one"} (look for the orange note), fix or delete what isn't true, then ${simple ? "press This is true" : `tick ${heldNow === 1 ? "it" : "them"} yourself`}.</div>` : ""}</div>`;
+      if (simple) h += shown.map(simpleGroup).join("");
+      else {
+        for (const sec of secs) h += group(sec.title, sec.key, sec.body, sec.add);
+        h += `<div class="fld" style="margin-top:6px"><span>A paragraph in your own voice (optional)</span><textarea data-edit="essaySample" rows="3" placeholder="Two or three sentences you wrote yourself. Written answers copy its tone.">${esc(p.essaySample || "")}</textarea></div>`;
+      }
+      h += `<div data-msg style="margin-top:12px"></div>`;
       el.innerHTML = h;
       // Every box, tick and delete button says what it belongs to, for screen readers ("Software Engineer, Globex: line 3").
       const nameOf = (path) => {
@@ -825,13 +897,14 @@
       el.querySelectorAll("[data-approve]").forEach((x) => x.setAttribute("aria-label", "Approve: " + nameOf(x.dataset.approve)));
       el.querySelectorAll("[data-del]").forEach((x) => x.setAttribute("aria-label", "Delete: " + nameOf(x.dataset.del)));
       el.querySelectorAll("[data-preview]").forEach((x) => x.setAttribute("aria-label", "Preview this layout"));
+      el.querySelectorAll("[data-sec]").forEach((g) => { const t = g.querySelector(".rv-head > span").textContent.trim(); g.querySelectorAll("[data-sec-ok], [data-sec-fix], [data-sec-done]").forEach((b) => b.setAttribute("aria-label", `${b.textContent.trim()}: ${t}`)); });
       bind();
     };
     const at = (path) => { const parts = path.split("."); let o = p; for (let i = 0; i < parts.length - 1; i++) o = o[parts[i]]; return [o, parts[parts.length - 1]]; };
     const bind = () => {
       el.querySelectorAll("[data-edit]").forEach((e) => e.oninput = () => { const [o, k] = at(e.dataset.edit); o[k] = e.value; if (k === "text" && o.warning) delete o.warning; });
       el.querySelectorAll("[data-flag]").forEach((e) => e.onchange = () => { const [o, k] = at(e.dataset.flag); o[k] = e.checked; });
-      el.querySelectorAll("[data-approve]").forEach((e) => e.onchange = () => { const [o] = at(e.dataset.approve); o.approved = e.checked; e.closest(".rv-item").classList.toggle("ok", e.checked); el.querySelector(".banner b").textContent = `${counts().ok} of ${counts().n} pieces approved`; });
+      el.querySelectorAll("[data-approve]").forEach((e) => e.onchange = () => { const [o] = at(e.dataset.approve); o.approved = e.checked; e.closest(".rv-item").classList.toggle("ok", e.checked); if (!simple) el.querySelector("[data-count]").textContent = `${counts().ok} of ${counts().n} pieces approved`; });
       el.querySelectorAll("[data-del]").forEach((e) => e.onclick = () => { const parts = e.dataset.del.split("."); const idx = Number(parts.pop()); let o = p; for (const x of parts) o = o[x]; o.splice(idx, 1); draw(); });
       const everything = el.querySelector("[data-approve-everything]");
       // Approving in bulk never approves a line the second check doubted: those wait to be read one by one.
@@ -841,10 +914,18 @@
         draw();
       };
       if (everything) everything.onclick = () => {
-        if (!confirm("Approve every piece? Only do this if you've read them and every line is true.")) return;
+        if (!confirm(simple ? "Is every line true? Only press OK if you've read all of them." : "Approve every piece? Only do this if you've read them and every line is true.")) return;
         approveMany([...["summaries", "headers", "skills", "education", "bases"].flatMap((k) => arr(p[k])), ...["experience", "projects"].flatMap((k) => arr(p[k]).flatMap((e) => arr(e.bullets)))]);
       };
       el.querySelectorAll("[data-all]").forEach((e) => e.onclick = () => { let o = p; for (const x of e.dataset.all.split(".")) o = o[x]; approveMany(arr(o)); });
+      // The simple view: a whole part is right, one doubted line is true after all, or a part needs fixing.
+      el.querySelectorAll("[data-sec]").forEach((g) => {
+        const sec = sections().find((x) => x.key === g.dataset.sec);
+        const ok = g.querySelector("[data-sec-ok]"); if (ok) ok.onclick = () => approveMany(sec.lines.map((l) => l.obj));
+        g.querySelectorAll("[data-sec-fix]").forEach((b) => b.onclick = () => { editing.add(sec.key); draw(); const f = el.querySelector(`[data-sec="${CSS.escape(sec.key)}"] textarea, [data-sec="${CSS.escape(sec.key)}"] input[type=text]`); if (f) f.focus(); });
+        const fin = g.querySelector("[data-sec-done]"); if (fin) fin.onclick = () => { editing.delete(sec.key); draw(); };
+      });
+      el.querySelectorAll("[data-true]").forEach((b) => b.onclick = () => { const [o] = at(`${b.dataset.true}.x`); o.approved = true; draw(); });
       el.querySelectorAll("[data-add]").forEach((e) => e.onclick = () => {
         const a = e.dataset.add;
         if (a === "summary") (p.summaries = arr(p.summaries)).push({ id: newId(p.summaries, "summary"), text: "", approved: false });
@@ -869,10 +950,19 @@
         // drop empty pieces the user added but never wrote
         p.summaries = arr(p.summaries).filter((s) => String(s.text || "").trim());
         for (const k of ["experience", "projects"]) for (const e of arr(p[k])) e.bullets = arr(e.bullets).filter((b) => String(b.text || "").trim());
+        // Layouts say which pieces go where, not what's true: the simple view approves them for the person, once
+        // the person has approved something themselves.
+        const theirs = counts().ok - arr(p.bases).filter((x) => x.approved).length;
+        if (simple && !theirs) return "Press Looks right on each part of your resume that's true (or Fix this to change it), then Continue.";
+        if (simple && arr(p.bases).length && !arr(p.bases).some((x) => x.approved)) for (const x of arr(p.bases)) x.approved = true;
         const r = await api("/api/profile/save", { profile: p });
         if (r.error) return r.error;
         const c = counts();
         if (!c.ok) return "Tick at least a summary, a few lines about your jobs, a skills group and one resume layout (at the bottom of this page).";
+        if (simple && r.problems && r.problems.length) {
+          const sum = arr(p.summaries).some((x) => x.warning && !x.approved);
+          return sum ? 'Your summary has a "Check this" note: read it, then press This is true, or Fix this.' : "Before you go on, your resume still needs: " + r.problems.slice(0, 3).join(" ") + " Press Looks right on those parts, or Fix this to add them.";
+        }
         if (r.problems && r.problems.length) {
           // Often the missing piece is one "approve all" held back because the second check doubted it.
           const held = [...arr(p.summaries), ...["experience", "projects"].flatMap((k) => arr(p[k]).flatMap((e) => arr(e.bullets)))].filter((x) => x.warning && !x.approved);
@@ -899,7 +989,9 @@
   const checks = (name, all, on) => `<div class="radio-row">${all.map((v) => `<label><input type="checkbox" name="${name}" value="${esc(v)}" ${(on || []).includes(v) ? "checked" : ""}>${esc(v)}</label>`).join("")}</div>`;
   const more = (title, hint, body, open) => `<details class="more" ${open ? "open" : ""}><summary><b>${title}</b><span>${hint}</span></summary><div class="form">${body}</div></details>`;
 
-  function questions(el, cfg) {
+  // setup: the first-run setup asks only what every form needs; the rest waits behind "Answer more now", because the
+  // app stops and asks when a form needs something else, and remembers the answer.
+  function questions(el, cfg, { setup = false } = {}) {
     const a = cfg.answers;
     const kind = (cfg.prefs && cfg.prefs.jobKind) || "both";
     const hourly = kind !== "office", office = kind !== "hourly";
@@ -912,7 +1004,7 @@
       <input class="inp" name="yyears" aria-label="Years of it" type="number" min="0" step="0.5" value="${esc(y.years ?? "")}" placeholder="Years">
       <button type="button" class="btn ghost sm" data-rm-row aria-label="Remove this row">${icon("trash")}</button></div>`;
     el.innerHTML = `<div class="form">
-      <div class="callout blue" style="margin:0"><div>Only the first part is required. Everything below it is optional: the more you answer, the fewer forms stop to ask you.</div></div>
+      <div class="callout blue" style="margin:0"><div>${setup ? "Just these for now. When a form asks something else (your shifts, a driver's license, references), the app stops and asks you once, then remembers your answer." : "Only the first part is required. Everything below it is optional: the more you answer, the fewer forms stop to ask you."}</div></div>
       <div class="section-t">Required</div>
       <div class="form-row">${fld("First name", inp("firstName", a.firstName, 'autocomplete="given-name"'))}${fld("Last name", inp("lastName", a.lastName, 'autocomplete="family-name"'))}</div>
       <div class="form-row">${fld("Email", inp("email", a.email, 'type="email" autocomplete="email"'), "Employers write to this address.")}${fld("Phone", inp("phone", a.phone, 'type="tel" autocomplete="tel"'))}</div>
@@ -920,6 +1012,8 @@
       <div class="form-row">${fld(`Are you allowed to work in ${esc(/^united (states|kingdom)|netherlands|philippines/i.test(a.authCountry || "United States") ? "the " + (a.authCountry || "United States") : a.authCountry)}?`, radios("workAuthorized", a.workAuthorized, [["yes", "Yes"], ["no", "No"]]))}
         ${fld("Will you need a visa sponsor, now or later?", radios("needsSponsorship", a.needsSponsorship, [["no", "No"], ["yes", "Yes"]]))}
         ${fld("Are you 18 or older?", radios("over18", a.over18, [["yes", "Yes"], ["no", "No"]]))}</div>
+      ${setup ? `<div class="row-actions"><button type="button" class="btn sm" data-later-show aria-expanded="false">${icon("plus")}Answer more now (optional)</button></div>` : ""}
+      <div class="form" data-later ${setup ? "hidden" : ""}>
       <div class="form-row">${fld("Are you a U.S. citizen? (optional)", radios("citizen", a.citizen, [["yes", "Yes"], ["no", "No"]]), "Federal jobs and some state jobs ask. Leave it empty and those forms stop to ask you.")}</div>
       ${more("When you can work", "Days, shifts, hours, getting there", `
         ${fld("Days you can work", checks("days", DAYS, a.daysAvailable))}
@@ -958,7 +1052,12 @@
         <div class="form-row">${Object.entries(DEM).map(([k, [label, opts]]) => fld(label, sel("dem_" + k, (a.demographics || {})[k] || "decline", opts.map((o) => [o, o === "decline" ? "Decline to answer" : o])))).join("")}</div>`)}
       ${more("Things you can never claim", "Skills or licenses you don't have", `<div data-cannot></div>
         <small class="hint">Any AI-written answer that mentions one is thrown out, and jobs that require one are skipped.</small>`)}
+      </div>
     </div>`;
+    // A missing answer marked in red stops being marked as soon as it's answered.
+    el.addEventListener("input", (e) => { const f = e.target.closest(".fld.invalid"); if (f) { f.classList.remove("invalid"); f.querySelectorAll("[aria-invalid]").forEach((x) => x.removeAttribute("aria-invalid")); } });
+    const later = el.querySelector("[data-later-show]");
+    if (later) later.onclick = () => { el.querySelector("[data-later]").hidden = false; later.remove(); };
     const cannot = tagInput(el.querySelector("[data-cannot]"), a.cannotClaim, office ? "e.g. Java, Kubernetes, security clearance" : "e.g. forklift license, CDL, bilingual Spanish");
     const arbList = tagInput(el.querySelector("[data-arb-list]"), a.arbitrationCompanies, "Company names");
     el.querySelectorAll("[name=arbitration]").forEach((r) => r.onchange = () => { el.querySelector("[data-arb-list]").style.display = val(el, "arbitration") === "list" ? "" : "none"; });
@@ -982,14 +1081,22 @@
         out.cannotClaim = cannot.get();
         out.arbitrationCompanies = arbList.get();
         const missing = [];
-        if (!out.firstName || !out.lastName) missing.push("your first and last name");
-        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(out.email)) missing.push("a valid email address");
-        if (!out.phone) missing.push("your phone number");
-        if (!out.city) missing.push("your city");
-        if (!out.workAuthorized) missing.push("whether you're allowed to work there");
-        if (!out.needsSponsorship) missing.push("whether you'll need a visa sponsor");
-        if (!out.over18) missing.push("whether you're 18 or older");
-        if (missing.length) return "Please add " + missing.join(", ") + ".";
+        const need = (field, ok, what) => { if (!ok) missing.push([field, what]); };
+        need(!out.firstName ? "firstName" : "lastName", out.firstName && out.lastName, "your first and last name");
+        need("email", /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(out.email), "a valid email address");
+        need("phone", out.phone, "your phone number");
+        need("city", out.city, "your city");
+        need("workAuthorized", out.workAuthorized, "whether you're allowed to work there");
+        need("needsSponsorship", out.needsSponsorship, "whether you'll need a visa sponsor");
+        need("over18", out.over18, "whether you're 18 or older");
+        el.querySelectorAll(".invalid").forEach((x) => { x.classList.remove("invalid"); x.querySelectorAll("[aria-invalid]").forEach((f) => f.removeAttribute("aria-invalid")); });
+        if (missing.length) {
+          // The first one missing gets the focus, so the person sees where it is, and each is marked.
+          for (const [name] of missing) { const f = el.querySelector(`[name="${name}"]`), box = f && f.closest(".fld"); if (box) { box.classList.add("invalid"); box.querySelectorAll(`[name="${name}"]`).forEach((x) => x.setAttribute("aria-invalid", "true")); } }
+          const first = el.querySelector(`[name="${missing[0][0]}"]`);
+          if (first) { first.scrollIntoView({ block: "center", behavior: "smooth" }); first.focus({ preventScroll: true }); }
+          return "Please add " + missing.map((x) => x[1]).join(", ") + ".";
+        }
         for (const e of out.education) if (e.end && e.start && e.end < e.start) return `${e.school}: the finish date is before the start date.`;
         cfg.answers = await api("/api/answers/save", { answers: out });
         return null;
@@ -1010,32 +1117,23 @@
     ["google", "Google Jobs", "What Google's job search shows, including many state, county and city jobs. Needs a free SerpApi key (250 searches a month)."],
     ["usajobs", "USAJOBS (federal government)", "Federal jobs near you and remote, from the official USAJOBS listings. Needs a free USAJOBS key. You apply on USAJOBS yourself; the app finds them, checks the fit and makes your resume."],
   ];
-  function prefs(el, cfg) {
+  // setup: the first-run setup shows what most people need (titles, city, distance, remote); pay, level, where to
+  // look and the rest fold under "More choices", with sensible defaults.
+  function prefs(el, cfg, { setup = false } = {}) {
     const p = cfg.prefs;
     const kind = p.jobKind || "both";
     let cities = [...(p.cities || [])];
     const boards = { ...(p.boards || {}) };
     const sugg = kind === "office" ? SUGGEST.office : kind === "hourly" ? SUGGEST.hourly : [...SUGGEST.hourly.slice(0, 6), ...SUGGEST.office.slice(0, 4)];
-    el.innerHTML = `<div class="form">
-      ${fld("What jobs do you want?", `<div data-titles></div><div class="chips" data-sugg style="margin-top:8px">${sugg.map((t) => `<button type="button" class="tag chip-add">+ ${esc(t)}</button>`).join("")}</div>`,
-        "Type a job title and press Enter, or click a suggestion. Add a few similar titles to find more jobs.")}
-      <div class="ai-sugg" data-aisugg>
-        <div class="row-actions"><button type="button" class="btn sm" data-aigo>${icon("bolt")}Not sure? Suggest jobs from my resume</button>
-          <small class="hint">Jobs your experience, licenses and certificates qualify you for, the ones that tend to pay more first.</small></div>
-        <div data-ailist></div></div>
-      <div class="ai-sugg" data-moveup>
+    const extra = `      <div class="ai-sugg" data-moveup>
         <div class="row-actions"><button type="button" class="btn sm" data-mugo>${icon("bolt")}Move up: what I could do next</button>
           <small class="hint">Work that grows from everything you've done and can do: jobs that pay more, and other directions at about the same pay. Ones you could apply for now, and ones that are one step away.</small></div>
         <div class="fld" style="margin-top:8px"><span>Work you'd like to move toward (optional)</span><input class="inp" data-mutoward maxlength="300" value="${esc(p.moveToward || "")}" placeholder="e.g. more coding, working with data, being outdoors, helping people"></div>
         <div data-mulist></div></div>
       <div class="form-row">${fld("Lowest pay you'd take (optional)", `<div class="row-actions" style="flex-wrap:nowrap"><input class="inp" name="minPay" type="number" min="0" step="0.5" value="${esc(p.minPay || "")}" placeholder="e.g. 25" style="max-width:9rem">
           ${sel("minPayPer", p.minPayPer || "hour", [["hour", "an hour"], ["year", "a year"]])}</div>`, "Jobs that post a lower top rate are skipped. Jobs that don't post pay are kept.")}</div>
-      <div class="fld"><span>Where?</span><div class="suggest"><input class="inp" data-city placeholder="Type your city, then pick it from the list"><div class="suggest-list" hidden></div></div>
-        <div data-cities class="tags" style="margin-top:6px"></div></div>
-      <div class="fld"><span>How far are you willing to go? <b data-radius-val>${esc(p.radius)} ${p.radiusUnit === "km" ? "km" : "miles"}</b></span>
-        <input type="range" name="radius" min="1" max="100" value="${esc(Math.min(100, p.radius || 25))}" style="width:100%;max-width:420px"></div>
-      <label class="check"><input type="checkbox" name="remote" ${p.remote ? "checked" : ""}>Also jobs I can do from home (remote)</label>
-      ${fld("What level?", `<div class="radio-row">${LEVELS.map(([v, l]) => `<label><input type="checkbox" name="lvl" value="${v}" ${(v === "intern" ? p.internships : (p.seniority || []).includes(v)) ? "checked" : ""}>${l}</label>`).join("")}</div>`)}
+`;
+    const lower = `      ${fld("What level?", `<div class="radio-row">${LEVELS.map(([v, l]) => `<label><input type="checkbox" name="lvl" value="${v}" ${(v === "intern" ? p.internships : (p.seniority || []).includes(v)) ? "checked" : ""}>${l}</label>`).join("")}</div>`)}
       <div class="section-t">Where to look</div>
       <div class="board-list">${BOARDS.map(([id, name, desc]) => `<label class="board ${boards[id] ? "on" : ""}"><input type="checkbox" name="board" value="${id}" ${boards[id] ? "checked" : ""}>
         <div><b>${name}</b><small>${desc}</small>${id === "google" ? `<div data-google></div>` : ""}${id === "usajobs" ? `<div data-usajobs></div>` : ""}</div></label>`).join("")}</div>
@@ -1053,7 +1151,20 @@
           ${fld("Only jobs posted in the last", sel("postedWithinDays", p.postedWithinDays, [[3, "3 days"], [7, "7 days"], [14, "14 days"], [30, "30 days"], [60, "60 days"]]))}
           ${fld("Distance in", sel("radiusUnit", p.radiusUnit, [["mi", "miles"], ["km", "kilometers"]]))}
           ${fld("Remote jobs open to people in", `<select name="remoteCountry" data-countries></select>`)}</div>
-        ${fld("Jobs you already applied to elsewhere", `<textarea name="alreadyApplied" rows="3" placeholder="One per line: a job link, or Company - Job title">${esc(p.alreadyApplied || "")}</textarea>`, "The app never applies to these.")}`)}</div>
+        ${fld("Jobs you already applied to elsewhere", `<textarea name="alreadyApplied" rows="3" placeholder="One per line: a job link, or Company - Job title">${esc(p.alreadyApplied || "")}</textarea>`, "The app never applies to these.")}`)}</div>`;
+    el.innerHTML = `<div class="form">
+      ${fld("What jobs do you want?", `<div data-titles></div><div class="chips" data-sugg style="margin-top:8px">${sugg.map((t) => `<button type="button" class="tag chip-add">+ ${esc(t)}</button>`).join("")}</div>`,
+        "Type a job title and press Enter, or click a suggestion. Add a few similar titles to find more jobs.")}
+      <div class="ai-sugg" data-aisugg>
+        <div class="row-actions"><button type="button" class="btn sm" data-aigo>${icon("bolt")}Not sure? Suggest jobs from my resume</button>
+          <small class="hint">Jobs your experience, licenses and certificates qualify you for, the ones that tend to pay more first.</small></div>
+        <div data-ailist></div></div>
+      <div class="fld"><span>Where?</span><div class="suggest"><input class="inp" data-city placeholder="Type your city, then pick it from the list"><div class="suggest-list" hidden></div></div>
+        <div data-cities class="tags" style="margin-top:6px"></div></div>
+      <div class="fld"><span>How far are you willing to go? <b data-radius-val>${esc(p.radius)} ${p.radiusUnit === "km" ? "km" : "miles"}</b></span>
+        <input type="range" name="radius" min="1" max="100" value="${esc(Math.min(100, p.radius || 25))}" style="width:100%;max-width:420px"></div>
+      <label class="check"><input type="checkbox" name="remote" ${p.remote ? "checked" : ""}>Also jobs I can do from home (remote)</label>
+      ${setup ? more("More choices", "Pay, move up, level, where to look", `${extra}${lower}`) : `${extra}${lower}`}
     </div>`;
     const titles = tagInput(el.querySelector("[data-titles]"), p.titles, kind === "office" ? "e.g. Software Engineer" : "e.g. Cashier");
     el.querySelectorAll(".chip-add").forEach((b) => b.onclick = () => {
@@ -1219,7 +1330,7 @@
   function accounts(el) {
     let st = null;
     const draw = () => {
-      el.innerHTML = `<div class="form">
+      el.innerHTML = `<div class="form" data-ai-form>
         <p class="hint" style="margin:0">Many big employers take applications only through Workday, where every company is its own site and you need an account on each one. With this on, the app makes the account with the email and password below, confirms it from your mailbox, signs in and fills the whole application. Without it, those jobs go to <b>Apply yourself</b>.</p>
         <label class="check"><input type="checkbox" name="acc_on" ${st.enabled ? "checked" : ""}><span><b>Make accounts and sign in on Workday job sites for me</b></span></label>
         <div class="form-row">${fld("Email for the accounts", inp("acc_email", st.email, 'type="email" autocomplete="email"'), "Employers write to this address.")}
@@ -1252,7 +1363,7 @@
     let preset = m0.preset || "gmail";
     const draw = () => {
       const pr = presets[preset];
-      el.innerHTML = `<div class="form">
+      el.innerHTML = `<div class="form" data-ai-form>
         <p class="hint" style="margin:0">Optional. Greenhouse sometimes emails a security code that must be typed into the form; with your mailbox connected the app reads it and finishes the application. It also uses employers' "thank you for applying" emails to avoid applying twice, and shows you when an employer writes back about an application (an interview, a test, a question or a no). The app only reads; it never sends, deletes or marks anything.</p>
         ${fld("Email provider", radios("preset", preset, Object.entries(presets).map(([k, v]) => [k, v.name])))}
         <div class="callout ${pr.unsupported ? "amber" : "blue"}" style="margin:0"><div><b>${pr.unsupported ? "Not supported directly" : "Create an app password"}</b><ol style="margin:6px 0 0;padding-left:18px">${pr.steps.map((s) => `<li>${esc(s)}</li>`).join("")}</ol>
@@ -1260,7 +1371,7 @@
         ${pr.unsupported ? "" : `<div class="form-row">${fld("Email address", inp("user", m0.user || cfg.answers.email || "", 'type="email"'), "Must be the address you put on applications (or one it forwards to).")}
           ${fld("App password", `<input name="pass" type="password" autocomplete="off" placeholder="${cfg.hasMailPassword ? "Saved. Paste a new one to replace it." : "App password"}">`)}</div>
           <div class="form-row" ${preset === "other" ? "" : "hidden"}>${fld("IMAP server", inp("host", m0.host || pr.host))}${fld("Port", inp("port", m0.port || 993, 'type="number"'))}</div>
-          <div class="row-actions"><button type="button" class="btn" data-test>${icon("check")}Test connection</button>
+          <div class="row-actions" data-testrow><button type="button" class="btn" data-test>${icon("check")}Test connection</button>
           ${cfg.settings.mailbox ? `<button type="button" class="btn ghost danger" data-remove>${icon("trash")}Disconnect</button>` : ""}</div>`}
         <div data-msg></div></div>`;
       el.querySelectorAll("[name=preset]").forEach((r) => r.onchange = () => { preset = val(el, "preset"); draw(); });
@@ -1317,11 +1428,27 @@
     };
   }
 
+  // ---------- While it works: closing the window, starting with the computer, staying awake, notifications ----------
+  function background(el, cfg) {
+    const s = cfg.settings, where = window.ja && window.ja.platform === "darwin" ? "the menu bar at the top of the screen" : "the system tray, next to the clock";
+    el.innerHTML = `<div class="form">
+      <label class="check"><input type="checkbox" name="keepRunning" ${s.keepRunning !== false ? "checked" : ""}><span><b>Keep working when I close the window</b><br><span class="muted">Open it again from ${where}, where there's also Quit.</span></span></label>
+      <label class="check"><input type="checkbox" name="openAtLogin" ${s.openAtLogin ? "checked" : ""}><span><b>Start Job Autopilot when my computer starts</b><br><span class="muted">It starts in the background, without a window.</span></span></label>
+      <label class="check"><input type="checkbox" name="keepAwake" ${s.keepAwake !== false ? "checked" : ""}><span><b>Keep the computer awake while it has applications to send</b><br><span class="muted">Only until today's are done. The screen can still turn off.</span></span></label>
+      <label class="check"><input type="checkbox" name="notifications" ${s.notifications !== false ? "checked" : ""}><span><b>Show a notification when something needs me</b><br><span class="muted">An employer wrote back, a question only you can answer, a practice application to check.</span></span></label></div>`;
+    return {
+      async save() {
+        cfg.settings = await api("/api/settings", { keepRunning: val(el, "keepRunning"), openAtLogin: val(el, "openAtLogin"), keepAwake: val(el, "keepAwake"), notifications: val(el, "notifications") });
+        return null;
+      },
+    };
+  }
+
   // ---------- Application history: survives reinstalls, moves to a new computer ----------
   function history(el, cfg, onChange) {
     const draw = async () => {
       const h = await api("/api/history");
-      el.innerHTML = `<div class="form">
+      el.innerHTML = `<div class="form" data-ai-form>
         <p class="hint" style="margin:0">Every job you applied to is kept in a small file outside the app (${h.local} so far). After a reinstall, or on a new
           computer, import it and the app will never apply to those jobs again. It holds only employer, job title, location, the
           posting's address and the date: no answers, resumes or screenshots.</p>
@@ -1392,5 +1519,5 @@
   new MutationObserver(() => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; nameControls(); }); })
     .observe(document.documentElement, { childList: true, subtree: true });
 
-  window.Forms = { ai, resumes, creator, github, accounts, studio, review, fillPage, questions, prefs, mailbox, running, history, importedText, esc, icon, msg, nameControls };
+  window.Forms = { ai, resumes, creator, github, accounts, studio, review, fillPage, questions, prefs, mailbox, running, background, history, importedText, esc, icon, msg, nameControls };
 })();

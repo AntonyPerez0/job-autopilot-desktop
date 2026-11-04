@@ -804,7 +804,7 @@ export async function applyTo(job, hooks = {}, opts = {}) {
   // "Back to dry run" or Pause pressed while this application runs stops it before anything is sent: the
   // settings are read again right before Submit, the emailed code and the confirmation wait.
   const at0 = getSettings();
-  const halted = () => { const s = getSettings(); return (s.dryRun && !at0.dryRun) ? "you switched back to dry run" : (s.paused && !at0.paused) ? "you paused the autopilot" : ""; };
+  const halted = () => { const s = getSettings(); return (s.dryRun && !at0.dryRun) ? "you switched back to practice mode" : (s.paused && !at0.paused) ? "you paused the autopilot" : ""; };
   allowArbitration = arbitrationAllowed(a, job.company);
   COMBO_FALLBACK = comboFallback(a);
   const jobLocal = withinRadius(job.location, prefs);
@@ -960,7 +960,7 @@ export async function applyTo(job, hooks = {}, opts = {}) {
       // A dry run never moves past the first page: some sites save an application as soon as you press Next.
       // On a site where the app signed in, pages are saved to the user's own account as a draft and nothing is
       // sent before Submit, so a dry run fills every page and stops there.
-      if (dryRun && !signedIn) return { ...result, status: "filled", reason: `dry run: page 1 of a form with several pages filled and checked; later pages are filled when you go live` };
+      if (dryRun && !signedIn) return { ...result, status: "filled", reason: `practice run: page 1 of a form with several pages filled and checked; the later pages are filled once you send for real` };
       if (n >= MAX_PAGES) return { ...result, status: "failed", reason: `the form kept asking for more after ${MAX_PAGES} pages` };
       const before = page.url(), beforeLabels = fields.map((f) => f.label).join("|");
       log(job.slug, `pressing "${nextLabel}"`);
@@ -979,7 +979,7 @@ export async function applyTo(job, hooks = {}, opts = {}) {
       // A review page with only a Submit button left.
       if (!fields.length) break;
     }
-    if (dryRun) return { ...result, status: "filled", reason: signedIn ? `dry run: signed in, filled all ${result.details.pages || 1} pages and stopped before Submit` : "dry run: filled and checked, not submitted" };
+    if (dryRun) return { ...result, status: "filled", reason: signedIn ? `practice run: signed in, filled all ${result.details.pages || 1} pages and stopped before Submit` : "practice run: filled and checked, not sent" };
 
     // Submit.
     step("submit");

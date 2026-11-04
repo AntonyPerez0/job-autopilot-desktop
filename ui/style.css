@@ -578,3 +578,41 @@ details.card-fold[open] > summary h2::before, details.card-fold[open] > summary 
 .review-score { display: flex; align-items: baseline; gap: var(--space-3xs); flex: none; }
 .review-score .fig { font-size: var(--text-2xl); color: var(--color-ink); }
 .review-score span:last-child { color: var(--color-muted); }
+
+/* The Overview's To do list: everything that needs the person, one button each. */
+.week { margin: 0 0 var(--space-sm); color: var(--color-ink-2); font-size: var(--text-md); }
+.todo-card { margin-bottom: var(--space-md); }
+.todo { display: flex; gap: var(--space-md); align-items: center; padding: var(--space-sm) var(--space-md); border-top: 1px solid var(--color-rule); box-shadow: inset 4px 0 0 var(--color-rule-2); font-size: var(--text-sm); color: var(--color-ink-2); }
+.todo:first-of-type { border-top: 0; }
+.todo > svg.i { flex: none; color: var(--color-ink-2); }
+.todo b { display: block; color: var(--color-ink); font-weight: 600; font-size: var(--text-md); }
+.todo > div:not(.right) { flex: 1; min-width: 0; }
+.todo .right { display: flex; flex-wrap: wrap; gap: var(--space-xs); justify-content: flex-end; }
+.todo.amber, .todo.violet { box-shadow: inset 4px 0 0 var(--color-attn-strong); } .todo.amber > svg.i, .todo.violet > svg.i { color: var(--color-attn); }
+.todo.red { box-shadow: inset 4px 0 0 var(--color-error); } .todo.red > svg.i { color: var(--color-error); }
+.todo.green { box-shadow: inset 4px 0 0 var(--color-done); } .todo.green > svg.i { color: var(--color-done); }
+.todo.blue { box-shadow: inset 4px 0 0 var(--color-work); } .todo.blue > svg.i { color: var(--color-work); }
+@media (max-width: 860px) { .todo { flex-wrap: wrap; } .todo .right { width: 100%; justify-content: flex-start; } }
+
+/* "Something's wrong" with a practice application: where to fix it. */
+.wrong-list { display: grid; gap: var(--space-xs); margin-top: var(--space-md); }
+.wrong-list .btn { justify-content: flex-start; text-align: left; min-height: 56px; padding: var(--space-xs) var(--space-md); }
+.wrong-list .btn span { display: grid; }
+.wrong-list .btn small { color: var(--color-muted); font-weight: 400; }
+
+/* Help: short answers. */
+.help-list { display: grid; gap: var(--space-xs); padding: var(--space-md); }
+.help-a { padding: var(--space-2xs) var(--space-md) var(--space-md); color: var(--color-ink-2); line-height: 1.6; }
+
+/* The resume check in the setup: each part as it reads on the page. */
+.rv-lines { list-style: none; margin: 0; padding: var(--space-sm) var(--space-md); display: grid; gap: var(--space-xs); font-size: var(--text-sm); color: var(--color-ink); line-height: 1.5; }
+.rv-lines li { position: relative; padding-left: var(--space-md); }
+.rv-lines li::before { content: ""; position: absolute; left: 2px; top: 0.6em; width: 5px; height: 5px; border-radius: 50%; background: var(--color-muted); }
+.rv-lines li.ok::before { background: var(--color-done); }
+.rv-lines .row-actions { margin-top: var(--space-2xs); }
+.rv-group.simple.done .rv-head { background: var(--color-done-bg); }
+
+/* A required answer that's missing: marked where it is. */
+.fld.invalid > span { color: var(--color-error); }
+.fld.invalid input, .fld.invalid .radio-row label { box-shadow: inset 0 0 0 1.5px var(--color-error); }
+.connect { display: grid; gap: var(--space-sm); }

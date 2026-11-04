@@ -140,7 +140,7 @@ test("'Back to dry run' or Pause pressed during a live run stops the Submit (aud
     const r = await applyTo(job("/form-ping", "t-halt-" + label.replace(" ", "")), {}, { dryRun: false, browser: ctx });
     clearTimeout(t);
     assert.strictEqual(r.status, "manual", `${label}: ${r.reason}`);
-    assert.match(r.reason, label === "pause" ? /paused the autopilot/ : /switched back to dry run/);
+    assert.match(r.reason, label === "pause" ? /paused the autopilot/ : /switched back to practice mode/);
     assert.strictEqual(submitted, null, `${label}: Submit never fired`);
   }
   store.saveSettings({ dryRun: true, paused: false });

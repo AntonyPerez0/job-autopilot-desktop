@@ -6,6 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { makeSecretStore } from "./secrets.js";
+import { startBackground } from "./background.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const UI = path.join(HERE, "..", "ui");
@@ -26,7 +27,12 @@ const inside = (f, dir) => { if (!dir) return false; const r = path.relative(pat
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
-let win = null, core = null;
+let win = null, core = null, bg = null;
+// Quitting for real (the menu's Quit, Cmd+Q, an update): the window may close. Otherwise closing it only hides it.
+let quitting = false;
+app.on("before-quit", () => { quitting = true; });
+// Started with the computer: no window until the person opens it from the menu bar or system tray.
+const startHidden = process.argv.includes("--hidden") || (process.platform === "darwin" && (() => { try { return app.getLoginItemSettings().wasOpenedAsHidden; } catch { return false; } })());
 
 function page(name) { return UI_URL + name; }
 // Only the app's own two pages, in the window's top frame, may call the engine.
@@ -56,7 +62,15 @@ function createWindow() {
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#0d0f15" : "#f7f9fa",
     webPreferences: { preload: path.join(HERE, "preload.cjs"), contextIsolation: true, sandbox: true, nodeIntegration: false, plugins: true },
   });
-  win.once("ready-to-show", () => win.show());
+  win.once("ready-to-show", () => { if (!startHidden || !core.store.getSettings().onboarded) win.show(); });
+  // Closing the window keeps the autopilot working in the background (once set up, and unless turned off in Settings).
+  win.on("close", (e) => {
+    const st = core.store.getSettings();
+    if (quitting || !st.onboarded || st.keepRunning === false) return;
+    e.preventDefault();
+    win.hide();
+    if (bg) bg.hidden();
+  });
   // The person's text size (Settings > Appearance) zooms every page the window loads.
   win.webContents.on("did-finish-load", () => { if (win) win.webContents.setZoomFactor(textSize(core.store.getSettings().textSize)); });
   // Ctrl (Cmd on a Mac) with + or - zooms, and 0 goes back to the chosen text size, whatever the keyboard layout's menu does.
@@ -86,7 +100,12 @@ function createWindow() {
   win.on("closed", () => { win = null; });
 }
 
-app.on("second-instance", () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
+function showWindow() {
+  if (!win) { createWindow(); return; }
+  if (win.isMinimized()) win.restore();
+  win.show(); win.focus();
+}
+app.on("second-instance", showWindow);
 
 app.whenReady().then(async () => {
   // The app's pages never need the camera, microphone, location, notifications or any other permission.
@@ -173,13 +192,26 @@ app.whenReady().then(async () => {
     win.loadURL(page(name));
   });
 
+  // The person's own browser opens only OpenRouter's sign-in page, for Connect with OpenRouter.
+  api.setOpener((u) => { if (!/^https:\/\/openrouter\.ai\//.test(String(u))) throw new Error("not an OpenRouter address"); return shell.openExternal(String(u)); });
+
   createWindow();
   if (store.getSettings().onboarded) worker.run();
-  app.on("activate", () => { if (!BrowserWindow.getAllWindows().length) createWindow(); });
+  bg = startBackground({ core, here: HERE, show: showWindow, visible: () => !!win && win.isVisible() && win.isFocused(),
+    open: (target) => { showWindow(); if (win) win.webContents.send("navigate", target || {}); } });
+  app.on("activate", showWindow);
+  // macOS: "Update now" can only replace the app in Applications, so a copy run from the disk image or Downloads offers to move there.
+  if (MAC && app.isPackaged && !app.isInApplicationsFolder() && !(store.getSettings().dismissed || []).includes("move-to-applications")) {
+    const r = await dialog.showMessageBox({ type: "question", buttons: ["Move to Applications", "Not now"], defaultId: 0, cancelId: 1,
+      message: "Move Job Autopilot to your Applications folder?", detail: "It needs to be there to update itself. It opens again from there by itself.", checkboxLabel: "Don't ask again" });
+    if (r.checkboxChecked) store.saveSettings({ dismissed: [...(store.getSettings().dismissed || []), "move-to-applications"] });
+    if (r.response === 0) { try { quitting = true; app.moveToApplicationsFolder(); } catch (e) { quitting = false; dialog.showMessageBox({ type: "warning", message: "Job Autopilot couldn't move itself", detail: `Drag it into Applications yourself, then open it from there. (${e.message})` }); } }
+  }
 });
 
-// Closing the window quits: the autopilot only works while the app is open.
+// The window closed for real (quitting, or setup not finished): stop the autopilot and quit.
 app.on("window-all-closed", async () => {
+  if (bg) bg.stop();
   if (core) {
     core.worker.stop();
     const { closeBrowser } = await import("../core/browser.js");

@@ -176,7 +176,7 @@ async function applyOneInner(job) {
     return false;
   }
   const dryRun = !!CONFIG.dryRun;
-  log(job.slug, `applying: ${job.title} at ${job.company}${dryRun ? " (dry run)" : ""}`);
+  log(job.slug, `applying: ${job.title} at ${job.company}${dryRun ? " (practice run)" : ""}`);
   const track = applyProgress(job);
   // pressedAt: when Submit was really pressed (the step after it began). From then on the job counts as
   // possibly sent, toward the daily cap and for never applying twice, whatever the page shows next.
@@ -241,7 +241,7 @@ export async function run() {
     const n = db.prepare("UPDATE jobs SET status = 'queued', attempts = 0 WHERE status = 'failed' AND (reason LIKE 'security code:%' OR reason LIKE 'verify email:%')").run().changes;
     if (n) log(null, `mailbox configured: ${n} jobs that needed an emailed code are queued again`);
   }
-  log(null, `autopilot started (${CONFIG.dryRun ? "dry run" : "live"}, cap ${CONFIG.dailyCap}/day)`);
+  log(null, `autopilot started (${CONFIG.dryRun ? "practice mode" : "sending for real"}, up to ${CONFIG.dailyCap} a day)`);
   while (!stopping) {
     try {
       // Replies are read while paused too: the person still wants to hear back.

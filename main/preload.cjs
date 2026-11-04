@@ -14,4 +14,6 @@ contextBridge.exposeInMainWorld("ja", {
   setTheme: (mode) => ipcRenderer.invoke("set-theme", mode),
   setTextSize: (factor) => ipcRenderer.invoke("set-text-size", factor),
   platform: process.platform,
+  // The app asks the window to show a page or a job (a notification was clicked).
+  onNavigate: (fn) => ipcRenderer.on("navigate", (_e, target) => fn(target)),
 });

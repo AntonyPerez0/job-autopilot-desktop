@@ -24,7 +24,7 @@ const w = (f, o) => fs.writeFileSync(path.join(data, f), JSON.stringify(o));
 const profile = JSON.parse(JSON.stringify(Profile.EXAMPLE));
 for (const k of ["experience", "projects", "skills", "education", "summaries"]) for (const e of profile[k] || []) { e.approved = true; for (const b of e.bullets || []) b.approved = true; }
 w("profile.json", profile);
-w("settings.json", { onboarded: true, acceptedTerms: true, dryRun: true, paused: true, uiMode: process.env.MODE || "advanced",
+w("settings.json", { onboarded: true, acceptedTerms: true, dryRun: true, paused: true, uiMode: process.env.MODE || "advanced", touredAt: "2026-10-01T00:00:00Z",
   ai: { provider: "custom", apiBase: "http://127.0.0.1:9/v1", model: "mock" } });
 w("prefs.json", { titles: ["Software Engineer", "Data Analyst"], cities: [{ name: "Austin", label: "Austin, TX", country: "US", admin1: "TX", lat: 30.27, lon: -97.74 }], remote: true });
 w("answers.json", { firstName: "Jordan", lastName: "Lee", email: "jordan@example.com", phone: "555-0100", city: "Austin", state: "TX" });
@@ -68,7 +68,7 @@ async function audit(name) {
   for (const v of r) problems.push({ where: name, ...v });
 }
 const go = async (view) => { await win.evaluate((v) => { location.hash = "#" + v; }, view); await win.waitForTimeout(700); };
-const VIEWS = ["overview", "applied", "queued", "failed", "manual", "filled", "skipped", "all", "log", "profile", "settings"];
+const VIEWS = ["overview", "applied", "queued", "failed", "manual", "filled", "skipped", "all", "log", "profile", "settings", "help"];
 
 for (const size of process.env.QUICK ? [] : [{ width: 900, height: 700 }, { width: 2200, height: 1250 }]) {
   await win.setViewportSize(size).catch(() => {});
@@ -99,6 +99,27 @@ for (const size of process.env.QUICK ? [] : [{ width: 900, height: 700 }, { widt
       await win.waitForSelector("#drawer.open", { state: "detached" }).catch(() => {});
     }
   }
+}
+
+// The dialogs: the short tour, and "Something's wrong" with a practice application.
+await win.setViewportSize({ width: 1400, height: 900 }).catch(() => {});
+for (const scheme of ["light", "dark"]) {
+  await win.emulateMedia({ colorScheme: scheme, reducedMotion: "reduce" });
+  await go("overview");
+  await win.evaluate(() => showTour());
+  await win.waitForSelector(".modal #tour");
+  await audit(`tour (${scheme})`);
+  await win.keyboard.press("Escape");
+  await go("filled");
+  await win.evaluate(() => openJob("acme-3"));
+  await win.waitForSelector('#drawer button:has-text("Something")');
+  await win.click('#drawer button:has-text("Something")');
+  await win.waitForSelector(".modal .wrong-list");
+  await audit(`something's wrong (${scheme})`);
+  if (scheme === "dark") await win.screenshot({ path: path.join(OUT, "something-wrong-dark.png") });
+  await win.keyboard.press("Escape");
+  await win.keyboard.press("Escape");
+  await win.waitForSelector("#drawer.open", { state: "detached" }).catch(() => {});
 }
 
 // The keyboard alone: Tab reaches the sidebar's pages and a job; Enter opens it; Escape closes it and focus returns.
@@ -144,7 +165,7 @@ for (const scheme of ["light", "dark"]) { await w2.emulateMedia({ colorScheme: s
 await w2.click('.jobkind:has-text("Both")');
 await w2.check("#terms");
 await w2.click("#next");
-await w2.waitForSelector('h1:has-text("Connect an AI model")');
+await w2.waitForSelector('h1:has-text("Connect an AI")');
 await w2.evaluate(() => document.querySelectorAll("details").forEach((d) => { d.open = true; }));
 for (const scheme of ["light", "dark"]) { await w2.emulateMedia({ colorScheme: scheme }); await w2.waitForTimeout(300); await audit2(`setup: AI (${scheme})`); }
 await app2.close();

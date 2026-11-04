@@ -33,10 +33,10 @@ https://github.com/user-attachments/assets/18073345-3718-43e3-89f1-352ddd10d98b
 <br>
 
 > [!IMPORTANT]
-> **It starts in dry run.** Forms get filled in, but nothing is sent until you
-> have checked a filled application yourself and switched it to live. It never
-> states anything you didn't tell it, never guesses a legal agreement, and never
-> applies to the same job twice.
+> **It starts in practice mode.** It fills in an application but doesn't send
+> it, until you've checked one yourself and pressed **Start sending for real**.
+> It never states anything you didn't tell it, never guesses a legal agreement,
+> and never applies to the same job twice.
 
 ## How it works
 
@@ -46,8 +46,8 @@ flowchart LR
     B --> C[Build a<br>one-page resume]
     C --> D[Fill the<br>application]
     D --> E[Check every<br>answer]
-    E -->|dry run| G[Wait for<br>your review]
-    E -->|live| H[Submit and<br>keep a record]
+    E -->|practice| G[Wait for<br>your review]
+    E -->|for real| H[Send it and<br>keep a record]
 ```
 
 1. **You tell it once** what you've done and what you want: upload a resume, or
@@ -197,7 +197,7 @@ warning once:
 On older macOS versions you can instead right-click (or Control-click) the app
 in Applications, choose **Open**, then **Open** again.
 
-The first time you save your API key, macOS may ask to let Job Autopilot use
+The first time you connect the AI, macOS may ask to let Job Autopilot use
 your keychain. Click **Always Allow**: that's where the key is kept, encrypted.
 
 </details>
@@ -230,7 +230,8 @@ Update now stays greyed out. Press it and the app does the rest:
 Your data and settings stay as they are.
 
 On a Mac this works when the app is in your Applications folder, not when it's
-run straight from the disk image or the Downloads folder. After an update,
+run straight from the disk image or the Downloads folder. Opened from one of
+those, the app offers to move itself into Applications. After an update,
 macOS may ask once more to let Job Autopilot use your keychain: click **Always
 Allow**. That's because these builds aren't signed yet (see
 [docs/SIGNING.md](docs/SIGNING.md)). You can always download a version from
@@ -250,19 +251,21 @@ Releases by hand and install it over the old one instead.
 
 ## First run: the setup
 
-The app walks you through a few short steps. Only your name, contact details,
-city and work authorization are required; everything else can wait. You can
-change all of it later under **Settings** and **Profile**.
+The app walks you through five short steps, about ten minutes in all. Only your
+name, contact details, city and work authorization are required; everything
+else can wait. If you close the app partway through, setup opens where you
+left off. You can change all of it later under **Settings** and **Resume**.
 
 1. **Welcome.** Pick the kind of work you want (hourly and everyday jobs,
-   office and tech jobs, or both). The app uses it to suggest job titles and
-   where to look.
-2. **Connect AI.** The app needs an AI model to read postings and fill forms.
-   The screen walks you through three steps: make a free
-   [OpenRouter](https://openrouter.ai) account, add $5 of credit (enough for
-   hundreds of applications), and paste the key. The app tests it the moment
-   you paste it. Under **Other ways to connect an AI** you can use another
-   service instead, or a free model on your own computer (see
+   office and tech jobs, or both). The app uses it to suggest job titles.
+2. **Connect AI.** The app needs an AI to read postings and fill forms. Press
+   **Connect with OpenRouter**: your web browser opens
+   [OpenRouter](https://openrouter.ai), you sign in (or make a free account)
+   and press **Authorize**, and the app is connected. There's no key to copy.
+   If your account has no credit yet, the app says so, with a button to add
+   some: $5 is enough for hundreds of applications. Already have a key? Open
+   **I already have a key**. Under **Other ways to connect an AI** you can use
+   another service, or a free model on your own computer (see
    [Using a local model](#using-a-local-model)).
 3. **Your resume.** Drop in one or more resumes (PDF or Word `.docx`). No
    resume? Open **I don't have a resume** and tell the app about your work in
@@ -270,33 +273,26 @@ change all of it later under **Settings** and **Profile**.
    you (see [Making and improving your resume](#making-and-improving-your-resume)).
    Have projects on GitHub? Open **Add projects from my GitHub** (see
    [Projects from GitHub](#projects-from-github)).
-4. **Check it.** The app splits your resume into pieces: summaries, bullet
-   points, skills, education and a layout. Fix anything that isn't exactly
-   true, delete what you'd never send, and approve the rest. **Everything is
-   true: approve all** does it in one click once you've read them, except
-   lines with a **Check this** note: those stay unticked until you've read and
-   ticked each one. Resumes are only ever put together from approved pieces.
-   If your resume is short, **Want a fuller page?** at the top asks a few
-   questions about what people usually leave out (see
+4. **Check it.** Each part of your resume (your summary, each job, your
+   skills, your school) reads as it will on the page. Press **Looks right** on
+   each part that's all true, or **Fix this** to change or delete a line. A line
+   with a **Check this** note waits until you press **This is true** or fix it.
+   Resumes are only ever put together from what you approve. If your resume is
+   short, **Want a fuller page?** at the top asks a few questions about what
+   people usually leave out (see
    [Fill out my page](#making-and-improving-your-resume)).
 5. **About you.** Name, email, phone, city, whether you're allowed to work in
    the country, whether you'll need a visa sponsor, and whether you're 18 or
-   older. The app never answers those for you: you pick each one. Optional
-   sections cover the questions forms ask most:
-   - when you can work (days, shifts, hours, transportation, lifting, your
-     own insured car, a clean driving record, 21 or older)
-   - work and school
-   - links
-   - legal questions
-   - voluntary self-identification (declined unless you choose)
-   - things you can never claim
-
-   The more you answer, the fewer forms stop to ask you.
+   older. The app never answers those for you: you pick each one. If one is
+   missing, the app takes you to it. That's all for now: when a form asks
+   something else (your shifts, a driver's license, references), the app stops
+   and asks you once, then remembers. **Answer more now** shows the rest, and
+   it's always under **Settings** > About you.
 6. **Jobs to look for.** Type job titles or click suggestions, pick your city
    from the list, drag the slider for how far you'd travel, and tick remote
-   jobs if you want them. Then choose where to look (see
-   [Where the jobs come from](#where-the-jobs-come-from)). **More options** has
-   company exclusions, posting age and experience limits.
+   jobs if you want them. **More choices** has the rest: the lowest pay you'd
+   take, Move up, the level, and where to look (see
+   [Where the jobs come from](#where-the-jobs-come-from)).
 
    **Not sure what to look for?** The app suggests jobs from your resume on its
    own when you haven't picked any titles yet (or press **Suggest jobs from my
@@ -330,9 +326,12 @@ change all of it later under **Settings** and **Profile**.
      hid again** brings them back.
    - When a job title isn't an official group of its own (a "QA Engineer"), the
      app says which official group its pay comes from.
-7. **Mailbox (optional).** See [Mailbox](#mailbox).
 
-Then press **Start in dry run**.
+The last screen asks how the app should behave while it works: keep working
+when you close the window (on), start with your computer (off), and show a
+notification when something needs you (on). Then press **Start practicing**.
+A short tour shows the three things to know. The mailbox isn't part of the
+setup: the app suggests it later, when it would help (see [Mailbox](#mailbox)).
 
 ## Making and improving your resume
 
@@ -652,7 +651,7 @@ make those accounts for you:
 
 Then for each Workday job the app chooses **Apply manually**, makes the account
 (or signs in, if it made one there before), confirms it from your email, and
-fills every page. In dry run it stops before **Submit**: the filled pages are
+fills every page. In practice mode it stops before **Submit**: the filled pages are
 saved as a draft in your account on that site, which you can open and check.
 Workday jobs already waiting in Apply yourself move to the queue when you turn it
 on. Settings lists every account the app made.
@@ -664,7 +663,7 @@ Things to know:
   password, the app can't sign in there; the job stops and says so.
 - A site that shows a CAPTCHA at sign-up still waits for you.
 - Workday's own forms vary by company. This has been tested on a practice copy
-  of a Workday site, not on real ones yet, so check the first few dry runs.
+  of a Workday site, not on real ones yet, so check the first few practice runs.
 
 The app applies by itself on sites that need no account. That includes
 Greenhouse, Lever, Ashby, SmartRecruiters, Workable, CareerPlug, Paycom,
@@ -718,19 +717,32 @@ works; only how much it shows.
   - fills in every answer
   - checks every answer
   - takes screenshots
-- **In dry run** it stops before Submit, and on forms with several pages it
-  stops before the first **Next** (some sites save an application as soon as
-  you press Next). The first filled application shows
-  up on the Overview. Open it to see every answer (and where each one came
-  from), the resume PDF, the screenshots and the posting. If it's right, press
-  **I checked these answers**. If something's wrong, fix your answers in
-  Settings.
-- **Go live** (the switch in the sidebar) unlocks once you've checked a filled
-  application. From then on it submits: 10 a day by default, 6 minutes apart,
-  and the daily count resets at 9 AM your time. You can pause it or switch
-  back to dry run any time.
-- The app only works while it's open. Closing the window stops it. Each
-  application takes a few minutes.
+- **In practice mode** it stops before Submit, and on forms with several pages
+  it stops before the first **Next** (some sites save an application as soon as
+  you press Next). The first practice application shows up at the top of the
+  Overview's **To do** list. Open it to see every answer (and where each one
+  came from), the resume PDF, the screenshots and the posting. If it's right,
+  press **It looks right: start sending for real**, then **Start sending**. If
+  something's wrong, press **Something's wrong**: the app asks what (an answer,
+  a line on your resume, the kind of job) and takes you to where you fix it.
+- From then on it sends applications: 10 a day by default, 6 minutes apart,
+  and the daily count resets at 9 AM your time. **Pause** at the bottom left
+  stops it any time; the **Send for real** switch takes it back to practice
+  mode.
+- **Closing the window doesn't stop it.** It keeps looking for jobs and
+  applying in the background. Open it again from its icon in the menu bar at
+  the top of the screen (Mac) or in the system tray next to the clock
+  (Windows); **Quit** is there too. While it has applications to send that
+  day, it keeps the computer from going to sleep (the screen can still turn
+  off). Settings > **While it works** turns each of these off, and can start
+  the app (without a window) when your computer starts.
+- **Notifications** tell you when something needs you: an employer wrote back,
+  a question only you can answer, your practice application is ready, or the AI
+  stopped working. Click one to go straight to it.
+- The **Overview** starts with one line about your week and a **To do** list:
+  everything that needs you, most important first, each with one button. When
+  it's empty, the app is busy on its own. **Help** at the bottom of the menu
+  has short answers to common questions, and the tour again.
 
 The browser is your installed Google Chrome, or Microsoft Edge if you don't
 have Chrome. With neither, the app downloads its own Chromium (about 150 MB,
@@ -826,8 +838,9 @@ them all, and you can remove any.
 Greenhouse sometimes emails a security code that has to be typed into the
 form before it accepts an application. With your mailbox connected, the app
 reads the code and finishes the application. Without it, those jobs wait in
-Needs attention. The app also uses the mailbox to spot employers' "thank you
-for applying" emails.
+Needs attention, and the To do list offers **Connect my mailbox**. The app also
+uses the mailbox to spot employers' "thank you for applying" emails. Connect it
+any time under Settings > Mailbox.
 
 **Replies from employers.** About once an hour, the app looks for emails from
 the employers you applied to in the last 120 days, and puts each one with its
@@ -970,7 +983,7 @@ OpenAI-compatible API" with their `http://localhost:.../v1` address and no key.
 - **Job sites' terms.** Some job sites and employers don't allow automated
   applications, and some employers may treat them differently. You're
   responsible for every application sent in your name. That's why the app
-  starts in dry run, keeps a steady pace and records everything.
+  starts in practice mode, keeps a steady pace and records everything.
 - **Sites change.** Application sites change their forms from time to time. When a form can't be filled correctly, the app stops and puts the job
   in Needs attention instead of sending something half-done.
 - **Some sites guess things.** A few application sites pre-fill your location
@@ -988,9 +1001,15 @@ OpenAI-compatible API" with their `http://localhost:.../v1` address and no key.
 - **Writing my resume takes a while.** Usually 1 to 3 minutes; the screen shows
   each step as it happens. When the AI service is busy it can take longer, and a
   stuck request is retried on its own.
-- **"The key did not work."** Check you copied the whole key and that your
-  OpenRouter account has credit. For other providers, check the API address
-  ends in `/v1`.
+- **"The key did not work," or Connect with OpenRouter didn't finish.** Press
+  **Connect again** under Settings > AI, and press **Authorize** in the browser
+  page that opens (it has 10 minutes). Check your OpenRouter account has
+  credit. With a pasted key, check you copied the whole key. For other
+  providers, check the API address ends in `/v1`.
+- **I closed the window. Is it still running?** Yes, unless you turned that off
+  in Settings > While it works. Its icon is in the menu bar at the top of the
+  screen (Mac) or the system tray next to the clock (Windows; it may be under
+  the small arrow). Opening Job Autopilot again also brings the window back.
 - **"The last search found nothing: HiringCafe could not be searched."** The
   site would not let the app's browser in, or did not load. Press **Search
   now** to try again; if it keeps happening, turn on another place to look in
@@ -1089,7 +1108,7 @@ There's no Linux installer. Developers can run it from source with `npm start`
 
 Some job sites and employers don't allow automated applications. You're
 responsible for every application sent in your name, which is why the app starts
-in dry run, keeps a steady pace and records everything. See
+in practice mode, keeps a steady pace and records everything. See
 [Things to know](#things-to-know).
 
 </details>

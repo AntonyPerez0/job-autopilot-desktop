@@ -49,6 +49,13 @@ export const SETTINGS_DEFAULTS = {
   googleMonthlyCap: 200,     // SerpApi searches a month (its free plan has 250)
   historyBackup: true,       // keep applied-jobs.json.gz outside the app (survives reinstalls)
   historyFolder: null,       // null: Documents/Job Autopilot             // { preset, host, port, user } ; the password lives in secrets
+  keepRunning: true,         // closing the window hides it to the menu bar / system tray; the autopilot keeps working
+  openAtLogin: false,        // start (hidden) when the computer starts
+  keepAwake: true,           // keep the computer awake while there are applications to send today
+  notifications: true,       // a desktop notification when something needs the person
+  setupStep: 0,              // where the first-run setup was left, to pick up there
+  touredAt: null,            // when the short tour of the Overview was shown
+  dismissed: [],             // to-do items the person said not to show again
 };
 
 export const PREFS_DEFAULTS = {

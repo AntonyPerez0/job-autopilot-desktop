@@ -22,7 +22,7 @@
     <div class="side-foot">
       <div class="row"><span style="display:flex;align-items:center;gap:8px"><span id="mode-dot" class="dot"></span><b id="mode-txt">…</b></span>
         <button class="btn sm" id="pause"></button></div>
-      <div class="row"><span>Go live <span class="muted">(submit for real)</span></span><button class="switch" id="live" role="switch" aria-checked="false" aria-label="Go live: submit applications for real"></button></div>
+      <div class="row"><span>Send for real <span class="muted">(off: practice)</span></span><button class="switch" id="live" role="switch" aria-checked="false" aria-label="Send applications for real"></button></div>
       <div class="row adv"><span>Day starts</span><span class="muted" id="daystart"></span></div>
       <div class="row adv"><span>Daily limit</span><div class="stepper"><button id="cap-dn" aria-label="Lower">&minus;</button><span id="cap">0</span><button id="cap-up" aria-label="Raise">+</button></div></div>
       <div class="muted adv" id="model"></div>
@@ -47,25 +47,27 @@ const VIEWS = [
   { id: "queued", label: "Queue", icon: "clock", status: "queued" },
   { id: "failed", label: "Needs attention", icon: "alert", status: "failed" },
   { id: "manual", label: "Apply yourself", icon: "ext", status: "manual" },
-  { id: "filled", label: "Filled (dry run)", icon: "eye", status: "filled" },
+  { id: "filled", label: "Practice runs", icon: "eye", status: "filled" },
   { id: "skipped", label: "Skipped", icon: "skip", status: "skipped", adv: true },
   { id: "all", label: "All jobs", icon: "list", adv: true },
   { id: "log", label: "Activity", icon: "act", adv: true },
   { id: "profile", label: "Resume", icon: "file" },
   { id: "settings", label: "Settings", icon: "gear" },
+  { id: "help", label: "Help", icon: "help" },
 ];
 const TITLES = {
   overview: ["Overview", "Jobs that match your preferences, found and applied to automatically."],
   applied: ["Applied", "Applications the employer confirmed it received."],
   queued: ["Queue", "Screened as a fit and waiting their turn."],
   failed: ["Needs attention", "Stopped before submitting, so nothing incomplete went out."],
-  filled: ["Filled (dry run)", "Filled in and checked, but not submitted."],
+  filled: ["Practice runs", "Filled in and checked, but not sent: practice mode."],
   manual: ["Apply yourself", "Good matches on sites that need an account, a chat bot, or a job board. Open each one, apply, then press \"I applied\"."],
   skipped: ["Skipped", "Closed postings, poor fits, and boards that need an account."],
   all: ["All jobs", "Everything the autopilot has seen."],
   log: ["Activity", "What the autopilot did, newest first."],
   profile: ["Resume", "Check it, improve it, make a new one, and download it."],
   settings: ["Settings", "Everything you set up at the start, and how the autopilot runs."],
+  help: ["Help", "Short answers to common questions."],
 };
 let view = (location.hash.slice(1) || "overview"), st = null, jobsCache = {}, q = "", open = null, dtab = "answers";
 
@@ -104,7 +106,7 @@ function category(j) {
     case "working": return { label: "Applying now", tone: "blue", pulse: true };
     case "submitting": return { label: "Submitting", tone: "blue", pulse: true };
     case "queued": return { label: "Queued", tone: "blue" };
-    case "filled": return { label: "Filled (dry run)", tone: "violet" };
+    case "filled": return { label: "Practice run", tone: "violet" };
     case "manual": return { label: "Apply yourself", tone: "amber" };
     case "skipped":
       if (/^screen:|fails a must-have/.test(r)) return { label: "Not a fit", tone: "gray" };
@@ -138,6 +140,7 @@ function humanReason(j) {
   const r = j.reason || "";
   if (j.status === "applied") return "Submitted and confirmed by the employer.";
   if (/^screen:/.test(r)) return r.replace(/^screen:\s*/, "");
+  if (/^(dry|practice) run: /.test(r)) return "Practice run (not sent): " + r.replace(/^(dry|practice) run: /, "").replace(/\bnot submitted\b/, "not sent");
   if (/security code/.test(r)) return "Greenhouse wants the verification code it emailed. Connect your mailbox in Settings and this retries on its own.";
   if (/^could not fill every required field/.test(r)) return "Waiting for your answer: " + r.replace(/^could not fill every required field( \(page \d+\))?:\s*/, "").replace(/(required, no answer|needs you|still empty): /g, "");
   return r;
@@ -157,7 +160,7 @@ function renderNav() {
 function renderControls() {
   if (!st) return;
   const s = st.settings;
-  const mode = s.paused ? ["red", "Paused"] : s.dryRun ? ["amber", "Dry run"] : ["green", "Live"];
+  const mode = s.paused ? ["red", "Paused"] : s.dryRun ? ["amber", "Practicing"] : ["green", "Sending"];
   $("mode-dot").className = "dot " + mode[0] + (s.paused ? "" : " pulse");
   $("mode-txt").textContent = mode[1];
   $("pause").innerHTML = s.paused ? `${icon("play")}Resume` : `${icon("pause")}Pause`;
@@ -220,7 +223,7 @@ function liveChip() {
 }
 function header() {
   const [t, sub] = TITLES[view];
-  const list = !["overview", "log", "profile", "settings"].includes(view);
+  const list = !["overview", "log", "profile", "settings", "help"].includes(view);
   return `<div class="top"><div><h1>${t}</h1><p>${sub}</p></div><div class="actions">${liveChip()}
     ${list ? `<div class="search">${icon("search")}<input id="q" aria-label="Search jobs" placeholder="Search company, role, location" value="${esc(q)}" oninput="q=this.value;renderList()"></div>` : ""}
     <button class="btn" onclick="addJobDialog()">${icon("plus")}Add a job</button>
@@ -302,7 +305,13 @@ async function renderOverview() {
   for (const j of failed) { const k = category(j).label; cats[k] = (cats[k] || 0) + 1; }
   const seen = Object.values(c).reduce((a, b) => a + b, 0);
   const pipe = [["Found", seen], ["Screened in", (c.applied || 0) + (c.queued || 0) + (c.failed || 0) + (c.working || 0) + (c.filled || 0) + (c.manual || 0)], ["Attempted", done + stopped], ["Applied", done]];
+  // This week, in one line.
+  const week = Date.now() - 7 * 86400000;
+  const sent = applied.filter((j) => (toDate(j.applied_at) || 0) >= week).length, wrote = new Set((replies || []).filter((r) => (toDate(r.at) || 0) >= week).map((r) => r.slug)).size;
+  const line = [`${sent} application${sent === 1 ? "" : "s"} sent`, rs.mailbox || wrote ? `${wrote} employer${wrote === 1 ? "" : "s"} wrote back` : "", `${(c.queued || 0) + (c.working || 0)} waiting their turn`].filter(Boolean).join(", ");
   $("main").innerHTML = header() + `
+  <p class="week">This week: ${line}.</p>
+  ${todoCard()}
   <div class="grid-kpi adv">
     ${kpi("applied", "Applications sent", done, `${ago(applied[0] && applied[0].applied_at) ? "Last " + ago(applied[0].applied_at) : "None yet"}`)}
     <a class="kpi done" href="#applied" onclick="go('applied');return false"><div class="lbl">Today</div>
@@ -433,7 +442,9 @@ function renderDrawer() {
     `<a class="btn sm" href="${esc(j.url)}" target="_blank" rel="noopener">${icon("ext")}Posting</a>`,
     j.apply_url ? `<a class="btn sm" href="${esc(j.apply_url)}" target="_blank" rel="noopener">${icon("ext")}Application form</a>` : "",
     j.resume_file ? `<a class="btn sm" href="ap-file://resumes/${esc(j.resume_file)}" target="_blank">${icon("file")}${j.status === "applied" ? "Resume sent" : "Resume"}</a>` : "",
-    j.status === "filled" && !j.reviewed ? `<button class="btn sm primary" onclick="act('reviewed')">${icon("check")}I checked these answers</button>` : "",
+    j.status === "filled" && !j.reviewed && st.settings.dryRun ? `<button class="btn sm primary" data-start-sending="${esc(j.slug)}">${icon("check")}It looks right: start sending for real</button>
+      <button class="btn sm" onclick="somethingWrong()">${icon("alert")}Something's wrong</button>` : "",
+    j.status === "filled" && !j.reviewed && !st.settings.dryRun ? `<button class="btn sm primary" onclick="act('reviewed')">${icon("check")}I checked these answers</button>` : "",
     j.status === "filled" && j.reviewed ? `<span class="tag">${icon("check")}You checked this one</span>` : "",
     j.status === "manual" && !j.resume_file ? `<button class="btn sm" onclick="makeResume(this)">${icon("file")}Make my resume for this job</button>` : "",
     j.status === "manual" ? `<button class="btn sm primary" data-open-url="${esc(j.apply_url || j.url)}">${icon("ext")}Open the application</button>
@@ -459,6 +470,8 @@ function renderDrawer() {
     </div>
     <div class="tabs" role="tablist" aria-label="About this application">${tabs.map(([k, l]) => `<button type="button" role="tab" id="tab-${k}" aria-selected="${dtab === k}" class="${dtab === k ? "on" : ""}" data-tab="${k}">${l}</button>`).join("")}</div>
     <div class="dr-body" role="tabpanel" tabindex="0" aria-labelledby="tab-${dtab}">${drawerTab(j, d)}</div>`;
+  const go1 = $("drawer").querySelector("[data-start-sending]");
+  if (go1) go1.onclick = () => startSending(go1.dataset.startSending);
 }
 // Questions the app stopped on: the user answers them here and the job goes back in the queue.
 function askForm(j) {
@@ -539,7 +552,7 @@ function fitTab(d) {
 async function act(action) {
   const r = await api("/api/job/" + encodeURIComponent(open.slug), { action });
   if (r && r.error) { toast(r.error); return; }
-  toast(action === "skip" ? "Skipped" : action === "reviewed" ? "Thanks. You can go live from the sidebar when you are ready." : action === "applied-myself" ? "Marked as applied. It won't be applied to again." : "Added back to the queue");
+  toast(action === "skip" ? "Skipped" : action === "reviewed" ? "Thanks. Start sending for real whenever you're ready." : action === "applied-myself" ? "Marked as applied. It won't be applied to again." : "Added back to the queue");
   await openJob(open.slug); refresh(true);
 }
 
@@ -574,7 +587,7 @@ function go(v) { closeDrawer(); view = v; location.hash = v; q = ""; refresh(tru
 async function searchNow() { await api("/api/search", {}); toast("Searching for new roles"); refresh(); }
 $("pause").onclick = async () => { await api("/api/settings", { paused: !st.settings.paused }); toast(st.settings.paused ? "Autopilot resumed" : "Autopilot paused"); refresh(); };
 $("live").onclick = () => {
-  if (!st.settings.dryRun) return api("/api/settings", { dryRun: true }).then(() => { toast("Back to dry run: forms are filled, never submitted"); refresh(); });
+  if (!st.settings.dryRun) return api("/api/settings", { dryRun: true }).then(() => { toast("Back to practice mode: nothing is sent"); refresh(); });
   goLive();
 };
 const setCap = async (n) => { await api("/api/settings", { dailyCap: Math.max(0, Math.min(100, n)) }); refresh(); };
@@ -594,12 +607,15 @@ async function refresh(full) {
   document.title = `${TITLES[view] ? TITLES[view][0] + " - " : ""}Job Autopilot`;
   if (view === "overview") await renderOverview();
   else if (view === "log") await renderLog();
+  else if (view === "help") renderHelp();
   else if (view === "profile" || view === "settings") { if (full || !$("cfg-host")) await renderConfig(); else { const c = $("main").querySelector(".top .live"); if (c) c.outerHTML = liveChip(); const bh = $("banner-host"); if (bh) bh.innerHTML = banners(); } }
   else { if (full) $("main").innerHTML = ""; await renderListView(); }
   if (had && (!document.activeElement || document.activeElement === document.body)) { const el = document.querySelector(`#main [data-job="${CSS.escape(had)}"]`); if (el) el.focus(); }
 }
 if (!TITLES[view]) view = "overview";
-refresh(true);
+refresh(true).then(() => { if (st && st.settings.onboarded && !st.settings.touredAt) showTour(); });
+// A notification was clicked: the job it's about, or a page.
+if (window.ja.onNavigate) window.ja.onNavigate((t) => { if (t && t.job) openJob(t.job); else if (t && t.view) (t.view === "settings" ? openSettings("ai") : go(t.view)); });
 setInterval(tickProgress, 1000);
 let lastPoll = 0;
 setInterval(() => {
@@ -671,56 +687,69 @@ async function checkUpdate(el) {
   toast(u.error || (u.phase === "available" ? `Version ${u.info.latest} is available: press Update now` : u.phase === "uptodate" ? `You have the latest version (${u.info.current})` : u.error || "Could not check for updates"));
   refreshStatusOnly(true);
 }
-function banners() {
-  if (!st) return "";
-  const s = st.settings;
-  let h = updateBanner();
+// Everything that needs the person, most important first, each with one thing to press. The Overview shows them as one
+// To do list; the other pages show only the urgent ones, as banners.
+function todoItems() {
+  if (!st) return [];
+  const s = st.settings, c = st.counts || {}, out = [];
+  const add = (x) => out.push(x);
+  const sr = st.search;
+  if (sr && sr.aiProblem) add({ urgent: true, tone: "red", icon: "alert", title: "The AI stopped working", text: `${sr.aiProblem} The jobs it found are checked again on the next search.`,
+    actions: `<button class="btn sm primary" onclick="openSettings('ai')">Open AI settings</button>` });
+  if (s.dryRun && !s.reviewedDryRun && st.firstFilled) add({ urgent: true, tone: "violet", icon: "eye", title: "Check your practice application",
+    text: `It's filled in for ${esc(String(st.firstFilled.company).replace(/\.$/, ""))}, but not sent. Look it over, then start sending for real.`, actions: `<button class="btn sm primary" data-open-job="${esc(st.firstFilled.slug)}">Check it</button>` });
+  const waiting = st.toAnswer || { count: 0 };
+  if (waiting.count && waiting.first) add({ urgent: true, tone: "amber", icon: "alert", title: `${waiting.count} application${waiting.count === 1 ? " needs" : "s need"} your answer`,
+    text: "The app stopped on a question only you can answer. Answer it once and it carries on, and remembers.", actions: `<button class="btn sm primary" data-open-job="${esc(waiting.first.slug)}">Answer now</button>` });
   const rp = st.replies || {};
   if (rp.act && rp.first) {
     const f = rp.first, k = REPLY[f.kind] || REPLY.other;
-    h += `<div class="banner green">${icon("mail")}<div><b>${rp.act === 1 ? `${esc(f.company)}: ${esc(k[0].toLowerCase())}` : `${rp.act} employers wrote back about your applications`}</b>${esc(f.subject)}. Open it to read the reply; then answer it from your own email.</div>
-      <div class="right"><button class="btn sm primary" data-open-job="${esc(f.slug)}">Read it</button></div></div>`;
+    add({ urgent: true, tone: "green", icon: "mail", title: rp.act === 1 ? `${esc(f.company)}: ${esc(k[0].toLowerCase())}` : `${rp.act} employers wrote back`,
+      text: `${esc(f.subject)}. Read it, then answer from your own email.`, actions: `<button class="btn sm primary" data-open-job="${esc(f.slug)}">Read it</button>` });
   }
-  const waiting = st.toAnswer || { count: 0 };
-  if (waiting.count && waiting.first) h += `<div class="banner amber">${icon("alert")}<div><b>${waiting.count} application${waiting.count === 1 ? " is" : "s are"} waiting for your answer</b>The app stopped on questions only you can answer. Answer them and it carries on with your answers.</div>
-    <div class="right"><button class="btn sm primary" data-open-job="${esc(waiting.first.slug)}">Answer now</button></div></div>`;
-  // A search that found nothing because a site would not open, said plainly instead of "queue empty".
-  const sr = st.search;
-  if (sr && sr.aiProblem && view === "overview") {
-    h += `<div class="banner red">${icon("alert")}<div><b>The AI couldn't check the jobs the last search found</b>${esc(sr.aiProblem)} Those jobs are checked again on the next search.</div>
-      <div class="right"><button class="btn sm" onclick="go('settings')">Open Settings</button><button class="btn sm" onclick="searchNow()">Search now</button></div></div>`;
-  }
-  else if (sr && sr.problems && sr.problems.length && view === "overview") {
+  const codes = st.codes || { count: 0 };
+  if (codes.count && !rp.mailbox) add({ urgent: true, tone: "amber", icon: "mail", title: `Connect your mailbox to finish ${codes.count === 1 ? "an application" : codes.count + " applications"}`,
+    text: "The employer emailed a code or a link to confirm. With your mailbox connected, the app reads it and finishes the application.", actions: `<button class="btn sm primary" onclick="openSettings('mailbox')">Connect my mailbox</button>` });
+  const mine = c.manual || 0;
+  if (mine) add({ tone: "amber", icon: "ext", title: `${mine} good match${mine === 1 ? "" : "es"} for you to apply to yourself`, text: "These sites need your own account or use a chat bot, so the app can't apply there. Each takes a few minutes.",
+    actions: `<button class="btn sm" onclick="go('manual')">Show them</button>` });
+  if (sr && sr.problems && sr.problems.length && !sr.aiProblem) {
     const all = sr.found === 0;
-    h += `<div class="banner ${all ? "red" : "amber"}">${icon("alert")}<div><b>${all ? "The last search found nothing: " : ""}${sr.problems.map((x) => esc(x.source)).join(" and ")} could not be searched</b>${esc(sr.problems[0].message)}.
-      ${all && (sr.sources || []).length < 2 ? " It's the only place the app looks right now: turn on another in Settings > Jobs to look for, or press Search now to try again." : " The app tries again on the next search."}</div>
-      <div class="right"><button class="btn sm" onclick="searchNow()">Search now</button></div></div>`;
-  }
-  else if (sr && sr.at && sr.done && !sr.queued && !sr.toYou && !(sr.skipped && sr.skipped.total) && view === "overview" && !(st.counts || {}).queued && !(st.counts || {}).working && !(st.counts || {}).filled && !st.state.job && st.state.now !== "searching") {
-    h += `<div class="banner amber">${icon("search")}<div><b>The last search found nothing to apply to${sr.nextAt ? `. Next search around ${new Date(sr.nextAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""}</b>Job sites had nothing new for these titles near you. Shorter, more common job titles, a wider distance, or older postings (Settings > Jobs to look for > More options) find more.</div>
-      <div class="right"><button class="btn sm" onclick="go('settings')">Change what to look for</button></div></div>`;
-  }
-  // Searched, nothing to apply to: when the next search is, and why the jobs it found were left out.
-  else if (sr && sr.done && sr.skipped && sr.skipped.total && view === "overview" && !(st.counts || {}).queued && !(st.counts || {}).working && !st.state.job && st.state.now !== "searching" && !(st.counts || {}).filled && !(st.counts || {}).applied) {
-    const next = sr.nextAt ? new Date(sr.nextAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
+    add({ tone: all ? "red" : "amber", icon: "alert", title: `${all ? "The last search found nothing: " : ""}${sr.problems.map((x) => esc(x.source)).join(" and ")} could not be searched`,
+      text: `${esc(sr.problems[0].message)}. ${all && (sr.sources || []).length < 2 ? "It's the only place the app looks right now: turn on another in Settings > Jobs to look for." : "The app tries again on the next search."}`, actions: `<button class="btn sm" onclick="searchNow()">Search now</button>` });
+  } else if (sr && sr.at && sr.done && !sr.queued && !sr.toYou && !(sr.skipped && sr.skipped.total) && !c.queued && !c.working && !c.filled && !st.state.job && st.state.now !== "searching") {
+    add({ tone: "amber", icon: "search", title: `The last search found nothing to apply to${sr.nextAt ? `. Next search around ${new Date(sr.nextAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""}`,
+      text: "Job sites had nothing new for these titles near you. Shorter, more common job titles or a wider distance find more.", actions: `<button class="btn sm" onclick="openSettings('prefs')">Change what to look for</button>` });
+  } else if (sr && sr.done && sr.skipped && sr.skipped.total && !c.queued && !c.working && !st.state.job && st.state.now !== "searching" && !c.filled && !c.applied) {
     const why = sr.skipped.top.map((x) => `${x.count} ${esc(x.why)}`).join(", ");
-    h += `<div class="banner amber">${icon("search")}<div><b>Nothing to apply to right now${next ? `. Next search around ${next}` : ""}</b>${sr.skipped.total} job${sr.skipped.total === 1 ? " was" : "s were"} found and left out${why ? `: ${why}` : ""}. More job titles, a wider distance, or "Suggest jobs from my resume" (Settings > Jobs to look for) find more.</div>
-      <div class="right"><button class="btn sm" onclick="go('skipped')">See why</button><button class="btn sm" onclick="searchNow()">Search now</button></div></div>`;
+    add({ tone: "amber", icon: "search", title: "Nothing to apply to right now", text: `${sr.skipped.total} job${sr.skipped.total === 1 ? " was" : "s were"} found and left out${why ? `: ${why}` : ""}. More job titles or a wider distance find more.`,
+      actions: `<button class="btn sm" onclick="go('skipped')">See why</button><button class="btn sm" onclick="openSettings('prefs')">Change what to look for</button>` });
   }
-  const mine = (st.counts || {}).manual || 0;
-  if (mine && view === "overview") h += `<div class="banner amber">${icon("ext")}<div><b>${mine} good match${mine === 1 ? "" : "es"} for you to apply to</b>These sites need an account or use a chat bot, so the app can't apply for you. Each takes a few minutes.</div>
-    <div class="right"><button class="btn sm" onclick="go('manual')">Show them</button></div></div>`;
-  if (s.dryRun && !s.reviewedDryRun) {
-    h += st.firstFilled
-      ? `<div class="banner violet">${icon("eye")}<div><b>Your first application is filled in, not sent</b>Check every answer, the resume and the screenshot for ${esc(String(st.firstFilled.company).replace(/\.$/, ""))}. The autopilot waits until you do.</div>
-          <div class="right"><button class="btn sm primary" data-open-job="${esc(st.firstFilled.slug)}">Review it</button></div></div>`
-      : `<div class="banner violet">${icon("eye")}<div><b>Dry run</b>The first good match will be filled in but not submitted, so you can check it before anything goes out.</div></div>`;
-  } else if (s.dryRun) {
-    h += `<div class="banner amber">${icon("alert")}<div><b>Dry run is on</b>Forms are filled and checked but never submitted. Turn on Go live in the sidebar to start applying.</div>
-      <div class="right"><button class="btn sm primary" onclick="goLive()">Go live</button></div></div>`;
-  }
+  if (s.dryRun && s.reviewedDryRun) add({ tone: "amber", icon: "eye", title: "Practice mode is on", text: "Applications are filled in and checked, but nothing is sent.", actions: `<button class="btn sm primary" onclick="startSending()">Start sending for real</button>` });
+  if (!rp.mailbox && (c.applied || 0) > 0 && !(s.dismissed || []).includes("mailbox-tip")) add({ tone: "blue", icon: "mail", title: "See when employers write back",
+    text: "Connect your mailbox (the app only reads it) and replies show up here: interviews, tests, questions and answers.", actions: `<button class="btn sm" onclick="openSettings('mailbox')">Connect my mailbox</button><button class="btn sm ghost" onclick="dismiss('mailbox-tip')">Not now</button>` });
+  return out;
+}
+const todoRow = (x) => `<div class="todo ${x.tone}">${icon(x.icon)}<div><b>${x.title}</b><span>${x.text}</span></div>${x.actions ? `<div class="right">${x.actions}</div>` : ""}</div>`;
+function todoCard() {
+  const items = todoItems(), s = st.settings;
+  const quiet = s.paused ? "The app is paused. Press Resume at the bottom left to carry on."
+    : s.dryRun && !s.reviewedDryRun ? "The app is looking for a good match to fill in as practice. It shows up here when it's ready."
+      : "Nothing needs you right now. The app keeps looking for jobs and applying on its own.";
+  return `<section class="card todo-card" aria-labelledby="todo-h"><div class="card-h"><h2 id="todo-h">To do</h2>${items.length ? `<span class="sub">${items.length} thing${items.length === 1 ? "" : "s"}</span>` : ""}</div>
+    ${items.length ? items.map(todoRow).join("") : `<div class="todo blue">${icon("check")}<div><span>${quiet}</span></div></div>`}</section>`;
+}
+function banners() {
+  if (!st) return "";
+  let h = updateBanner();
+  if (view === "overview") return h;
+  for (const x of todoItems().filter((y) => y.urgent)) h += `<div class="banner ${x.tone}">${icon(x.icon)}<div><b>${x.title}</b>${x.text}</div>${x.actions ? `<div class="right">${x.actions}</div>` : ""}</div>`;
   return h;
 }
+async function dismiss(key) { await api("/api/settings", { dismissed: [...(st.settings.dismissed || []), key] }); refresh(); }
+// Settings, opened at one section ("mailbox", "ai", "prefs", "questions").
+let wantSection = null;
+function openSettings(section) { wantSection = section; go("settings"); }
 // A dialog: announced as one, named by its heading, the page behind locked while it's open,
 // Escape closes it, and the focus goes back to where it was.
 function modal(html) {
@@ -745,27 +774,91 @@ function modal(html) {
   focusSoon(() => box.contains(document.activeElement) ? document.activeElement : box.querySelector("input, select, textarea, button"));
   return bg;
 }
+// The switch in the sidebar: sending for real needs a practice application checked first.
 function goLive() {
-  const s = st.settings;
-  if (!s.reviewedDryRun) {
-    const m = modal(`<h2>Check a filled application first</h2><p class="muted">Going live is unlocked once you have opened a filled (dry run) application and pressed "I checked these answers".</p>
-      <div class="row-actions" style="margin-top:16px">${st.firstFilled ? `<button class="btn primary" id="m-open">Review it now</button>` : ""}<button class="btn" id="m-close">Close</button></div>`);
+  if (!st.settings.reviewedDryRun) {
+    const m = modal(`<h2>Check a practice application first</h2><p class="muted">Before anything is sent in your name, look at one practice application: its answers, its resume and its screenshots.</p>
+      ${st.firstFilled ? "" : `<p class="muted">The app is getting one ready. It shows up at the top of your To do list.</p>`}
+      <div class="row-actions" style="margin-top:16px">${st.firstFilled ? `<button class="btn primary" id="m-open">Show it to me</button>` : ""}<button class="btn" id="m-close">Close</button></div>`);
     m.querySelector("#m-close").onclick = () => m.remove();
     const o = m.querySelector("#m-open"); if (o) o.onclick = () => { m.remove(); openJob(st.firstFilled.slug); };
     return;
   }
-  const m = modal(`<h2>Start submitting applications?</h2><p>From now on the app <b>submits</b> applications in your name: up to <b>${s.dailyCap} a day</b>, ${s.minutesBetweenApplies} minutes apart, only when every required answer is filled from your facts.</p>
-    <p class="muted">You can pause, or switch back to dry run, at any time.</p>
-    <label class="check" style="margin-top:10px"><input type="checkbox" id="m-ok">I have checked a filled application and I am ready.</label>
-    <div class="row-actions" style="margin-top:18px"><button class="btn primary" id="m-go" disabled>Go live</button><button class="btn" id="m-close">Cancel</button></div>`);
-  m.querySelector("#m-ok").onchange = (e) => { m.querySelector("#m-go").disabled = !e.target.checked; };
+  startSending();
+}
+// "It looks right: start sending for real": the practice application is marked as checked, and after one plain
+// question, applications go out for real.
+function startSending(slug) {
+  const s = st.settings;
+  const m = modal(`<h2>Start sending applications for real?</h2>
+    <p>From now on the app sends applications in your name: up to <b>${s.dailyCap} a day</b>, ${s.minutesBetweenApplies} minutes apart. Each one only when every answer comes from your resume and your answers.</p>
+    <p class="muted">You can pause any time with the button at the bottom left, or go back to practice mode.</p>
+    <div class="row-actions" style="margin-top:18px"><button class="btn primary" id="m-go">${icon("send")}Start sending</button><button class="btn" id="m-close">Keep practicing</button></div>`);
   m.querySelector("#m-close").onclick = () => m.remove();
   m.querySelector("#m-go").onclick = async () => {
+    if (slug) { const r0 = await api("/api/job/" + encodeURIComponent(slug), { action: "reviewed" }); if (r0 && r0.error) { m.remove(); return toast(r0.error); } }
     const r = await api("/api/golive", { confirm: true });
     m.remove();
-    toast(r.error || "Live: applications will be submitted");
-    refresh();
+    if (r.error) return toast(r.error);
+    closeDrawer();
+    toast("Sending for real. Pause any time at the bottom left.");
+    refresh(true);
   };
+}
+// "Something's wrong" with a practice application: where to fix it.
+function somethingWrong() {
+  const m = modal(`<h2>What's wrong?</h2><p class="muted">Nothing has been sent. Fix it, then press <b>Try again</b> on this application to see a new practice run.</p>
+    <div class="wrong-list">
+      <button class="btn" id="w-answer">${icon("user")}<span><b>An answer it gave</b><small>Your name, contact details, or how you answered a question</small></span></button>
+      <button class="btn" id="w-resume">${icon("file")}<span><b>A line on my resume</b><small>Something that isn't true, or isn't said right</small></span></button>
+      <button class="btn" id="w-jobs">${icon("search")}<span><b>It's the wrong kind of job</b><small>Change the job titles or where it looks</small></span></button>
+      <button class="btn" id="w-other">${icon("help")}<span><b>Something else</b><small>Keep practicing for now</small></span></button></div>`);
+  const to = (fn) => () => { m.remove(); closeDrawer(); fn(); };
+  m.querySelector("#w-answer").onclick = to(() => openSettings("questions"));
+  m.querySelector("#w-resume").onclick = to(() => go("profile"));
+  m.querySelector("#w-jobs").onclick = to(() => openSettings("prefs"));
+  m.querySelector("#w-other").onclick = () => { m.remove(); toast("Still practicing: nothing is sent until you start sending for real."); };
+}
+
+// ---------- the short tour, shown once after setup ----------
+const TOUR = [
+  ["Your To do list", "Anything that needs you shows up at the top of the Overview, with one button to press. When it's empty, the app is busy on its own."],
+  ["It practices first", "Your first application is filled in but not sent. Check it, then press Start sending for real. You can pause any time with the button at the bottom left."],
+  ["It keeps working", `Closing the window doesn't stop it: it keeps looking and applying, and you open it again from the ${window.ja && window.ja.platform === "darwin" ? "menu bar at the top of the screen" : "system tray, next to the clock"}. Questions? Press Help at the bottom of the menu on the left.`],
+];
+function showTour() {
+  let k = 0;
+  const m = modal(`<div id="tour"></div>`);
+  const done = () => { m.remove(); api("/api/settings", { touredAt: true }); };
+  const draw = () => {
+    m.querySelector("#tour").innerHTML = `<p class="muted" style="margin:0">${k + 1} of ${TOUR.length}</p><h2 id="modal-title">${TOUR[k][0]}</h2><p>${TOUR[k][1]}</p>
+      <div class="row-actions" style="margin-top:16px">${k ? `<button class="btn" id="t-back">Back</button>` : ""}<button class="btn primary" id="t-next">${k === TOUR.length - 1 ? "Done" : "Next"}</button></div>`;
+    m.querySelector("#t-next").onclick = () => { if (k === TOUR.length - 1) return done(); k++; draw(); m.querySelector("#t-next").focus(); };
+    const b = m.querySelector("#t-back"); if (b) b.onclick = () => { k--; draw(); m.querySelector("#t-next").focus(); };
+  };
+  draw();
+  m.querySelector(".modal").setAttribute("aria-labelledby", "modal-title");
+  const close = m.remove.bind(m);
+  m.remove = () => { close(); api("/api/settings", { touredAt: true }); };
+}
+
+// ---------- Help ----------
+const HELP = [
+  ["How do I start sending applications for real?", "The app starts in practice mode: it fills in one application and doesn't send it. Open it from your To do list, look at the answers, the resume and the screenshots, and press <b>It looks right: start sending for real</b>. Or turn on <b>Send for real</b> at the bottom left."],
+  ["How do I stop it, or take a break?", "Press <b>Pause</b> at the bottom left. Nothing more is sent until you press <b>Resume</b>. To stop sending but keep practicing, turn off <b>Send for real</b>."],
+  ["Does it keep working when I close the window?", `Yes. It keeps looking for jobs and applying. Open it again from the ${window.ja && window.ja.platform === "darwin" ? "menu bar at the top of the screen" : "system tray, next to the clock"}, where there's also <b>Quit</b>. You can change this in Settings > Running.`],
+  ["An application stopped and asks me something. What do I do?", "Some questions only you can answer. Open the application from your To do list, answer the question, and press <b>Save my answers and try again</b>. The app remembers your answer for the next forms that ask."],
+  ["Why didn't it apply to a job?", "Open the job: the reason is at the top, and the <b>Fit</b> tab shows what the posting asks for and what your resume shows. Jobs it left out are on the <b>Skipped</b> page (switch to Advanced at the bottom left to see it)."],
+  ["How do I change the jobs it looks for?", "Go to <b>Settings</b> > Jobs to look for: the job titles, your city and how far you'll go."],
+  ["How do I fix my resume?", "Go to <b>Resume</b> in the menu on the left. <b>All your resume pieces</b> has every line: change it, delete it, or untick it so it's never used."],
+  ["The AI stopped working, or my credit ran out.", "Go to <b>Settings</b> > AI. If your OpenRouter credit ran out, add a few dollars on OpenRouter's Credits page; $5 lasts for hundreds of applications. Then press <b>Connect again</b> or <b>Test key</b>."],
+  ["Where is my information kept?", "On this computer only, except what goes to the AI and to the job sites you apply to. <b>Settings</b> > Your data shows the folder."],
+];
+function renderHelp() {
+  $("main").innerHTML = header() + `<div class="card"><div class="help-list">${HELP.map(([q, a]) => `<details class="more"><summary><b>${q}</b></summary><div class="help-a">${a}</div></details>`).join("")}</div>
+    <div class="row-actions" style="padding:16px"><button class="btn" onclick="showTour()">${icon("eye")}Show the tour again</button>
+      <button class="btn" data-open-url="https://github.com/AntonyPerez0/job-autopilot-desktop#readme">${icon("ext")}Read the full guide</button>
+      <button class="btn ghost" data-open-url="https://github.com/AntonyPerez0/job-autopilot-desktop/issues/new">${icon("ext")}Report a problem</button></div></div>`;
 }
 
 // ---------- profile and settings ----------
@@ -805,6 +898,7 @@ async function renderConfig() {
       ${card("questions", "About you", "The answers application forms ask for")}
       ${card("ai", "AI", "The AI service the app uses")}
       ${card("mailbox", "Mailbox", "Optional: email codes, jobs you already applied to, and replies from employers")}
+      ${card("background", "While it works", "Closing the window, starting with your computer, notifications")}
       ${card("accounts", "Job site accounts", "Optional: let the app make accounts on Workday sites and apply there too", false, true)}
       ${card("running", "Pace and browser", "How many a day, and the browser window", false, true)}
       <div class="card adv" style="margin-bottom:12px"><div class="card-h"><h2>Application history</h2><span class="sub">So you never apply twice, even after a reinstall</span></div><div class="sec" id="sec-history"></div></div>
@@ -813,7 +907,7 @@ async function renderConfig() {
         <div class="row-actions"><button class="btn sm" onclick="window.ja.showDataFolder()">${icon("ext")}Open the folder</button>
         <button class="btn sm" onclick="window.ja.go('onboarding.html')">${icon("retry")}Run the setup again</button></div></div></div>`;
     const forms = { prefs: Forms.prefs($("sec-prefs"), cfg), questions: Forms.questions($("sec-questions"), cfg), ai: Forms.ai($("sec-ai"), cfg),
-      mailbox: Forms.mailbox($("sec-mailbox"), cfg), running: Forms.running($("sec-running"), cfg), accounts: Forms.accounts($("sec-accounts")) };
+      mailbox: Forms.mailbox($("sec-mailbox"), cfg), running: Forms.running($("sec-running"), cfg), accounts: Forms.accounts($("sec-accounts")), background: Forms.background($("sec-background"), cfg) };
     Forms.history($("sec-history"), cfg, () => refreshStatusOnly());
     drawYours();
     document.querySelectorAll("#sec-theme [name=uiMode]").forEach((r) => r.onchange = () => setMode(r.value));
@@ -824,6 +918,9 @@ async function renderConfig() {
       cfg.settings.theme = window.ja.setTheme ? await window.ja.setTheme(r.value) : r.value;
     });
     bindSaves(forms);
+    // Opened at one section (a To do item's button): that one open and in view.
+    if (wantSection && $("sec-" + wantSection)) { const d = $("sec-" + wantSection).closest("details"); if (d) d.open = true; $("sec-" + wantSection).closest(".card").scrollIntoView({ block: "start" }); }
+    wantSection = null;
   }
 }
 async function drawYours() {

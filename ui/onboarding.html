@@ -27,14 +27,14 @@
 <script src="forms.js"></script>
 <script>
 const { esc, icon, msg } = Forms;
+// Five short steps between the welcome and the start; the mailbox and everything optional come later, when useful.
 const STEPS = [
   { id: "welcome", label: "Welcome" },
-  { id: "ai", label: "Connect AI", title: "Connect an AI model", lead: "Job Autopilot needs an AI model: one you pay for directly with your own key (about a cent or less per application with the default), or a free one running on this computer with Ollama or LM Studio." },
-  { id: "resumes", label: "Your resume", title: "Your resume", lead: "Upload the resume you have, and the app splits it into pieces you approve next. No resume? Make one here in a couple of minutes." },
-  { id: "review", label: "Check it", title: "Approve every piece", lead: "Resumes are only ever assembled from what you approve here, so nothing reaches an employer that you did not write and check." },
-  { id: "questions", label: "About you", title: "About you", lead: "Application forms ask these every time. The app always uses your answers here, and corrects the AI if it ever says something different." },
-  { id: "prefs", label: "Jobs to look for", title: "What jobs to look for", lead: "Pick job titles, where you want to work, and where the app should look. It checks every job it finds for fit before applying." },
-  { id: "mail", label: "Mailbox", title: "Connect your mailbox (optional)", lead: "For employers that email a security code, to spot jobs you already applied to, and to show you when an employer writes back." , optional: true },
+  { id: "ai", label: "Connect AI", title: "Connect an AI", lead: "Job Autopilot uses an AI to read job postings and fill in forms. Connect it once, and you're set." },
+  { id: "resumes", label: "Your resume", title: "Your resume", lead: "Add the resume you have, or make one here by telling the app about your work. Either takes a few minutes." },
+  { id: "review", label: "Check it", title: "Check your resume", lead: "Read each part. Only what you approve here is ever sent to an employer." },
+  { id: "questions", label: "About you", title: "About you", lead: "Application forms ask these every time." },
+  { id: "prefs", label: "Jobs to look for", title: "What jobs to look for", lead: "The kind of job you want, and where. You can change this any time." },
   { id: "start", label: "Start" },
 ];
 let i = 0, cfg = null, form = null;
@@ -46,27 +46,27 @@ function drawSteps() {
 
 function show(k) {
   i = k; form = null;
+  // Closed partway through? Setup opens here again next time.
+  window.ja.api("/api/settings", { setupStep: i });
   msg(document.getElementById("err"), "", "");
   const s = STEPS[i];
   const el = document.getElementById("step");
   document.getElementById("back").style.visibility = i ? "visible" : "hidden";
   document.getElementById("skip").hidden = !s.optional;
-  document.getElementById("next").textContent = i === STEPS.length - 1 ? "Start in dry run" : i === 0 ? "Get started" : "Continue";
+  document.getElementById("next").textContent = i === STEPS.length - 1 ? "Start practicing" : i === 0 ? "Get started" : "Continue";
   drawSteps();
   if (s.id === "welcome") {
     el.innerHTML = `<h1>Apply to jobs while you do something else</h1>
-      <p class="lead">Job Autopilot finds jobs that match what you want, writes a one-page resume for each from pieces you approved, fills in the application in a browser window you can watch, and submits it. It keeps a full record of every application.</p>
+      <p class="lead">Job Autopilot finds jobs that fit you, makes a one-page resume for each one, and fills in the application for you. Setting it up takes about ten minutes.</p>
       <div class="card sec"><h2>What kind of work are you looking for?</h2>
         <div class="kind-cards">${[["hourly", "Hourly and everyday jobs", "Retail, food, warehouse, driving, healthcare support, customer service"],
           ["office", "Office, tech and professional jobs", "Software, data, admin, finance, marketing, design"],
           ["both", "Both", "Show me everything that fits"]].map(([v, t, d]) => `<label class="jobkind ${(cfg.prefs.jobKind || "both") === v ? "on" : ""}"><input type="radio" name="kind" value="${v}" ${(cfg.prefs.jobKind || "both") === v ? "checked" : ""}><b>${t}</b><small>${d}</small></label>`).join("")}</div></div>
       <div class="card sec"><h2>What it will and won’t do</h2><ul class="bul" style="margin-top:12px">
-        <li>It never submits with a required question unanswered, and never guesses legal agreements. Those jobs wait for you.</li>
-        <li>It only states facts from your approved resume and your answers. A second AI pass fact-checks every written answer, and answers that fail are not used.</li>
-        <li>It starts in <b>dry run</b>: forms are filled but never submitted until you have checked one and switched to live.</li>
-        <li>It applies at a steady pace (10 a day by default) and never to the same job twice.</li>
-        <li>It does not solve CAPTCHAs. It makes accounts on job sites only if you turn that on in Settings (Workday, with your email and password); otherwise jobs that need an account are left for you.</li>
-        <li>Everything stays on this computer, except what is sent to your AI provider and to the job sites themselves.</li></ul></div>
+        <li>It starts in <b>practice mode</b>: it fills in an application but doesn't send it, so you can check it first.</li>
+        <li>It only says what's true: things from the resume you approve and the answers you give. When it doesn't know an answer, it asks you.</li>
+        <li>It sends at a steady pace (10 a day to start) and never to the same job twice.</li>
+        <li>Everything stays on this computer, except what goes to the AI and to the job sites themselves.</li></ul></div>
       <div class="card sec"><h2>Before you start</h2>
         <p style="margin:8px 0 12px">Automated applications may go against the terms of some job sites or employers, and some employers may treat them differently. You are responsible for every application sent in your name; review the dry-run results before you go live.</p>
         <label class="check"><input type="checkbox" id="terms" ${cfg.settings.acceptedTerms ? "checked" : ""}>I understand, and I will check the applications it sends.</label></div>
@@ -76,13 +76,17 @@ function show(k) {
     return;
   }
   if (s.id === "start") {
-    el.innerHTML = `<h1>Ready for a dry run</h1>
-      <p class="lead">The app will search for jobs, screen them, and fill in the first good match without submitting it. Then it stops and waits for you.</p>
+    const s0 = cfg.settings;
+    el.innerHTML = `<h1>You're ready to practice</h1>
+      <p class="lead">The app looks for jobs now and fills in the first good one, but doesn't send it. Then it waits for you to check it.</p>
       <div class="card sec"><h2>What happens next</h2><ol class="bul" style="margin-top:12px">
-        <li>A browser window opens and you can watch it fill in the form. Leave the app open; closing it stops the autopilot.</li>
-        <li>The filled application shows up on the Overview with every answer, the resume it would send, and screenshots.</li>
-        <li>Check it and press <b>I checked these answers</b>. Fix anything wrong in Settings.</li>
-        <li>When you trust it, turn on <b>Go live</b> in the sidebar. You can pause or go back to dry run at any time.</li></ol></div>`;
+        <li>When your practice application is ready, the Overview shows it at the top of your to-do list.</li>
+        <li>Open it and look at the answers, the resume and the screenshots.</li>
+        <li>If it looks right, press <b>Start sending for real</b>. If something's wrong, the app shows you where to fix it.</li></ol></div>
+      <div class="card sec"><h2>While it works</h2><div class="form" style="margin-top:12px">
+        <label class="check"><input type="checkbox" id="keepRunning" ${s0.keepRunning !== false ? "checked" : ""}><span>Keep working when I close the window <span class="muted">(open it again from the ${(window.ja && window.ja.platform) === "darwin" ? "menu bar at the top of the screen" : "system tray, next to the clock"})</span></span></label>
+        <label class="check"><input type="checkbox" id="openAtLogin" ${s0.openAtLogin ? "checked" : ""}>Start Job Autopilot when my computer starts</label>
+        <label class="check"><input type="checkbox" id="notifications" ${s0.notifications !== false ? "checked" : ""}>Tell me with a notification when something needs me</label></div></div>`;
     return;
   }
   el.innerHTML = `<h1>${s.title}</h1><p class="lead">${s.lead}</p><div class="card sec" id="sec"></div>`;
@@ -90,7 +94,7 @@ function show(k) {
   if (s.id === "ai") form = Forms.ai(sec, cfg);
   if (s.id === "resumes") form = Forms.resumes(sec, cfg, () => setTimeout(() => show(i + 1), 600));
   if (s.id === "review") {
-    form = Forms.review(sec, cfg);
+    form = Forms.review(sec, cfg, { simple: true });
     // A short resume: the questions that fill the page, before the person approves anything.
     const exp = (cfg.profile && cfg.profile.experience) || [];
     const lines = exp.reduce((n, e) => n + (e.bullets || []).length, 0);
@@ -104,13 +108,12 @@ function show(k) {
         if (!fold.open || opened) return;
         opened = true;
         await form.save(); // keep what they ticked so far
-        Forms.fillPage(fold.querySelector("[data-fill]"), cfg, () => { form = Forms.review(sec, cfg); });
+        Forms.fillPage(fold.querySelector("[data-fill]"), cfg, () => { form = Forms.review(sec, cfg, { simple: true }); });
       };
     }
   }
-  if (s.id === "questions") form = Forms.questions(sec, cfg);
-  if (s.id === "prefs") form = Forms.prefs(sec, cfg);
-  if (s.id === "mail") form = Forms.mailbox(sec, cfg);
+  if (s.id === "questions") form = Forms.questions(sec, cfg, { setup: true });
+  if (s.id === "prefs") form = Forms.prefs(sec, cfg, { setup: true });
 }
 
 // A reinstall or a new computer: offer the application history the app finds in its folder.
@@ -151,6 +154,8 @@ document.getElementById("next").onclick = async () => {
     }
     if (form) { const e = await form.save(); if (e) return msg(err, "err", e); }
     if (STEPS[i].id === "start") {
+      await window.ja.api("/api/settings", { keepRunning: document.getElementById("keepRunning").checked, openAtLogin: document.getElementById("openAtLogin").checked,
+        notifications: document.getElementById("notifications").checked });
       const r = await window.ja.api("/api/onboarding/finish", {});
       if (r.error) return msg(err, "err", r.error);
       return window.ja.go("index.html");
@@ -162,7 +167,13 @@ document.getElementById("next").onclick = async () => {
 
 (async () => {
   cfg = await window.ja.api("/api/config");
-  show(0);
+  // Pick up where they left off, as far as what's done allows: the terms first, an AI before a resume, a resume before checking it.
+  let k = Math.min(Number(cfg.settings.setupStep) || 0, STEPS.length - 1);
+  if (k > 0 && !cfg.settings.acceptedTerms) k = 0;
+  if (k > 1 && !cfg.hasKey && !/127\.0\.0\.1|localhost/.test((cfg.settings.ai || {}).apiBase || "")) k = 1;
+  if (k > 2 && !cfg.profile) k = 2;
+  show(k);
+  if (k > 0) msg(document.getElementById("err"), "info", "Welcome back: you're where you left off.");
 })();
 </script>
 </body>

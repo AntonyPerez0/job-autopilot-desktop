@@ -122,9 +122,13 @@ try {
   await win.check("#terms");
   await next();
 
-  await heading("Connect an AI model");
+  await heading("Connect an AI");
+  // OpenRouter first, with one button: sign in and authorize in the browser (the flow itself: test/oauth.test.js).
+  assert.ok(await win.isVisible('[data-connect]:has-text("Connect with OpenRouter")'), "Connect with OpenRouter shown first");
+  assert.ok(!(await win.isVisible("input[name=apiKey]")), "no key to paste unless they ask for it");
+  await next();
+  assert.match(await win.locator("#err").innerText(), /Connect with OpenRouter first/);
   // A local model through Ollama: no key, models found on the server, the context window checked.
-  assert.ok(await win.isVisible('.steps-list:has-text("Make a free OpenRouter account")'), "OpenRouter steps shown first");
   await win.click('summary:has-text("Other ways to connect an AI")');
   await win.check('input[name=prov][value=ollama]');
   await win.fill("input[name=apiBase]", apiBase);
@@ -159,10 +163,16 @@ try {
   await shot("3b-github");
   await shot("3-upload");
   await win.click("[data-go]");
-  await heading("Approve every piece");
+  await heading("Check your resume");
   await shot("4-review-before");
-  const groups = await win.locator("[data-all]").count();
-  for (let g = 0; g < groups; g++) await win.locator("[data-all]").nth(g).click();
+  // Each part reads as it will on the resume: Looks right, or Fix this.
+  await next();
+  assert.match(await win.locator("#err").innerText(), /Looks right/, "nothing approved yet");
+  await win.click('[data-sec] [data-sec-fix] >> nth=0');
+  assert.ok(await win.isVisible("[data-sec] textarea"), "Fix this opens that part for editing");
+  await win.click("[data-sec-done]");
+  for (let k = 0; k < 30 && await win.locator("[data-sec-ok]:not([disabled])").count(); k++) await win.locator("[data-sec-ok]:not([disabled])").first().click();
+  assert.match(await win.locator("[data-count]").innerText(), /^(\d+) of \1 parts checked$/);
   await shot("4-review-approved");
   await next();
 
@@ -172,11 +182,15 @@ try {
   await win.fill("input[name=city]", "Austin");
   // Legal answers are never pre-filled: the app refuses to go on until the person picks them.
   assert.ok(!(await win.isChecked("input[name=workAuthorized][value=yes]")), "work authorization is not pre-filled");
+  assert.ok(!(await win.isVisible("input[name=ytype]")), "only the required questions during setup");
   await next();
   assert.match(await win.locator("#err").innerText(), /allowed to work/);
+  assert.ok(await win.evaluate(() => document.activeElement && document.activeElement.name === "workAuthorized"), "the first missing answer gets the focus");
+  assert.ok(await win.isVisible('.fld.invalid:has([name=workAuthorized])'), "and is marked");
   await win.check("input[name=workAuthorized][value=yes]");
   await win.check("input[name=needsSponsorship][value=no]");
   await win.check("input[name=over18][value=yes]");
+  await win.click("[data-later-show]");
   await win.fill("input[name=ytype]", "Software engineering");
   await win.fill("input[name=yyears]", "3");
   await shot("5-questions");
@@ -193,15 +207,21 @@ try {
   await shot("6-prefs");
   await next();
 
-  await heading("Connect your mailbox");
-  await shot("7-mailbox");
-  await win.click("#skip");
-
-  await heading("Ready for a dry run");
+  await heading("You're ready to practice");
+  assert.ok(await win.isChecked("#keepRunning") && await win.isChecked("#notifications") && !(await win.isChecked("#openAtLogin")));
+  await shot("7-start");
   await next();
 
   await win.waitForSelector('h1:has-text("Overview")');
-  await win.waitForSelector(".banner.violet");
+  // The short tour, once.
+  await win.waitForSelector('.modal h2:has-text("Your To do list")');
+  await shot("8a-tour");
+  await win.click('.modal button:has-text("Next")');
+  await win.click('.modal button:has-text("Next")');
+  await win.click('.modal button:has-text("Done")');
+  await win.waitForSelector(".modal", { state: "detached" });
+  await win.waitForSelector(".todo-card");
+  await win.waitForSelector('.week:has-text("This week")');
   await shot("8-dashboard");
   await screenShot("8z-screen");
   assert.ok(await win.isVisible("#live"), "Go live switch shown");
@@ -212,6 +232,8 @@ try {
   const settings = JSON.parse(fs.readFileSync(path.join(data, "settings.json"), "utf8"));
   assert.strictEqual(settings.onboarded, true);
   assert.strictEqual(settings.dryRun, true);
+  assert.ok(settings.touredAt, "the tour isn't shown again");
+  assert.deepStrictEqual([settings.keepRunning, settings.openAtLogin, settings.notifications], [true, false, true]);
   const secrets = fs.readFileSync(path.join(data, "secrets.json"), "utf8");
   assert.ok(!secrets.includes("test-key-not-real"), "the API key is not stored in plain text");
   const profile = JSON.parse(fs.readFileSync(path.join(data, "profile.json"), "utf8"));
@@ -259,7 +281,7 @@ try {
     JSON.stringify({ report: { decide: [{ label: "How many years of professional software engineering experience do you have?*", note: "no number for this kind of experience in your answers" }] },
       fields: [{ type: "text", label: "How many years of professional software engineering experience do you have?*", required: true }, { type: "select", label: "Are you currently enrolled in full-time studies?", required: true, options: ["Select...", "Yes", "No"] }] }));
   await win.click('button:has-text("Search now")');
-  await win.click('.banner:has-text("waiting for your answer") button:has-text("Answer now")');
+  await win.click('.todo:has-text("needs your answer") button:has-text("Answer now")');
   await win.waitForSelector("#ask-form");
   await win.fill('#ask-form [name=ask-0]', "3");
   await win.selectOption('#ask-form [name=ask-1]', "No");
@@ -399,6 +421,35 @@ try {
   const created = JSON.parse(fs.readFileSync(path.join(data, "profile.json"), "utf8")).experience.find((e) => e.title === "Stock Associate");
   assert.ok(created.bullets.some((b) => /twice a shift/.test(b.text) && /You said yes to/.test(b.source)), "a remembered task became a line, with its source");
   await shot("12-resume-created");
+
+  // Help: short answers, and the tour again.
+  await win.click('.nav:has-text("Help")');
+  await win.waitForSelector('.help-list summary:has-text("Does it keep working when I close the window?")');
+  await shot("13-help");
+
+  // A practice application: "It looks right" starts sending for real after one plain question; then paused at once.
+  new DatabaseSync(path.join(data, "autopilot.db")).prepare("INSERT INTO jobs (slug, title, company, location, status, reason, details, attempts) VALUES ('globex-practice', 'Data Analyst', 'Globex', 'Austin, TX', 'filled', 'practice run: filled and checked, not sent', '{}', 1)").run();
+  await win.click('.nav:has-text("Overview")');
+  await win.waitForSelector('.todo:has-text("Check your practice application")');
+  await win.click('.todo:has-text("Check your practice application") button:has-text("Check it")');
+  await win.click('#drawer button:has-text("Something\'s wrong")');
+  await win.waitForSelector('.modal h2:has-text("What\'s wrong?")');
+  await shot("14-something-wrong");
+  await win.click('.modal button:has-text("Something else")');
+  await win.waitForSelector(".modal", { state: "detached" });
+  await win.click('#drawer button:has-text("It looks right: start sending for real")');
+  await win.waitForSelector('.modal h2:has-text("Start sending applications for real?")');
+  await win.click('.modal button:has-text("Start sending")');
+  await win.waitForSelector('#mode-txt:has-text("Sending")');
+  await win.click("#pause");
+  const live = JSON.parse(fs.readFileSync(path.join(data, "settings.json"), "utf8"));
+  assert.deepStrictEqual([live.dryRun, live.reviewedDryRun, live.paused], [false, true, true]);
+
+  // Closing the window keeps the app working in the background; it comes back from the menu bar or tray.
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
+  await new Promise((r) => setTimeout(r, 500));
+  assert.deepStrictEqual(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((w) => w.isVisible())), [false], "hidden, not closed");
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].show());
   console.log("E2E PASS: onboarding completed; AI calls:", calls.length);
 } catch (e) {
   await shot("failure");
