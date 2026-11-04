@@ -202,11 +202,13 @@ app.whenReady().then(async () => {
     open: (target) => { showWindow(); if (win) win.webContents.send("navigate", target || {}); } });
   app.on("activate", showWindow);
   // macOS: "Update now" can only replace the app in Applications, so a copy run from the disk image or Downloads offers to move there.
+  // Asked on the window, once it shows (a question with no window would hold the whole app until it's answered).
   if (MAC && app.isPackaged && !TEST_RUN && !app.isInApplicationsFolder() && !(store.getSettings().dismissed || []).includes("move-to-applications")) {
-    const r = await dialog.showMessageBox({ type: "question", buttons: ["Move to Applications", "Not now"], defaultId: 0, cancelId: 1,
+    if (!win.isVisible()) await new Promise((r) => win.once("show", r));
+    const r = await dialog.showMessageBox(win, { type: "question", buttons: ["Move to Applications", "Not now"], defaultId: 0, cancelId: 1,
       message: "Move Job Autopilot to your Applications folder?", detail: "It needs to be there to update itself. It opens again from there by itself.", checkboxLabel: "Don't ask again" });
     if (r.checkboxChecked) store.saveSettings({ dismissed: [...(store.getSettings().dismissed || []), "move-to-applications"] });
-    if (r.response === 0) { try { quitting = true; app.moveToApplicationsFolder(); } catch (e) { quitting = false; dialog.showMessageBox({ type: "warning", message: "Job Autopilot couldn't move itself", detail: `Drag it into Applications yourself, then open it from there. (${e.message})` }); } }
+    if (r.response === 0) { try { quitting = true; app.moveToApplicationsFolder(); } catch (e) { quitting = false; dialog.showMessageBox(win, { type: "warning", message: "Job Autopilot couldn't move itself", detail: `Drag it into Applications yourself, then open it from there. (${e.message})` }); } }
   }
 });
 
