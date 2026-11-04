@@ -32,7 +32,7 @@ await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const dataDir = process.platform === "darwin" ? path.join(os.homedir(), "Library", "Application Support", "Job Autopilot") : path.join(process.env.APPDATA || "", "Job Autopilot");
 // Start past the setup, paused, so the dashboard (with its update button) opens.
 fs.mkdirSync(dataDir, { recursive: true });
-fs.writeFileSync(path.join(dataDir, "settings.json"), JSON.stringify({ onboarded: true, acceptedTerms: true, paused: true }));
+fs.writeFileSync(path.join(dataDir, "settings.json"), JSON.stringify({ onboarded: true, acceptedTerms: true, paused: true, touredAt: "2026-10-01T00:00:00Z" }));
 const launches = () => { try { return JSON.parse(fs.readFileSync(path.join(dataDir, "launches.json"), "utf8")); } catch { return []; } };
 
 const app = await electron.launch({ executablePath: exe, args: [], env: { ...process.env, JA_UPDATE_FEED: `http://127.0.0.1:${server.address().port}/latest` }, timeout: 120000 });

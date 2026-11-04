@@ -12,6 +12,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const UI = path.join(HERE, "..", "ui");
 
 // JA_DATA_DIR lets the end-to-end test run against an empty folder.
+const TEST_RUN = !!process.env.JA_DATA_DIR;
 if (process.env.JA_DATA_DIR) app.setPath("userData", process.env.JA_DATA_DIR);
 const DATA = app.getPath("userData");
 process.env.JA_DATA_DIR = DATA;
@@ -201,7 +202,7 @@ app.whenReady().then(async () => {
     open: (target) => { showWindow(); if (win) win.webContents.send("navigate", target || {}); } });
   app.on("activate", showWindow);
   // macOS: "Update now" can only replace the app in Applications, so a copy run from the disk image or Downloads offers to move there.
-  if (MAC && app.isPackaged && !app.isInApplicationsFolder() && !(store.getSettings().dismissed || []).includes("move-to-applications")) {
+  if (MAC && app.isPackaged && !TEST_RUN && !app.isInApplicationsFolder() && !(store.getSettings().dismissed || []).includes("move-to-applications")) {
     const r = await dialog.showMessageBox({ type: "question", buttons: ["Move to Applications", "Not now"], defaultId: 0, cancelId: 1,
       message: "Move Job Autopilot to your Applications folder?", detail: "It needs to be there to update itself. It opens again from there by itself.", checkboxLabel: "Don't ask again" });
     if (r.checkboxChecked) store.saveSettings({ dismissed: [...(store.getSettings().dismissed || []), "move-to-applications"] });
