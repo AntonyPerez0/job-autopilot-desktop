@@ -151,7 +151,6 @@ try {
   await next();
 
   await heading("Your resume");
-  await win.setInputFiles("input[type=file]", resumeFile);
   // Projects from GitHub first; the resume read next is added to them.
   await win.click('summary:has-text("Add projects from my GitHub")');
   await win.fill("[name=gh_user]", "jordanlee-example");
@@ -161,8 +160,9 @@ try {
   await win.click("[data-gh-add]");
   await win.waitForSelector('[data-gh-out] .msg.ok:has-text("Added 1 project")');
   await shot("3b-github");
+  // A resume chosen is read straight away: no second button.
+  await win.setInputFiles("input[type=file]", resumeFile);
   await shot("3-upload");
-  await win.click("[data-go]");
   await heading("Check your resume");
   await shot("4-review-before");
   // Each part reads as it will on the resume: Looks right, or Fix this.
@@ -214,26 +214,24 @@ try {
   await next();
 
   await win.waitForSelector('h1:has-text("Overview")');
-  // The short tour, once.
-  await win.waitForSelector('.modal h2:has-text("Your To do list")');
-  await shot("8a-tour");
-  await win.click('.modal button:has-text("Next")');
-  await win.click('.modal button:has-text("Next")');
-  await win.click('.modal button:has-text("Done")');
-  await win.waitForSelector(".modal", { state: "detached" });
+  // No tour: the To do list says what it is, once.
+  await win.waitForSelector('.tip:has-text("This is your To do list")');
+  await shot("8a-tip");
+  await win.click('.tip button:has-text("Got it")');
+  await win.waitForSelector(".tip", { state: "detached" });
   await win.waitForSelector(".todo-card");
-  await win.waitForSelector('.week:has-text("This week")');
+  await win.waitForSelector('.week:has-text("Since yesterday")');
   await shot("8-dashboard");
   await screenShot("8z-screen");
-  assert.ok(await win.isVisible("#live"), "Go live switch shown");
+  // The mode in words, with the one thing to press.
+  await win.waitForSelector('#mode-box:has-text("Practice mode") button:has-text("Start sending")');
   // "Checking..." while the app's own check runs, then "Check for updates".
   await win.waitForSelector('#update-side button:has-text("Check for updates")', { timeout: 60000 });
-  assert.ok(!(await win.$eval("#live", (e) => e.classList.contains("on"))), "starts in dry run");
 
   const settings = JSON.parse(fs.readFileSync(path.join(data, "settings.json"), "utf8"));
   assert.strictEqual(settings.onboarded, true);
   assert.strictEqual(settings.dryRun, true);
-  assert.ok(settings.touredAt, "the tour isn't shown again");
+  assert.ok((settings.dismissed || []).includes("tip-todo"), "the tip isn't shown again");
   assert.deepStrictEqual([settings.keepRunning, settings.openAtLogin, settings.notifications], [true, false, true]);
   const secrets = fs.readFileSync(path.join(data, "secrets.json"), "utf8");
   assert.ok(!secrets.includes("test-key-not-real"), "the API key is not stored in plain text");
@@ -288,14 +286,14 @@ try {
   await win.selectOption('#ask-form [name=ask-1]', "No");
   await shot("8d-answer");
   await win.click("#ask-go");
-  await win.waitForSelector('#drawer .badge:has-text("Queued"), #drawer .badge:has-text("Applying now")');
+  await win.waitForSelector('#drawer .badge:has-text("Up next"), #drawer .badge:has-text("Filling in now"), #drawer .badge:has-text("Practicing now")');
   const yours = JSON.parse(fs.readFileSync(path.join(data, "answers.json"), "utf8")).yourAnswers;
   assert.deepStrictEqual(yours.map((x) => [x.value, x.scope]), [["3", "all"], ["No", "all"]], "answers saved for the next applications too");
   await win.click("#drawer .dr-close");
 
-  // Skip, from the list: the job leaves Needs attention without being opened, and Undo puts it back.
+  // Skip, from the list: the job leaves Needs you without being opened, and Undo puts it back.
   const statusOf = (slug) => new DatabaseSync(path.join(data, "autopilot.db")).prepare("SELECT status FROM jobs WHERE slug = ?").get(slug).status;
-  await win.click('.nav:has-text("Needs attention")');
+  await win.click('.nav:has-text("Needs you")');
   await win.click('tr:has-text("Web Developer") [data-skip-job]');
   await win.waitForSelector('#toast.show:has-text("Skipped") button:has-text("Undo")');
   assert.ok(!(await win.isVisible("#drawer.open")), "the row's Skip doesn't open the job");
@@ -305,14 +303,20 @@ try {
   assert.strictEqual(statusOf("old-job-2"), "failed", "Undo puts it back where it was");
   await shot("8e-skip");
 
-  // Simple (the default) hides statistics, activity and the extra pages; Advanced shows everything.
+  // Simple (the default) hides statistics and activity, never a page the app points to; Advanced shows everything.
   await win.click('.nav:has-text("Overview")');
-  assert.ok(!(await win.isVisible('.nav:has-text("Skipped")')), "Simple: no Skipped page in the sidebar");
+  assert.ok(await win.isVisible('.nav:has-text("Not applied")'), "Simple: Not applied is there, since reasons point to it");
+  await win.click('.nav:has-text("Not applied")');
+  await win.waitForSelector('h1:has-text("Not applied")');
+  await win.waitForTimeout(1500);
+  assert.ok(await win.isVisible('h1:has-text("Not applied")'), "and it stays open in Simple");
+  await win.click('.nav:has-text("Overview")');
+  assert.ok(!(await win.isVisible('.nav:has-text("Activity")')), "Simple: no Activity page in the sidebar");
   assert.ok(!(await win.isVisible('.card:has-text("Applications per day")')), "Simple: no charts on the Overview");
   assert.ok(await win.isVisible('.card:has-text("Recent applications")'));
   await shot("8e-simple");
   await win.click('[data-mode="advanced"]');
-  await win.waitForSelector('.nav:has-text("Skipped")', { state: "visible" });
+  await win.waitForSelector('.nav:has-text("Activity")', { state: "visible" });
   assert.ok(await win.isVisible('.card:has-text("Applications per day")'), "Advanced: the charts are back");
   assert.strictEqual(JSON.parse(fs.readFileSync(path.join(data, "settings.json"), "utf8")).uiMode, "advanced", "the choice is kept");
 
@@ -449,7 +453,7 @@ try {
   assert.ok(diag.activity.length && diag.lookingFor.titles.length, "activity and what it looks for");
   assert.ok(!fs.readFileSync(diagFile, "utf8").includes("jordan.lee@example.com"), "no email address in it");
 
-  // A practice application: "It looks right" starts sending for real after one plain question; then paused at once.
+  // A practice application: "Looks right" starts sending for real after one plain question; then paused at once.
   new DatabaseSync(path.join(data, "autopilot.db")).prepare("INSERT INTO jobs (slug, title, company, location, status, reason, details, attempts) VALUES ('globex-practice', 'Data Analyst', 'Globex', 'Austin, TX', 'filled', 'practice run: filled and checked, not sent', '{}', 1)").run();
   await win.click('.nav:has-text("Overview")');
   await win.waitForSelector('.todo:has-text("Check your practice application")');
@@ -459,17 +463,18 @@ try {
   await shot("14-something-wrong");
   await win.click('.modal button:has-text("Something else")');
   await win.waitForSelector(".modal", { state: "detached" });
-  await win.click('#drawer button:has-text("It looks right: start sending for real")');
+  await win.click('#drawer button:has-text("Looks right: start sending")');
   await win.waitForSelector('.modal h2:has-text("Start sending applications for real?")');
+  // The practice applications can go too, in the same step (not here, so nothing is queued).
+  await win.waitForSelector('.modal #m-also:checked');
+  await shot("14b-send-practice");
+  await win.uncheck(".modal #m-also");
   await win.click('.modal button:has-text("Start sending")');
   await win.waitForSelector('#mode-txt:has-text("Sending")');
-  // Right after, the app offers to send the practice runs too ("Not now" here, so nothing is queued).
-  await win.waitForSelector('.modal h2:has-text("Send your 1 practice application too?")');
-  await shot("14b-send-practice");
-  await win.click('.modal button:has-text("Not now")');
   await win.waitForSelector(".modal", { state: "detached" });
   assert.strictEqual(new DatabaseSync(path.join(data, "autopilot.db")).prepare("SELECT status FROM jobs WHERE slug = 'globex-practice'").get().status, "filled", "not sent unless asked");
   await win.click("#pause");
+  await win.waitForSelector('#mode-txt:has-text("Paused")');
   const live = JSON.parse(fs.readFileSync(path.join(data, "settings.json"), "utf8"));
   assert.deepStrictEqual([live.dryRun, live.reviewedDryRun, live.paused], [false, true, true]);
 

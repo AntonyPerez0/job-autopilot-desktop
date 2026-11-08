@@ -68,7 +68,7 @@ const w = (f, o) => fs.writeFileSync(path.join(data, f), JSON.stringify(o));
 const profile = JSON.parse(JSON.stringify(Profile.EXAMPLE));
 for (const k of ["experience", "projects", "skills", "education", "summaries", "bases", "headers"]) for (const e of profile[k] || []) { e.approved = true; for (const x of e.bullets || []) x.approved = true; }
 w("profile.json", profile);
-const settings = { onboarded: true, acceptedTerms: true, dryRun: true, paused: true, uiMode: "simple", ai: { provider: "custom", apiBase: `http://127.0.0.1:${ai.address().port}/v1`, model: "z-ai/glm-5.3-flash" } };
+const settings = { onboarded: true, acceptedTerms: true, dryRun: true, paused: true, uiMode: "simple", dismissed: ["tip-todo"], ai: { provider: "custom", apiBase: `http://127.0.0.1:${ai.address().port}/v1`, model: "z-ai/glm-5.3-flash" } };
 w("settings.json", settings);
 w("prefs.json", { minPay: 45, minPayPer: "hour", titles: ["Software Engineer", "Backend Engineer"], cities: [{ name: "Austin", label: "Austin, TX", country: "US", admin1: "TX", lat: 30.27, lon: -97.74 }], remote: true, boards: {} });
 w("answers.json", { firstName: "Jordan", lastName: "Lee", email: "jordan.lee@example.com", phone: "+1 (512) 555-0142", city: "Austin", state: "TX" });
@@ -101,7 +101,9 @@ job("globex-ml", "ML Engineer", "Globex", "Remote, US", "manual", 8, { reason: "
 job("acme-sec", "Security Engineer", "Acme", "Austin, TX", "skipped", 9, { reason: "not a fit: needs a security clearance" });
 const ev = db.prepare("INSERT INTO events (slug, level, message, at) VALUES (?, ?, ?, ?)");
 ev.run("globex-swe", "info", "applied: the employer confirmed it", ago(1));
-ev.run("wonka-full", "info", "filled (dry run): every required field answered", ago(4));
+ev.run("wonka-full", "info", "queued: Full Stack Engineer at Wonka (Round Rock, TX) via hiringcafe", ago(6));
+ev.run("wonka-full", "info", "applying: Full Stack Engineer at Wonka (practice application)", ago(4.1));
+ev.run("wonka-full", "info", "filled: practice run: filled and checked, not sent", ago(4));
 db.close();
 
 // ---------- the screenshots ----------
@@ -166,8 +168,10 @@ if (await nums.count()) await nums.nth(0).fill("about 15 times a week");
 const card = win.locator('[data-fwork="job"]').first();
 await card.locator("[name=f_title]").fill("Math tutor");
 await card.locator("[name=f_employer]").fill("Initech Learning Center");
-await card.locator("[name=f_start]").fill("2020");
-await card.locator("[name=f_end]").fill("2022").catch(() => {});
+await card.locator('[data-date="f_start"] [data-dm]').selectOption("Sep");
+await card.locator('[data-date="f_start"] [data-dy]').fill("2020");
+await card.locator('[data-date="f_end"] [data-dm]').selectOption("May").catch(() => {});
+await card.locator('[data-date="f_end"] [data-dy]').fill("2022").catch(() => {});
 await card.locator("textarea").first().fill("tutored high school students in algebra and intro programming, two evenings a week");
 // A window tall enough to hold it all (a taller-than-window capture resizes the page and shifts it), then the
 // top of it: the numbers behind your lines and other work.

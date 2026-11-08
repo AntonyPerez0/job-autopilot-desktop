@@ -35,7 +35,7 @@ test("practice runs sent for real: each queued again as real, first in line, and
   assert.strictEqual(store.getSettings().reviewedDryRun, true);
   assert.strictEqual(W.practiceFor(getJob("p1")), false, "sent for real even in practice mode");
   const no = await handle("/api/job/p1", { action: "send" });
-  assert.match(no.error, /Only a practice run/);
+  assert.match(no.error, /Only a practice application/);
 });
 
 test("not this kind of work: the kind is left out, the waiting ones of that kind are skipped, and Undo brings them all back", async () => {
@@ -125,4 +125,85 @@ test("desired pay: asked for once a form stopped on it", async () => {
   assert.ok((await handle("/api/status")).missingAnswers.includes("your desired pay"));
   store.saveAnswers({ salary: "$40,000 a year" });
   assert.ok(!(await handle("/api/status")).missingAnswers.includes("your desired pay"));
+});
+
+test("why jobs weren't applied to: grouped, each with the setting behind it; Apply anyway puts one up next, and its must-haves don't skip it again", async () => {
+  add("sk1", { status: "skipped", reason: "asks for 8+ years of experience (you have about 4; jobs asking for more than 5 are left out)" });
+  add("sk2", { status: "skipped", reason: "asks for 6+ years of experience (you have about 4; jobs asking for more than 5 are left out)" });
+  add("sk3", { status: "skipped", reason: "pays at most $12/hour, under your lowest pay" });
+  add("sk4", { status: "skipped", reason: "something no group knows" });
+  const r = await handle("/api/skips");
+  const g = Object.fromEntries(r.groups.map((x) => [x.why, x]));
+  assert.strictEqual(g["asked for more years of experience than you have"].count, 2);
+  assert.deepStrictEqual(g["asked for more years of experience than you have"].fix, { label: "Change my years", section: "prefs", field: "yearsInField" });
+  assert.deepStrictEqual([g["paid less than your lowest pay"].count, g["paid less than your lowest pay"].fix.field], [1, "minPay"]);
+  assert.strictEqual(r.groups.at(-1).why, "for other reasons", "the ones no group knows come last");
+  assert.strictEqual((await handle("/api/config")).years.have, 4, "the years their answers show, for Settings");
+  const any = await handle("/api/job/sk1", { action: "apply-anyway" });
+  assert.deepStrictEqual([any.status, any.reason, any.details.applyAnyway], ["queued", "you chose to apply anyway", true]);
+  assert.match((await handle("/api/job/sk1", { action: "apply-anyway" })).error, /isn't one the app left out/);
+  assert.strictEqual((await handle("/api/skips")).groups.find((x) => x.why === "asked for more years of experience than you have").count, 1);
+});
+
+test("more years allowed: the jobs left out for years that fit now are forgotten, so the next search checks them again", async () => {
+  store.savePrefs({ yearsInField: 2, stretchYears: 1, maxYearsRequired: 3 });
+  add("yr4", { status: "skipped", reason: "asks for 4+ years of experience (you have about 2; jobs asking for more than 3 are left out)" });
+  add("yr9", { status: "skipped", reason: "asks for 9+ years of experience (you have about 2; jobs asking for more than 3 are left out)" });
+  await handle("/api/prefs/save", { prefs: { yearsInField: 4 } });
+  assert.strictEqual(getJob("yr4"), undefined, "asks for 4: fits up to 5 now");
+  assert.strictEqual(getJob("yr9").status, "skipped", "asks for 9: still too many");
+  await handle("/api/prefs/save", { prefs: { yearsInField: 1 } });
+  assert.strictEqual(getJob("yr9").status, "skipped", "fewer years forget nothing");
+});
+
+test("the list of applications for unemployment claims: every one sent or maybe sent, by date, in a spreadsheet that can't run formulas", async () => {
+  add("log1", { status: "applied", company: '=HYPERLINK("http://x.example")', title: "Stocker, nights", applied_at: "2026-10-02T12:00:00.000Z" });
+  add("log2", { status: "failed", reason: "no confirmation appeared. Submit was pressed, so it may have gone through. Check your email before using Try again.", applied_at: "2026-10-01T12:00:00.000Z" });
+  add("log3", { status: "failed", reason: "page 2 was not accepted" });
+  add("log4", { status: "applied", reason: "applied by you on the employer's site", applied_at: "2026-10-03T12:00:00.000Z" });
+  const r = await handle("/api/applications/log");
+  const lines = r.csv.split("\r\n");
+  assert.strictEqual(lines[0], "Date applied,Employer,Job title,Location,How,Link,Status");
+  const row = (slug) => lines.find((l) => l.includes(`https://jobs.example/${slug},`));
+  assert.strictEqual(row("log1"), `2026-10-02,"'=HYPERLINK(""http://x.example"")","Stocker, nights",,Online application,https://jobs.example/log1,Sent`);
+  assert.match(row("log2"), /^2026-10-01,Globex,Cashier,,Online application,https:\/\/jobs\.example\/log2,May have gone through$/);
+  assert.match(row("log4"), /You applied on the employer's site/);
+  assert.strictEqual(row("log3"), undefined, "nothing that wasn't sent");
+  const dates = lines.slice(1, -1).map((l) => l.slice(0, 10));
+  assert.deepStrictEqual(dates, [...dates].sort(), "oldest first");
+  assert.strictEqual(r.count, lines.length - 2);
+});
+
+test("the status: practice applications new since the person last looked, what stopped for another reason, and the last day; opening one is looking", async () => {
+  getDb().prepare("DELETE FROM jobs").run();
+  store.saveSettings({ dryRun: true, reviewedDryRun: false, practiceLookedAt: "2026-11-01T00:00:00.000Z" });
+  const fill = (slug, at) => { add(slug, { status: "filled", reason: "practice run: filled and checked, not sent" }); getDb().prepare("UPDATE jobs SET filled_at = ? WHERE slug = ?").run(at, slug); };
+  const now = Date.now();
+  fill("before-update", null);
+  fill("looked-at", "2026-10-30T00:00:00.000Z");
+  fill("new1", new Date(now - 3000).toISOString()); fill("new2", new Date(now - 2000).toISOString()); fill("new3", new Date(now - 1000).toISOString());
+  add("captcha", { status: "failed", reason: "a CAPTCHA challenge blocked the submit" });
+  add("question", { status: "failed", reason: "could not fill every required field: needs you: Phone" });
+  add("maybe", { status: "failed", reason: "no confirmation appeared. Submit was pressed, so it may have gone through. Check your email before using Try again." });
+  add("sent", { status: "applied", applied_at: new Date(now - 1000).toISOString() });
+  add("left-out", { status: "skipped", reason: "posting closed" });
+  let s = await handle("/api/status");
+  assert.deepStrictEqual([s.practice.count, s.practice.unchecked, s.practice.held, s.practice.first.slug], [5, 3, true, "new1"]);
+  assert.deepStrictEqual([s.stopped.count, s.stopped.first.slug], [1, "captcha"], "a question has its own To do item");
+  assert.deepStrictEqual([s.maybe.count, s.maybe.first.slug], [1, "maybe"], "and so has one that may have gone through");
+  assert.deepStrictEqual({ ...s.day }, { sent: 1, practiced: 3, notApplied: 1 });
+  assert.strictEqual(W.doneToday(), 4, "practice applications count toward the daily limit");
+  assert.match(W.practiceHold(), /check the first practice application/);
+  store.saveSettings({ reviewedDryRun: true });
+  assert.match(W.practiceHold(), /look at the 3 new practice applications/);
+  store.saveSettings({ reviewedDryRun: false });
+  getDb().prepare("INSERT INTO events (slug, level, message) VALUES ('new2', 'info', 'applying: Cashier at Globex (practice run)')").run();
+  const j = await handle("/api/job/new2");
+  assert.deepStrictEqual(j.events.map((e) => e.message), ["applying: Cashier at Globex (practice run)"], "its history");
+  s = await handle("/api/status");
+  assert.deepStrictEqual([s.practice.unchecked, s.practice.held, s.settings.reviewedDryRun], [0, false, true], "opened: checked, so sending can start");
+  assert.strictEqual(W.practiceHold(), "", "they looked: the app carries on");
+  const at = store.getSettings().practiceLookedAt;
+  await handle("/api/job/new3");
+  assert.strictEqual(store.getSettings().practiceLookedAt, at, "nothing new: nothing written");
 });

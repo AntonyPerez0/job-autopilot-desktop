@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld("ja", {
   saveResume: (file, name) => ipcRenderer.invoke("save-resume", file, name),
   showFile: (f) => ipcRenderer.invoke("show-file", f),
   copyText: (t) => ipcRenderer.invoke("copy-text", t),
+  saveApplications: () => ipcRenderer.invoke("save-applications"),
   setTheme: (mode) => ipcRenderer.invoke("set-theme", mode),
   setTextSize: (factor) => ipcRenderer.invoke("set-text-size", factor),
   platform: process.platform,

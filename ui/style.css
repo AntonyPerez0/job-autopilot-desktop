@@ -616,7 +616,7 @@ details.card-fold[open] > summary h2::before, details.card-fold[open] > summary 
 
 /* "Something's wrong" with a practice application: where to fix it. */
 .wrong-list { display: grid; gap: var(--space-xs); margin-top: var(--space-md); }
-.wrong-list .btn { justify-content: flex-start; text-align: left; min-height: 56px; padding: var(--space-xs) var(--space-md); }
+.wrong-list .btn { justify-content: flex-start; text-align: left; min-height: 56px; padding: var(--space-xs) var(--space-md); white-space: normal; width: 100%; }
 .wrong-list .btn span { display: grid; }
 .wrong-list .btn small { color: var(--color-muted); font-weight: 400; }
 
@@ -636,3 +636,98 @@ details.card-fold[open] > summary h2::before, details.card-fold[open] > summary 
 .fld.invalid > span { color: var(--color-error); }
 .fld.invalid input, .fld.invalid .radio-row label { box-shadow: inset 0 0 0 1.5px var(--color-error); }
 .connect { display: grid; gap: var(--space-sm); }
+
+/* ---------- clearer at a glance (docs/ui-research.md) ---------- */
+/* The mode, in words, with the one thing to press. */
+.mode-box { display: grid; gap: var(--space-2xs); padding: var(--space-xs); border-radius: var(--radius-card); background: var(--color-paper-2); }
+.mode-line { display: grid; gap: 2px; }
+.mode-line b { font-weight: 600; }
+.mode-line .mode-text { color: var(--color-ink-2); font-size: var(--text-sm); }
+.mode-line.practice b { color: var(--color-practice); }
+.mode-line.sending b { color: var(--color-done); }
+.mode-line.paused b { color: var(--color-ink-2); }
+.mode-box:has(.practice) { background: var(--color-practice-bg); }
+.mode-box:has(.sending) { background: var(--color-done-bg); }
+.mode-acts { display: flex; flex-wrap: wrap; gap: var(--space-2xs); }
+.side-foot .row > span:last-child:not(:first-child) { color: var(--color-ink-2); }
+.mobile-mode { display: none; }
+@media (max-width: 860px) {
+  .mobile-mode { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); flex-wrap: wrap; padding: var(--space-xs) var(--space-md); background: var(--color-paper-2); border-bottom: 1px solid var(--color-rule); }
+  .mobile-mode .mode-line { display: flex; gap: var(--space-xs); align-items: center; }
+  .mobile-mode:has(.practice) { background: var(--color-practice-bg); }
+  .mobile-mode:has(.sending) { background: var(--color-done-bg); }
+}
+.nav .count.practice { background: var(--color-practice-bg); color: var(--color-practice); }
+.badge svg.i { width: 13px; height: 13px; flex: none; }
+.badge .spin { width: 9px; height: 9px; border-color: color-mix(in oklab, currentColor 25%, transparent); border-top-color: currentColor; }
+.badge.violet { color: var(--color-practice); background: var(--color-practice-bg); border-color: transparent; }
+.live.violet { background: var(--color-practice-bg); color: var(--color-practice); }
+.live.gray { background: var(--color-paper-2); color: var(--color-ink-2); }
+.live.violet b, .live.gray b { color: inherit; }
+.callout.violet { background: var(--color-practice-bg); } .callout.violet b { color: var(--color-practice); }
+.todo.violet { box-shadow: inset 4px 0 0 var(--color-practice); } .todo.violet > svg.i { color: var(--color-practice); }
+.todo.blue { box-shadow: inset 4px 0 0 var(--color-work); } .todo.blue > svg.i { color: var(--color-work); }
+.banner.violet { background: var(--color-practice-bg); box-shadow: inset 4px 0 0 var(--color-practice); } .banner.violet > svg.i { color: var(--color-practice); }
+/* The work in progress, in one line; the steps on request. */
+.prog-line { display: flex; align-items: center; gap: var(--space-sm); flex-wrap: wrap; padding: var(--space-sm) var(--space-md); margin-bottom: var(--space-md); font-size: var(--text-sm); }
+.prog-line .pl-t { min-width: 0; }
+.prog-line .pl-m { color: var(--color-muted); }
+.prog-line .pl-a { margin-left: auto; display: flex; gap: var(--space-sm); }
+.prog-line.calm > svg.i { color: var(--color-muted); }
+.prog.practice { box-shadow: var(--edge-stock), var(--cast-stock), inset 3px 0 0 var(--color-practice); }
+.prog .spin { flex: none; }
+/* The first time: what a part of the app is for. */
+.tip { display: flex; gap: var(--space-sm); align-items: center; padding: var(--space-sm) var(--space-md); margin-bottom: var(--space-sm); border-radius: var(--radius-card); background: var(--color-work-bg); color: var(--color-ink-2); font-size: var(--text-sm); }
+.tip > svg.i { color: var(--color-work); flex: none; }
+.tip > span { flex: 1; }
+/* A practice application: what to check, and the two ways on. */
+.check-block { margin-top: var(--space-md); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-card); background: var(--color-practice-bg); font-size: var(--text-sm); color: var(--color-ink-2); display: grid; gap: var(--space-xs); }
+.check-block > b { color: var(--color-practice); font-weight: 600; font-size: var(--text-md); }
+.checks { margin: 0; padding-left: 1.25rem; display: grid; gap: 2px; }
+.check-block .link { border: 0; background: none; padding: 0; font: inherit; font-weight: 600; cursor: pointer; }
+/* Everything but the main actions, folded. */
+.more-acts { position: relative; }
+.more-acts > summary { list-style: none; }
+.more-acts > summary::-webkit-details-marker { display: none; }
+.more-acts[open] > summary { background: var(--color-paper-3); }
+.more-acts > summary svg.i { width: 14px; height: 14px; margin: 0 -2px 0 2px; transition: transform var(--dur-micro) var(--ease-out); }
+.more-acts[open] > summary svg.i { transform: rotate(180deg); }
+.more-list { display: flex; flex-wrap: wrap; gap: var(--space-xs); margin-top: var(--space-xs); }
+.dr-actions:has(.more-acts[open]) { align-items: flex-start; }
+/* What happened to an application, in order. */
+.history { margin-top: var(--space-md); font-size: var(--text-sm); }
+.history > summary { cursor: pointer; color: var(--color-ink-2); font-weight: 500; }
+.history ol { margin: var(--space-xs) 0 0; padding: 0; list-style: none; display: grid; gap: var(--space-3xs); }
+.history li { display: grid; grid-template-columns: 9rem 1fr; gap: var(--space-sm); color: var(--color-ink-2); }
+.history .time { color: var(--color-muted); font-variant-numeric: tabular-nums; }
+.qa-row .a .qa-fix { display: flex; width: fit-content; margin: var(--space-2xs) 0 0 calc(var(--space-xs) * -1); }
+.qa-row .a.edit { display: grid; gap: var(--space-xs); }
+/* Why jobs weren't applied to, grouped, each with its setting. */
+.skip-why .why-list { list-style: none; margin: var(--space-xs) 0; padding: 0; display: grid; gap: var(--space-2xs); }
+.skip-why li { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); flex-wrap: wrap; }
+.skip-why > div { width: 100%; }
+/* Settings: links to each section, a save bar that stays in view while there's something to save. */
+.sec-links { display: flex; flex-wrap: wrap; gap: var(--space-2xs) var(--space-sm); margin-bottom: var(--space-md); font-size: var(--text-sm); }
+.sec-links a { color: var(--color-ink-2); text-decoration: underline; text-decoration-color: var(--color-rule-2); text-underline-offset: 0.18em; }
+.save-bar.dirty { position: sticky; bottom: 0; z-index: var(--z-sticky); padding-top: var(--space-sm); background: var(--color-cotton); border-top: 1px solid var(--color-rule); border-radius: 0 0 var(--radius-card) var(--radius-card); }
+.save-bar .unsaved { display: none; align-items: center; gap: var(--space-2xs); color: var(--color-attn); font-size: var(--text-sm); }
+.save-bar.dirty .unsaved { display: inline-flex; }
+.flash { outline: 2px solid var(--color-focus); outline-offset: 4px; border-radius: var(--radius-input); transition: outline-color 1.5s; }
+.years-row { align-items: start; }
+.years-rule { margin: calc(var(--space-xs) * -1) 0 0; }
+.years-rule:empty { display: none; }
+/* Setup: a problem is said next to Continue. */
+.wiz-foot #err { flex: 1; min-width: 0; }
+.wiz-foot #err .msg { margin: 0; padding: var(--space-2xs) var(--space-sm); }
+/* The job panel scrolls as one, with its tabs in view; in a narrow window it's a page with Back. */
+.drawer { overflow-y: auto; }
+/* Every part keeps its height (the tabs scroll sideways, so a flex column would squeeze them to nothing). */
+.drawer > * { flex: none; }
+.drawer .dr-body { overflow: visible; }
+.drawer .tabs { position: sticky; top: 0; z-index: 1; background: var(--color-paper); }
+.dr-back { display: none; }
+@media (max-width: 860px) {
+  .drawer { width: 100%; border-left: 0; }
+  .dr-close .dr-back { display: inline; }
+  .dr-close svg.i { display: none; }
+}

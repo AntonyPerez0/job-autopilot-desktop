@@ -21,11 +21,13 @@ export function startBackground({ core, here, show, open, visible }) {
     if (w.finish && w.finish.phase === "yours") return `Your turn: ${w.finish.company}`;
     if (w.finish && w.finish.phase === "filling") return `Filling in ${w.finish.company} for you to finish`;
     if (s.paused) return "Paused";
+    if (w.job && w.job.practice) return `Practicing on ${w.job.company}: nothing is sent`;
     if (w.job) return `Applying to ${w.job.company}`;
     if (w.now === "searching") return "Looking for new jobs";
     if (s.dryRun && !s.reviewedDryRun && st.firstFilled) return "Waiting for you to check the practice application";
+    if (s.dryRun) return `Practice mode: nothing is sent${st.practice && st.practice.count ? ` (${st.practice.count} to check)` : ""}`;
     if (/cap/.test(w.now)) return `Done for today: ${st.appliedToday} sent`;
-    return s.dryRun ? "Practice mode: nothing is sent" : `${st.appliedToday} sent today`;
+    return `${st.appliedToday} sent today`;
   };
   const menu = (st) => Menu.buildFromTemplate([
     { label: doing(st), enabled: false },
@@ -47,6 +49,9 @@ export function startBackground({ core, here, show, open, visible }) {
     // Finish with me: the browser window is waiting for them.
     const f = st.state && st.state.finish;
     if (f && f.phase === "yours") out.push({ key: `finish:${f.slug}:${f.since}`, title: `Your turn: ${f.company}`, body: String(f.why || "").replace(/^./, (c) => c.toUpperCase()), target: { job: f.slug } });
+    // Practice applications waiting to be looked at: the app fills in no more until then.
+    const pr = st.practice;
+    if (st.settings.dryRun && st.settings.reviewedDryRun && pr && pr.held && pr.first) out.push({ key: `practice-wait:${pr.first.slug}`, title: "Your practice applications are waiting", body: `${pr.unchecked} new ones are filled in. The app fills in no more until you open one, and nothing is sent until you start sending.`, target: { view: "filled" } });
     const ai = st.search && st.search.aiProblem;
     if (ai) out.push({ key: `ai:${ai}`, title: "The AI stopped working", body: ai, target: { view: "settings" } });
     return out;
@@ -69,7 +74,10 @@ export function startBackground({ core, here, show, open, visible }) {
     }
     const c = st.counts || {};
     // Queued jobs that are waiting (a referral, a few days between applications to one company) aren't work for today.
-    const work = !s.paused && (!!st.state.job || st.state.now === "searching" || ((c.queued || 0) > 0 && !!st.next && st.appliedToday < s.dailyCap && !(s.dryRun && !s.reviewedDryRun && st.firstFilled)));
+    // In practice mode, practice applications count toward the day, and the app waits while they wait for the person.
+    const today = st.appliedToday + (s.dryRun ? st.practicedToday || 0 : 0);
+    const waiting = s.dryRun && ((!s.reviewedDryRun && st.firstFilled) || (st.practice && st.practice.held));
+    const work = !s.paused && (!!st.state.job || st.state.now === "searching" || ((c.queued || 0) > 0 && !!st.next && today < s.dailyCap && !waiting));
     if (s.keepAwake !== false && work) { if (blocker === null) blocker = powerSaveBlocker.start("prevent-app-suspension"); }
     else if (blocker !== null) { powerSaveBlocker.stop(blocker); blocker = null; }
     const items = news(st);

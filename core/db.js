@@ -37,13 +37,15 @@ CREATE TABLE IF NOT EXISTS events (
   at TEXT DEFAULT (datetime('now')),
   slug TEXT, level TEXT, message TEXT
 );
+CREATE INDEX IF NOT EXISTS events_slug ON events(slug);
 `);
   // Columns added since, for databases made before them:
   //   real: the person asked to send this one for real, even in practice mode
   //   hold_until: they know someone there; the app waits (SQLite time) so they can ask for a referral first
   //   stage: where an application stands, set by the person (interviewing | offer | rejected | withdrew)
   //   followed_up_at: when they followed up on it ("no": they chose not to)
-  for (const [col, type] of [["real", "INTEGER DEFAULT 0"], ["hold_until", "TEXT"], ["stage", "TEXT"], ["followed_up_at", "TEXT"]]) {
+  //   filled_at: when a practice application was filled in (practice applications count toward the daily limit)
+  for (const [col, type] of [["real", "INTEGER DEFAULT 0"], ["hold_until", "TEXT"], ["stage", "TEXT"], ["followed_up_at", "TEXT"], ["filled_at", "TEXT"]]) {
     if (!db.prepare("SELECT 1 FROM pragma_table_info('jobs') WHERE name = ?").get(col)) db.exec(`ALTER TABLE jobs ADD COLUMN ${col} ${type}`);
   }
   return db;
@@ -79,6 +81,17 @@ export function appliedToday() {
   const shift = `-${startHour()} hours`;
   return getDb().prepare("SELECT COUNT(*) n FROM jobs WHERE applied_at IS NOT NULL AND applied_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(applied_at, 'localtime', ?) = date('now', 'localtime', ?)").get(shift, shift).n;
 }
+
+// Practice applications filled in today (same day as appliedToday): in practice mode they count toward the daily limit,
+// so practicing goes at the pace sending would.
+export function practicedToday() {
+  const shift = `-${startHour()} hours`;
+  return getDb().prepare("SELECT COUNT(*) n FROM jobs WHERE filled_at IS NOT NULL AND date(filled_at, 'localtime', ?) = date('now', 'localtime', ?)").get(shift, shift).n;
+}
+
+// Practice applications filled in after `since` (an ISO time; none: every one with a fill time), oldest first: the ones
+// the person hasn't looked at since.
+export const practiceSince = (since) => getDb().prepare("SELECT slug, title, company FROM jobs WHERE status = 'filled' AND filled_at > ? ORDER BY filled_at ASC").all(since || "");
 
 // When the current application day ends, as a timestamp.
 export function nextDayStart(now = new Date()) {

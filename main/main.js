@@ -169,9 +169,22 @@ app.whenReady().then(async () => {
     const r = await dialog.showOpenDialog(win, { title: "Where to keep your application history", properties: ["openDirectory", "createDirectory"] });
     return r.canceled ? null : r.filePaths[0];
   });
-  // Only the history backup (or a file in its folder or the app's data folder); never a network (UNC) path.
   // A note the person sends themselves (a referral ask, a follow-up): text only, at most 20,000 characters.
   handle("copy-text", (_e, t) => { clipboard.writeText(String(t || "").slice(0, 20000)); return true; });
+  // The list of applications sent, by date, for unemployment claims (a spreadsheet file), saved where the person picks.
+  handle("save-applications", async () => {
+    const list = await api.handle("/api/applications/log");
+    if (!list || list.error) throw new Error((list && list.error) || "The list couldn't be made.");
+    const day = new Date().toISOString().slice(0, 10);
+    const r = await dialog.showSaveDialog(win, { title: "Save your list of applications", defaultPath: path.join(app.getPath("documents"), `job-applications-${day}.csv`),
+      filters: [{ name: "Spreadsheet (CSV)", extensions: ["csv"] }] });
+    if (r.canceled || !r.filePath) return null;
+    // With a byte-order mark, so Excel reads names like "Nestlé" right.
+    fs.writeFileSync(r.filePath, "\ufeff" + list.csv);
+    shell.showItemInFolder(r.filePath);
+    return { file: r.filePath, count: list.count };
+  });
+  // Only the history backup (or a file in its folder or the app's data folder); never a network (UNC) path.
   handle("show-file", (_e, f) => {
     const p = String(f || "");
     if (!p || /^(\\\\|\/\/)/.test(p)) return;

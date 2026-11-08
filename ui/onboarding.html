@@ -20,8 +20,7 @@
   </aside>
   <main class="wiz-main">
     <div id="step"></div>
-    <div id="err" style="margin-top:16px" role="alert"></div>
-    <div class="wiz-foot"><button class="btn" id="back">Back</button><div class="right"><button class="btn ghost" id="skip" hidden>Skip</button><button class="btn primary" id="next">Continue</button></div></div>
+    <div class="wiz-foot"><button class="btn" id="back">Back</button><div id="err" role="alert"></div><div class="right"><button class="btn ghost" id="skip" hidden>Skip</button><button class="btn primary" id="next">Continue</button></div></div>
   </main>
 </div>
 <script src="forms.js"></script>
@@ -68,8 +67,8 @@ function show(k) {
         <li>It sends at a steady pace (10 a day to start) and never to the same job twice.</li>
         <li>Everything stays on this computer, except what goes to the AI and to the job sites themselves.</li></ul></div>
       <div class="card sec"><h2>Before you start</h2>
-        <p style="margin:8px 0 12px">Automated applications may go against the terms of some job sites or employers, and some employers may treat them differently. You are responsible for every application sent in your name; review the dry-run results before you go live.</p>
-        <label class="check"><input type="checkbox" id="terms" ${cfg.settings.acceptedTerms ? "checked" : ""}>I understand, and I will check the applications it sends.</label></div>
+        <p style="margin:8px 0 12px">Applying with an app may go against the terms of some job sites or employers, and some employers may treat it differently. You are responsible for every application sent in your name, so check the practice applications before anything is sent.</p>
+        <label class="check"><input type="checkbox" id="terms" ${cfg.settings.acceptedTerms ? "checked" : ""}>I understand. I'll check the practice applications before anything is sent.</label></div>
       <div id="history-found"></div>`;
     offerHistory();
     document.querySelectorAll("[name=kind]").forEach((r) => r.onchange = () => document.querySelectorAll(".jobkind").forEach((k) => k.classList.toggle("on", k.querySelector("input").checked)));
@@ -82,7 +81,7 @@ function show(k) {
       <div class="card sec"><h2>What happens next</h2><ol class="bul" style="margin-top:12px">
         <li>When your practice application is ready, the Overview shows it at the top of your to-do list.</li>
         <li>Open it and look at the answers, the resume and the screenshots.</li>
-        <li>If it looks right, press <b>Start sending for real</b>. If something's wrong, the app shows you where to fix it.</li></ol></div>
+        <li>If it looks right, press <b>Looks right: start sending</b>. If something's wrong, press <b>Something's wrong</b> and fix it right there.</li></ol></div>
       <div class="card sec"><h2>While it works</h2><div class="form" style="margin-top:12px">
         <label class="check"><input type="checkbox" id="keepRunning" ${s0.keepRunning !== false ? "checked" : ""}><span>Keep working when I close the window <span class="muted">(open it again from the ${(window.ja && window.ja.platform) === "darwin" ? "menu bar at the top of the screen" : "system tray, next to the clock"})</span></span></label>
         <label class="check"><input type="checkbox" id="openAtLogin" ${s0.openAtLogin ? "checked" : ""}>Start Job Autopilot when my computer starts</label>
@@ -131,6 +130,8 @@ async function offerHistory() {
   };
 }
 
+// A problem said once is cleared as soon as the person changes something.
+for (const ev of ["input", "change"]) document.getElementById("step").addEventListener(ev, () => { const e = document.getElementById("err"); if (e.querySelector(".msg.err")) msg(e, "", ""); });
 document.getElementById("back").onclick = () => show(Math.max(0, i - 1));
 document.getElementById("skip").onclick = () => show(i + 1);
 document.getElementById("next").onclick = async () => {
@@ -141,7 +142,7 @@ document.getElementById("next").onclick = async () => {
       if (!document.getElementById("terms").checked) {
         const box = document.getElementById("terms");
         box.scrollIntoView({ block: "center", behavior: "smooth" }); box.focus();
-        return msg(err, "err", "Tick the box at the bottom (\"I understand, and I will check the applications it sends\") to continue.");
+        return msg(err, "err", "Tick the box under \"Before you start\" to continue.");
       }
       await window.ja.api("/api/settings", { acceptedTerms: true });
       // The kind of work sets sensible defaults: where to look and which titles to suggest.

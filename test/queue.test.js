@@ -129,6 +129,41 @@ test("practice mode sends nothing, except a practice run the person chose to sen
   assert.strictEqual(W.practiceFor({ real: 0 }), false);
 });
 
+test("practice mode has an end: the first practice application waits to be checked, then a few more until the person looks again", () => {
+  reset();
+  const fill = (slug, at) => { add(slug, { status: "filled" }); getDb().prepare("UPDATE jobs SET filled_at = ? WHERE slug = ?").run(at, slug); };
+  store.saveSettings({ dryRun: true, reviewedDryRun: false, practiceLookedAt: null });
+  assert.strictEqual(W.practiceHold(), "", "nothing filled in yet");
+  fill("first", new Date().toISOString());
+  assert.match(W.practiceHold(), /check the first practice application/);
+  const t0 = Date.now();
+  store.saveSettings({ reviewedDryRun: true, practiceLookedAt: new Date(t0).toISOString() });
+  assert.strictEqual(W.practiceHold(), "");
+  fill("before-update", null);
+  fill("p2", new Date(t0 + 1000).toISOString());
+  fill("p3", new Date(t0 + 2000).toISOString());
+  assert.strictEqual(W.practiceHold(), "", "two new ones (one from before the update has no fill time and doesn't count)");
+  fill("p4", new Date(t0 + 3000).toISOString());
+  assert.match(W.practiceHold(), /look at the 3 new practice applications/);
+  store.saveSettings({ practiceLookedAt: new Date(t0 + 4000).toISOString() });
+  assert.strictEqual(W.practiceHold(), "", "they looked: it carries on");
+  store.saveSettings({ dryRun: false });
+  assert.strictEqual(W.practiceHold(), "", "sending for real: never held");
+});
+
+test("practice applications count toward the daily limit in practice mode; sending for real, only what's sent does", () => {
+  reset();
+  add("sent", { status: "applied", applied_at: new Date().toISOString() });
+  add("practiced", { status: "filled" });
+  add("practiced-before", { status: "filled" });
+  getDb().prepare("UPDATE jobs SET filled_at = ? WHERE slug = 'practiced'").run(new Date().toISOString());
+  getDb().prepare("UPDATE jobs SET filled_at = ? WHERE slug = 'practiced-before'").run(new Date(Date.now() - 3 * day).toISOString());
+  store.saveSettings({ dryRun: true });
+  assert.strictEqual(W.doneToday(), 2);
+  store.saveSettings({ dryRun: false });
+  assert.strictEqual(W.doneToday(), 1);
+});
+
 test("closed postings: only freehire's own are asked about, 50 at a time, and an error counts as open", async () => {
   const jobs = [...Array(60)].map((_, i) => ({ slug: `fh-${i}`, details: JSON.stringify({ board: "freehire" }) }));
   jobs.push({ slug: "hc-1", details: JSON.stringify({ board: "hiringcafe" }) });

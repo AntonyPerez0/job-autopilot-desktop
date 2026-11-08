@@ -36,8 +36,8 @@ export function hex([L, C, h]) {
 const surfaces = ["paper", "paper-2", "paper-3", "cotton"];
 const PAIRS = [
   ...["ink", "ink-2", "muted"].flatMap((t) => surfaces.map((s) => [t, s, 4.5])),
-  ...["done", "work", "attn", "error"].flatMap((t) => [[t, t + "-bg", 4.5], [t, "cotton", 4.5], [t, "paper", 4.5]]),
-  ["muted", "attn-bg", 4.5], ["ink-2", "attn-bg", 4.5], ["ink-2", "done-bg", 4.5], ["ink-2", "work-bg", 4.5], ["ink-2", "error-bg", 4.5],
+  ...["done", "work", "attn", "error", "practice"].flatMap((t) => [[t, t + "-bg", 4.5], [t, "cotton", 4.5], [t, "paper", 4.5]]),
+  ["muted", "attn-bg", 4.5], ["ink-2", "attn-bg", 4.5], ["ink-2", "done-bg", 4.5], ["ink-2", "work-bg", 4.5], ["ink-2", "error-bg", 4.5], ["ink-2", "practice-bg", 4.5], ["muted", "practice-bg", 4.5],
   ["board-type", "board", 4.5], ["print", "cotton", 4.5], ["accent-ink", "accent", 4.5], ["accent-2", "cotton", 3], ["accent-2", "paper-2", 3],
   ["field-edge", "cotton", 3], ["field-edge", "paper", 3], ["focus", "paper", 3], ["focus", "cotton", 3], ["focus", "paper-2", 3],
   ["board", "paper-3", 3], ["attn-strong", "cotton", 3], ["attn-strong", "paper", 3],

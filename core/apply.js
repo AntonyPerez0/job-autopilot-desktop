@@ -1199,8 +1199,9 @@ export async function applyTo(job, hooks = {}, opts = {}) {
         const metAnyway = (f) => /\b(meets|satisf(ies|y)|exceeds|has (the )?(required|enough))\b/i.test(f.why || "") && !/\b(not|no|lacks?|without|fails?|short)\b|n't/i.test(f.why || "");
         const hardFails = ((p.fit || {}).hardFails || []).filter((f) => f && f.requirement && !metAnyway(f));
         result.details = { ...details, plan: { employer: p.employer, jobTitle: p.jobTitle, base: p.base, summary: p.summary, notClaimed: p.notClaimed || [] }, hardFails };
-        // A job the user added by hand is theirs to judge: the must-haves are noted, not a reason to skip.
-        if (hardFails.length && !details.addedByUser && !finish) {
+        // A job the user added by hand, or chose to apply to anyway, is theirs to judge: the must-haves are noted, not a
+        // reason to skip.
+        if (hardFails.length && !details.addedByUser && !details.applyAnyway && !finish) {
           return { ...result, status: "skipped", reason: "fails a must-have: " + hardFails.map((f) => `${f.requirement}${f.why ? " (" + f.why + ")" : ""}`).join("; ").slice(0, 600) };
         }
       }

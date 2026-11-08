@@ -93,6 +93,18 @@ test("near misses on years: the screening is told, only when they chose it", asy
   assert.doesNotMatch(prompts[0], /year short of it/);
 });
 
+test("a job asking for more years than theirs and the near miss they accept is kept as not applied, with why, before the AI reads it", async () => {
+  const many = posting("Support Engineer", { minYears: 8 }), near = posting("Support Engineer", { minYears: 4 });
+  await run([many, near], { yearsInField: 3, stretchYears: 1 });
+  assert.strictEqual(getJob(many.slug).status, "skipped");
+  assert.strictEqual(getJob(many.slug).reason, "asks for 8+ years of experience (you have about 3; jobs asking for more than 4 are left out)");
+  assert.deepStrictEqual(screened, [near.company], "only the near miss is screened");
+  assert.strictEqual(getJob(near.slug).status, "queued");
+  const again = posting("Support Engineer", { minYears: 8, company: many.company, url: many.url, apply_url: many.apply_url });
+  await run([again], { yearsInField: 3, stretchYears: 1 });
+  assert.strictEqual(getDb().prepare("SELECT COUNT(*) n FROM jobs WHERE company = ?").get(many.company).n, 1, "found again, not added twice");
+});
+
 test("someone waiting to finish an application: the search stops and reads nothing more", async () => {
   const a = posting("Support Engineer");
   const ctx = { yieldTo: () => true };

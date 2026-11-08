@@ -2,8 +2,8 @@
 // wires it to IPC; nothing listens on the network.
 import fs from "node:fs";
 import path from "node:path";
-import { getDb, getJob, setJob, appliedToday, log, sqlTime } from "./db.js";
-import { state, kick, forceSearch, searchBrowser, checkReplies, closedOnes, peekNext, finishable, finishControl, requestFinish } from "./worker.js";
+import { getDb, getJob, setJob, appliedToday, practicedToday, practiceSince, log, sqlTime } from "./db.js";
+import { state, kick, forceSearch, searchBrowser, checkReplies, closedOnes, peekNext, finishable, finishControl, requestFinish, PRACTICE_WAITING } from "./worker.js";
 import {
   dataDir, getAnswers, getPrefs, getProfile, getSecret, getSettings, saveAnswers, savePrefs, saveProfile, saveSettings, setSecret,
 } from "./store.js";
@@ -33,7 +33,7 @@ import { clearConnections, loadConnections, parseConnections, peopleAt, referral
 import { STAGES, followUpNote, followUps, insights, stageOf } from "./tracking.js";
 import { prepFor } from "./prep.js";
 import { suggestPay } from "./pay.js";
-import { candidateFacts } from "./facts.js";
+import { candidateFacts, yearsCap, yearsInField } from "./facts.js";
 import { LEGAL_RX } from "./truth.js";
 import { asksFor, removeYourAnswer, saveYourAnswers } from "./asked.js";
 import { monthUse, testKey as testSerpKey } from "./sources/google.js";
@@ -75,26 +75,34 @@ export const setOpener = (fn) => { opener = fn; };
 
 export const VERSION = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 
-// Why jobs were skipped, in a few plain groups, for "nothing to apply to right now" on the Overview.
+// Why jobs weren't applied to, in groups people read, each with the setting behind it, for when they see it differently:
+// fix: { label, section, field } (a place in Settings) or { label, page } (the Resume page), or null. Each reads after a
+// count, one or many: "2 asked for more years of experience than you have".
+const RESUME = { label: "Check my resume", page: "profile" };
 const SKIP_GROUPS = [
-  [/class a\b|cdl-a\b/i, "need a Class A CDL"],
-  [/endorsement|hazmat|tanker/i, "need a license endorsement you don't list"],
-  [/licen[cs]e|certif|clearance|degree/i, "need a license, certificate or degree you don't list"],
-  [/pays at most/i, "pay less than your lowest pay"],
-  [/years|experience|senior|level/i, "ask for more or different experience"],
-  [/miles|too far|location|relocat|remote|on-?site|outside/i, "are too far away or in the wrong place"],
-  [/title|does not match|doesn't match|different (kind|role)|not a .* role|unrelated/i, "are a different kind of job than your titles"],
-  [/already applied/i, "you already applied to"],
-  [/closed/i, "had closed"],
-  [/agency|staffing|recruit/i, "are from recruiters or staffing companies"],
-  [/scam|training program/i, "look like scams"],
-  [/not the kind of work/i, "are kinds of work you left out"],
+  [/limit for one company/i, "at companies you'd already applied to this month", { label: "Change the limit", section: "prefs", field: "perCompanyMonth" }],
+  [/class a\b|cdl-a\b/i, "needed a Class A CDL", RESUME],
+  [/endorsement|hazmat|tanker/i, "needed a license endorsement you don't list", RESUME],
+  [/licen[cs]e|certif|clearance|degree/i, "needed a license, certificate or degree you don't list", RESUME],
+  [/pays at most/i, "paid less than your lowest pay", { label: "Change my lowest pay", section: "prefs", field: "minPay" }],
+  [/\d+\+? ?years|years of (professional |relevant |work )?experience|more years/i, "asked for more years of experience than you have", { label: "Change my years", section: "prefs", field: "yearsInField" }],
+  [/senior|seniority|level/i, "asked for a more senior level than you chose", { label: "Change the levels", section: "prefs", field: "lvl" }],
+  [/miles|too far|location|relocat|remote|on-?site|outside/i, "too far away or in the wrong place", { label: "Change the distance", section: "prefs", field: "radius" }],
+  [/not the kind of work/i, "of a kind of work you left out", { label: "See the kinds left out", section: "prefs", field: "kinds" }],
+  [/title|does not match|doesn't match|different (kind|role|field|trade)|not a .* role|unrelated/i, "a different kind of job than your titles", { label: "Change my job titles", section: "prefs", field: "titles" }],
+  [/already applied/i, "already applied to", null],
+  [/closed|404/i, "had closed", null],
+  [/agency|staffing|recruit/i, "came from recruiters or staffing companies", { label: "Change this", section: "prefs", field: "excludeAgencies" }],
+  [/scam|training program/i, "looked like scams", null],
+  [/experience|skill|lacks|requires|must-have/i, "needed experience or skills your resume doesn't show", RESUME],
 ];
+const groupOf = (reason) => SKIP_GROUPS.find(([rx]) => rx.test(reason || "")) || null;
+const OTHER = "for other reasons";
 function skipSummary(db) {
   const rows = db.prepare("SELECT reason FROM jobs WHERE status = 'skipped' AND updated_at > datetime('now', '-1 day')").all();
   const n = new Map();
-  for (const { reason } of rows) { const g = (SKIP_GROUPS.find(([rx]) => rx.test(reason || "")) || [null, "other reasons"])[1]; n.set(g, (n.get(g) || 0) + 1); }
-  return { total: rows.length, top: [...n].filter(([g]) => g !== "other reasons").sort((a, b) => b[1] - a[1]).slice(0, 3).map(([why, count]) => ({ why, count })) };
+  for (const { reason } of rows) { const g = (groupOf(reason) || [null, OTHER])[1]; n.set(g, (n.get(g) || 0) + 1); }
+  return { total: rows.length, top: [...n].filter(([g]) => g !== OTHER).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([why, count]) => ({ why, count })) };
 }
 
 function status() {
@@ -112,12 +120,26 @@ function status() {
   const interviews = db.prepare(`SELECT slug, title, company FROM jobs j WHERE status IN ('applied', 'submitting') AND details NOT LIKE '%"prep":{%'
     AND (stage = 'interviewing' OR (stage IS NULL AND EXISTS (SELECT 1 FROM replies r WHERE r.slug = j.slug AND r.kind IN ('interview', 'assessment')))) ORDER BY updated_at DESC`).all();
   const holds = db.prepare("SELECT slug, title, company, hold_until FROM jobs WHERE status = 'queued' AND hold_until > ? ORDER BY hold_until ASC").all(sqlTime());
+  // Practice applications: how many, how many filled in since the person last opened one (with enough of those, the app
+  // fills in no more until they look), and the one to open first.
+  const fresh = practiceSince(s.practiceLookedAt);
+  const practice = { count: counts.filled || 0, unchecked: fresh.length, held: fresh.length >= PRACTICE_WAITING, first: fresh[0] || firstFilled };
+  // Submit pressed, no confirmation: only the person's email says whether it went through.
+  const maybe = db.prepare("SELECT slug, title, company FROM jobs WHERE status = 'failed' AND reason LIKE '%may have gone through%' ORDER BY updated_at DESC").all();
+  // Stopped for any other reason than a question, an emailed code or a link: each one is the person's to finish or retry.
+  const stopped = db.prepare(`SELECT slug, title, company FROM jobs WHERE status = 'failed' AND reason NOT LIKE 'could not fill every required field%'
+    AND reason NOT LIKE 'security code:%' AND reason NOT LIKE 'verify email:%' AND reason NOT LIKE '%may have gone through%' ORDER BY updated_at DESC`).all();
+  // The last day, in one line: sent, practice applications filled, and jobs found but not applied to.
+  const day = db.prepare(`SELECT
+    (SELECT COUNT(*) FROM jobs WHERE status IN ('applied', 'submitting') AND applied_at > ?) AS sent,
+    (SELECT COUNT(*) FROM jobs WHERE filled_at > ?) AS practiced,
+    (SELECT COUNT(*) FROM jobs WHERE status = 'skipped' AND found_at > datetime('now', '-1 day')) AS notApplied`).get(new Date(Date.now() - 86400000).toISOString(), new Date(Date.now() - 86400000).toISOString());
   const { wake, ...st } = state;
   // Replies from employers the person hasn't opened yet, the ones asking something of them first.
   const replies = db.prepare(`SELECT r.slug, r.kind, r.subject, r.at, j.company, j.title FROM replies r JOIN jobs j ON j.slug = r.slug WHERE r.seen = 0
     ORDER BY CASE r.kind WHEN 'offer' THEN 0 WHEN 'interview' THEN 1 WHEN 'assessment' THEN 2 WHEN 'info' THEN 3 ELSE 4 END, r.at DESC`).all();
   return { state: st, counts, appliedToday: appliedToday(), settings: s, model: s.ai.model, serverNow: Date.now(), next, firstFilled, toAnswer: { count: toAnswer.length, first: toAnswer[0] || null },
-    codes: { count: codes.length, first: codes[0] || null }, referrals: { count: holds.length, first: holds[0] || null }, followups: follow.length, interviews: { count: interviews.length, first: interviews[0] || null },
+    codes: { count: codes.length, first: codes[0] || null }, referrals: { count: holds.length, first: holds[0] || null }, followups: follow.length, practice, stopped: { count: stopped.length, first: stopped[0] || null }, maybe: { count: maybe.length, first: maybe[0] || null }, day, practicedToday: practicedToday(), interviews: { count: interviews.length, first: interviews[0] || null },
     replies: { unseen: replies.length, act: replies.filter((r) => ["offer", "interview", "assessment", "info"].includes(r.kind)).length, first: replies[0] || null, checkedAt: s.repliesCheckedAt || null, mailbox: !!(s.mailbox && getSecret("mailPassword")) }, search: lastSearch.at ? { ...lastSearch, nextAt: state.nextSearch || null, skipped: lastSearch.done && !counts.queued ? skipSummary(db) : null } : null, version: VERSION,
     browser: { open: browserOpen(), mode: windowModeOf(s) }, update: updater ? updater.state() : null, missingAnswers: missingAnswers() };
 }
@@ -186,10 +208,10 @@ const ROUTES = {
     const closed = await closedOnes(rows);
     for (const j of rows) {
       if (closed.has(j.slug)) setJob(j.slug, { status: "skipped", reason: "posting closed before it could be sent" });
-      else setJob(j.slug, { status: "queued", attempts: 0, real: Array.isArray(b.slugs) && b.slugs.length === 1 ? 1 : 2, reviewed: 1, reason: "a practice run you chose to send for real" });
+      else setJob(j.slug, { status: "queued", attempts: 0, real: Array.isArray(b.slugs) && b.slugs.length === 1 ? 1 : 2, reviewed: 1, reason: "a practice application you chose to send for real" });
     }
     if (rows.length > closed.size && !getSettings().reviewedDryRun) saveSettings({ reviewedDryRun: true });
-    log(null, `practice runs sent for real: ${rows.length - closed.size} queued${closed.size ? `, ${closed.size} closed` : ""}`);
+    log(null, `practice applications sent for real: ${rows.length - closed.size} up next${closed.size ? `, ${closed.size} closed` : ""}`);
     kick();
     return { queued: rows.length - closed.size, closed: closed.size };
   },
@@ -212,9 +234,9 @@ const ROUTES = {
   // Going live: only after the user has checked a filled application, and only with an explicit confirmation.
   "POST /api/golive": (b) => {
     const s = getSettings();
-    if (!s.reviewedDryRun) return bad("Review a filled application first: open it from the Overview and press \"I checked these answers\".", 409);
-    if (b.confirm !== true) return bad("Going live needs your confirmation.", 409);
-    log(null, `went live (daily limit ${s.dailyCap})`);
+    if (!s.reviewedDryRun) return bad("Check a practice application first: open it from the To do list on the Overview.", 409);
+    if (b.confirm !== true) return bad("Starting to send needs your confirmation.", 409);
+    log(null, `started sending for real (up to ${s.dailyCap} a day)`);
     const out = saveSettings({ dryRun: false, wentLiveAt: new Date().toISOString(), paused: false });
     kick();
     return out;
@@ -225,6 +247,8 @@ const ROUTES = {
     settings: getSettings(), prefs: getPrefs(), answers: getAnswers(), profile: getProfile(),
     hasKey: !!getSecret("apiKey"), hasMailPassword: !!getSecret("mailPassword"), hasSerpKey: !!getSecret("serpApiKey"), hasUsajobsKey: !!(getSecret("usajobsKey") && getSettings().usajobsEmail), usajobsEmail: getSettings().usajobsEmail || "", googleUse: monthUse(),
     presets: PRESETS, agencies: AGENCIES, providers: PROVIDERS, version: VERSION, dataDir: dataDir(),
+    // The years of experience the resume and answers show (Settings > Jobs to look for says what follows from them).
+    years: { have: Math.round(yearsInField(getAnswers(), approvedOnly(getProfile() || {}), {}) * 2) / 2 },
   }),
   "POST /api/ai/test": async (b) => {
     const s = getSettings().ai;
@@ -338,7 +362,7 @@ const ROUTES = {
     let requeued = 0;
     if (b.enabled && !before.enabled) {
       requeued = getDb().prepare("UPDATE jobs SET status = 'queued', attempts = 0, reason = 'the app can make the account now' WHERE status = 'manual' AND (source = 'workday' OR apply_url LIKE '%myworkdayjobs.com%' OR apply_url LIKE '%.myworkday.com%')").run().changes;
-      if (requeued) log(null, `${requeued} Workday job${requeued === 1 ? "" : "s"} moved from Apply yourself to the queue: the app can make the accounts now`);
+      if (requeued) log(null, `${requeued} Workday job${requeued === 1 ? "" : "s"} moved from Apply yourself to Up next: the app can make the accounts now`);
       kick();
     }
     return { ok: true, requeued };
@@ -361,6 +385,30 @@ const ROUTES = {
     const next = b.clear ? [] : code && !cur.some((x) => x.code === code) ? [...cur, { code, title: String(b.title || code).slice(0, 80) }] : cur;
     savePrefs({ notForMe: next });
     return { notForMe: next };
+  },
+  // Why jobs weren't applied to (the last 30 days), in groups, each with the setting to change.
+  "GET /api/skips": () => {
+    const rows = getDb().prepare("SELECT slug, title, company, reason FROM jobs WHERE status = 'skipped' AND updated_at > datetime('now', '-30 days') ORDER BY updated_at DESC").all();
+    const groups = new Map();
+    for (const r of rows) {
+      const g = groupOf(r.reason), why = g ? g[1] : OTHER;
+      const x = groups.get(why) || { why, count: 0, fix: g ? g[2] : null };
+      x.count++;
+      groups.set(why, x);
+    }
+    return { total: rows.length, groups: [...groups.values()].sort((a, b) => (a.why === OTHER) - (b.why === OTHER) || b.count - a.count) };
+  },
+  // Every application sent, by date: a spreadsheet for unemployment claims and the person's own records.
+  "GET /api/applications/log": () => {
+    const rows = getDb().prepare(`SELECT title, company, location, url, apply_url, applied_at, status, reason FROM jobs
+      WHERE applied_at IS NOT NULL AND (status IN ('applied', 'submitting') OR (status = 'failed' AND reason LIKE '%may have gone through%')) ORDER BY applied_at ASC`).all();
+    // A cell a spreadsheet can't run: one starting with = + - @ or a tab gets a ' first.
+    const cell = (v) => { const t = String(v ?? "").replace(/[\r\n]+/g, " ").slice(0, 500); return /[",]/.test(t) || /^[=+\-@\t]/.test(t) ? `"${t.replace(/^([=+\-@\t])/, "'$1").replace(/"/g, '""')}"` : t; };
+    const when = (t) => { const d = new Date(t); return Number.isNaN(+d) ? "" : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+    const how = (r) => (/applied by you/.test(r.reason || "") ? "You applied on the employer's site" : "Online application");
+    const lines = [["Date applied", "Employer", "Job title", "Location", "How", "Link", "Status"].join(",")];
+    for (const r of rows) lines.push([when(r.applied_at), r.company, r.title, r.location, how(r), r.url || r.apply_url || "", r.status === "applied" ? "Sent" : "May have gone through"].map(cell).join(","));
+    return { csv: lines.join("\r\n") + "\r\n", count: rows.length };
   },
   // "What pay should I ask for?": what open postings for their kind of work, level and country pay (freehire's figures).
   "GET /api/pay/suggest": async () => {
@@ -385,7 +433,7 @@ const ROUTES = {
     if (days) for (const j of getDb().prepare("SELECT slug, company FROM jobs WHERE status = 'queued' AND attempts = 0 AND hold_until IS NULL").all()) {
       if (peopleAt(j.company, list).length) { setJob(j.slug, { hold_until: sqlTime(Date.now() + days * 86400000) }); held++; }
     }
-    log(null, `imported ${list.length} LinkedIn connections${held ? `; ${held} queued job${held === 1 ? "" : "s"} wait so you can ask for a referral` : ""}`);
+    log(null, `imported ${list.length} LinkedIn connections${held ? `; ${held} job${held === 1 ? "" : "s"} up next wait so you can ask for a referral` : ""}`);
     return { count: list.length, companies: new Set(list.map((p) => p.company.toLowerCase())).size, held };
   },
   "POST /api/connections/clear": () => {
@@ -555,7 +603,17 @@ const ROUTES = {
     try { const p = applySuggestion(getProfile(), b); saveProfile(p); return { ok: true, profile: p }; } catch (e) { return bad(e.message); }
   },
   "POST /api/prefs/save": (b) => {
+    const a = getAnswers(), profile = approvedOnly(getProfile() || {}), before = yearsCap(a, profile, getPrefs());
     const saved = savePrefs(b.prefs || {});
+    // More years allowed: the jobs left out for asking more than before, and that fit now, are forgotten, so the next
+    // search finds them again and checks them like any new posting.
+    const after = yearsCap(a, profile, saved);
+    if (after > before) {
+      const fit = getDb().prepare("SELECT slug, reason FROM jobs WHERE status = 'skipped' AND reason LIKE 'asks for %+ years of experience%'").all()
+        .filter((r) => Number((r.reason.match(/^asks for (\d+)\+/) || [])[1]) <= after);
+      for (const r of fit) getDb().prepare("DELETE FROM jobs WHERE slug = ? AND status = 'skipped'").run(r.slug);
+      if (fit.length) log(null, `jobs asking for up to ${after} years are looked at again on the next search: ${fit.length} left out before`);
+    }
     // On the Activity list, so a change nobody made on purpose can be seen.
     log(null, `preferences saved: titles ${JSON.stringify(saved.titles || []).slice(0, 300)}, keywords ${JSON.stringify(saved.keywords || []).slice(0, 200)}`);
     return saved;
@@ -742,7 +800,8 @@ async function jobRoute(slug, b) {
   else if (b && b.action) {
     if (b.action === "retry") {
       if (j.status === "applied" || j.status === "submitting") return bad("Already applied; it will not be sent twice.", 409);
-      setJob(slug, { status: "queued", attempts: 0, reason: "queued again from the dashboard" });
+      setJob(slug, { status: "queued", attempts: 0, reason: "you asked to try it again" });
+      log(slug, j.status === "filled" ? "you asked for a new practice application" : "you asked to try it again");
     }
     if (b.action === "skip") {
       if (j.status === "applied" || j.status === "submitting") return bad("Already applied.", 409);
@@ -808,6 +867,12 @@ async function jobRoute(slug, b) {
       setJob(slug, { details: { ...d, finishKept: true } });
       if (keep.length) log(slug, `you kept ${keep.length} answer${keep.length === 1 ? "" : "s"} for every application`);
     }
+    // A job the app left out, which the person wants anyway: queued, and its must-haves are noted rather than skipped.
+    if (b.action === "apply-anyway") {
+      if (j.status !== "skipped") return bad("It isn't one the app left out.", 409);
+      setJob(slug, { status: "queued", attempts: 0, reason: "you chose to apply anyway", details: { ...JSON.parse(j.details || "{}"), applyAnyway: true } });
+      log(slug, "you chose to apply anyway");
+    }
     // Held for a referral: apply now instead.
     if (b.action === "apply-now") { setJob(slug, { hold_until: null }); log(slug, "you chose not to wait for a referral"); }
     // Undo a skip: back where it was.
@@ -829,16 +894,16 @@ async function jobRoute(slug, b) {
       const n = saveYourAnswers(j, b.answers);
       if (!n) return bad("Type an answer first.");
       setJob(slug, { status: "queued", attempts: 0, reason: `you answered ${n} question${n === 1 ? "" : "s"}; trying again with your answer${n === 1 ? "" : "s"}` });
-      log(slug, `you answered ${n} question${n === 1 ? "" : "s"}; queued again`);
+      log(slug, `you answered ${n} question${n === 1 ? "" : "s"}; it's up next again`);
     }
     // One practice run, sent for real: filled in again and submitted, even while practicing.
     if (b.action === "send") {
-      if (j.status !== "filled") return bad("Only a practice run can be sent this way.", 409);
+      if (j.status !== "filled") return bad("Only a practice application can be sent this way.", 409);
       const closed = await closedOnes([j]);
-      if (closed.size) { setJob(slug, { status: "skipped", reason: "posting closed before it could be sent" }); return bad("That posting has closed, so it can't be sent. It's moved to Skipped.", 409); }
+      if (closed.size) { setJob(slug, { status: "skipped", reason: "posting closed before it could be sent" }); return bad("That posting has closed, so it can't be sent. It's moved to Not applied.", 409); }
       setJob(slug, { status: "queued", attempts: 0, real: 1, reviewed: 1, reason: "you asked to send it for real" });
       if (!getSettings().reviewedDryRun) saveSettings({ reviewedDryRun: true });
-      log(slug, "you asked to send this practice run for real");
+      log(slug, "you asked to send this practice application for real");
     }
     if (b.action === "reviewed") {
       if (j.status !== "filled") return bad("Only a practice application (filled in, not sent) can be checked.", 409);
@@ -853,8 +918,14 @@ async function jobRoute(slug, b) {
   const asks = asksFor(out, d);
   delete d.fields;
   const replies = getDb().prepare("SELECT id, at, sender, subject, kind, snippet, seen FROM replies WHERE slug = ? ORDER BY at DESC").all(slug);
-  // Opened: its replies have been seen.
+  // Opened: its replies have been seen. A practice application opened means the person checked one (sending can start)
+  // and looked at the practice ones (the app, which fills in only a few more until they do, carries on).
   if (!b && replies.some((r) => !r.seen)) getDb().prepare("UPDATE replies SET seen = 1 WHERE slug = ?").run(slug);
+  if (!b && out.status === "filled") {
+    const s = getSettings(), looked = practiceSince(s.practiceLookedAt).length;
+    if (looked || !s.reviewedDryRun) { saveSettings({ practiceLookedAt: new Date().toISOString(), reviewedDryRun: true }); kick(); }
+  }
+  const events = getDb().prepare("SELECT at, level, message FROM (SELECT id, at, level, message FROM events WHERE slug = ? ORDER BY id DESC LIMIT 300) ORDER BY id ASC").all(slug);
   const a = getAnswers();
   const people = peopleAt(out.company).slice(0, 8).map((p) => ({ ...p, note: referralNote(p, out, a) }));
   const held = out.status === "queued" && out.hold_until && out.hold_until > sqlTime() ? out.hold_until : null;
@@ -862,6 +933,6 @@ async function jobRoute(slug, b) {
   // The answers they typed while finishing it, to keep for every application: never legal questions (About you has
   // its own settings for those).
   const typed = out.status === "applied" && !d.finishKept ? (d.finishTyped || []).filter((x) => !LEGAL_RX.test(x.label)) : [];
-  return { ...out, details: d, asks, replies, people, held, finishable: finishable(out), typed,
+  return { ...out, details: d, asks, replies, people, held, finishable: finishable(out), typed, events,
     ...(sent ? { standing: stageOf(out, replies), stages: STAGES } : {}) };
 }

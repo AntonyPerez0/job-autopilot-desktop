@@ -1,7 +1,7 @@
 // The loop: search on a schedule, apply to one queued job at a time, respect
 // the daily cap and the pause switch, and never stop on an error.
 import fs from "node:fs";
-import { getDb, log, setJob, getJob, appliedToday, nextDayStart } from "./db.js";
+import { getDb, log, setJob, getJob, appliedToday, practicedToday, practiceSince, nextDayStart } from "./db.js";
 import { discover } from "./discover.js";
 import { companyKey, sameRoleAs, sameUrlAs } from "./dedupe.js";
 import { abortCurrent, applyTo, httpsOk, STEPS, toHttps } from "./apply.js";
@@ -74,10 +74,11 @@ const TRANSIENT = /timeout|timed out|net::|ECONN|socket|Target (page|closed)|bro
 // near ones before remote ones, newest first. Jobs held for a referral wait.
 //   real: 1, the person chose to send this practice run; 2, it went with all the others.
 const QUEUE_SQL = `SELECT * FROM jobs WHERE status = 'queued' AND attempts < ? AND (hold_until IS NULL OR hold_until <= datetime('now'))
-  ORDER BY (real = 1) DESC, (reason LIKE 'you answered %') DESC, (details LIKE '%"addedByUser":true%') DESC, (real = 2) DESC, (details LIKE '%"board":"watchlist"%') DESC,
+  ORDER BY (real = 1) DESC, (reason LIKE 'you answered %') DESC, (details LIKE '%"addedByUser":true%' OR details LIKE '%"applyAnyway":true%') DESC, (real = 2) DESC,
+  (details LIKE '%"board":"watchlist"%') DESC,
   (work_mode = 'remote') ASC, posted_at DESC LIMIT 500`;
 const parse = (s) => { try { return JSON.parse(s || "{}") || {}; } catch { return {}; } };
-const theirs = (j) => j.real === 1 || /^you answered /.test(j.reason || "") || !!parse(j.details).addedByUser;
+const theirs = (j) => { if (j.real === 1 || /^you answered /.test(j.reason || "")) return true; const d = parse(j.details); return !!(d.addedByUser || d.applyAnyway); };
 // How well the posting's requirements are covered by the resume (checked without the AI), 0 to 1.
 const fit = (j) => { const c = parse(j.details).check; return c && c.checked ? c.met / c.checked : 0.5; };
 
@@ -143,6 +144,20 @@ export async function closedOnes(jobs, ask = call) {
   }
   return out;
 }
+
+// Practice applications filled in since the person last opened one, before the app waits for them to look.
+export const PRACTICE_WAITING = 3;
+// Practice mode has an end: on a new install one practice application, then nothing more until the person checks it;
+// after that, at most PRACTICE_WAITING more until they open one again. -> why the app waits, or "".
+export function practiceHold() {
+  if (!CONFIG.dryRun) return "";
+  if (!CONFIG.reviewedDryRun && db.prepare("SELECT 1 FROM jobs WHERE status = 'filled' LIMIT 1").get()) return "waiting for you to check the first practice application";
+  const fresh = practiceSince(CONFIG.practiceLookedAt).length;
+  return fresh >= PRACTICE_WAITING ? `waiting for you to look at the ${fresh} new practice applications` : "";
+}
+// Today's applications toward the daily limit: the ones sent, and in practice mode the practice ones too, so practicing
+// goes at the pace sending would.
+export const doneToday = () => appliedToday() + (CONFIG.dryRun ? practicedToday() : 0);
 
 // Practice mode sends nothing, except the jobs the person asked to send for real.
 export const practiceFor = (job) => !!CONFIG.dryRun && !job.real;
@@ -231,7 +246,7 @@ async function applyOneInner(job) {
     log(job.slug, "government job site: left for you to apply to");
     return false;
   }
-  state.now = "applying"; state.job = { slug: job.slug, title: job.title, company: job.company };
+  state.now = "applying"; state.job = { slug: job.slug, title: job.title, company: job.company, practice: practiceFor(job) };
   setJob(job.slug, { status: "working", attempts: job.attempts + 1 });
   const twin = appliedSameRole(job);
   if (twin) {
@@ -251,7 +266,7 @@ async function applyOneInner(job) {
     return false;
   }
   const dryRun = practiceFor(job);
-  log(job.slug, `applying: ${job.title} at ${job.company}${dryRun ? " (practice run)" : CONFIG.dryRun ? " (for real: you asked to send this one)" : ""}`);
+  log(job.slug, `applying: ${job.title} at ${job.company}${dryRun ? " (practice application)" : CONFIG.dryRun ? " (for real: you asked to send this one)" : ""}`);
   const track = applyProgress(job);
   // pressedAt: when Submit was really pressed (the step after it began). From then on the job counts as
   // possibly sent, toward the daily cap and for never applying twice, whatever the page shows next.
@@ -277,6 +292,7 @@ async function applyOneInner(job) {
       status: maybe ? "failed" : r.status, reason, details: r.details || null,
       resume_file: r.resume_file || null, screenshot: r.screenshot || null,
       applied_at: r.status === "applied" ? new Date().toISOString() : pressedAt,
+      ...(r.status === "filled" ? { filled_at: new Date().toISOString() } : {}),
     });
     log(job.slug, `${maybe ? "failed" : r.status}: ${reason}`, r.status === "failed" || maybe ? "warn" : "info");
     return r.status === "applied" || r.status === "filled" || maybe;
@@ -414,7 +430,7 @@ export async function run() {
   // Once the mailbox is set up, Greenhouse jobs that stopped at the emailed code get another go.
   if (mailbox()) {
     const n = db.prepare("UPDATE jobs SET status = 'queued', attempts = 0 WHERE status = 'failed' AND (reason LIKE 'security code:%' OR reason LIKE 'verify email:%')").run().changes;
-    if (n) log(null, `mailbox configured: ${n} jobs that needed an emailed code are queued again`);
+    if (n) log(null, `mailbox configured: ${n} jobs that needed an emailed code are up next again`);
   }
   log(null, `autopilot started (${CONFIG.dryRun ? "practice mode" : "sending for real"}, up to ${CONFIG.dailyCap} a day)`);
   while (!stopping) {
@@ -437,14 +453,14 @@ export async function run() {
         state.nextSearch = state.lastSearch + CONFIG.searchEveryMinutes * 60000;
       }
       if (CONFIG.paused) continue;
-      // Dry run on a new install: fill one application, then wait until the user has looked at it.
-      if (CONFIG.dryRun && !CONFIG.reviewedDryRun && db.prepare("SELECT 1 FROM jobs WHERE status = 'filled' LIMIT 1").get()) {
-        state.now = "waiting for you to review the first filled application";
+      const hold = practiceHold();
+      if (hold) {
+        state.now = hold;
         await closeBrowser();
         await sleep(30000);
         continue;
       }
-      if (appliedToday() >= CONFIG.dailyCap) {
+      if (doneToday() >= CONFIG.dailyCap) {
         state.now = `daily cap reached (${CONFIG.dailyCap})`;
         state.resumesAt = nextDayStart();
         await closeBrowser();

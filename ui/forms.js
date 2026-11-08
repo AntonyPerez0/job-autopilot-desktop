@@ -39,9 +39,10 @@
         if (e.key === "Backspace" && !input.value && list.length) { list.pop(); draw(); el.querySelector("input").focus(); }
       });
       input.addEventListener("blur", () => { if (input.value.trim()) add(input.value); });
-      el.querySelectorAll("button[data-i]").forEach((b) => b.onclick = () => { list.splice(Number(b.dataset.i), 1); draw(); });
+      el.querySelectorAll("button[data-i]").forEach((b) => b.onclick = () => { list.splice(Number(b.dataset.i), 1); draw(); changed(); });
     };
-    const add = (v) => { for (const x of String(v).split(",").map((s) => s.trim()).filter(Boolean)) if (!list.includes(x)) list.push(x); draw(); el.querySelector("input").focus(); };
+    const changed = () => el.dispatchEvent(new Event("change", { bubbles: true }));
+    const add = (v) => { for (const x of String(v).split(",").map((s) => s.trim()).filter(Boolean)) if (!list.includes(x)) list.push(x); draw(); el.querySelector("input").focus(); changed(); };
     draw();
     return { get: () => { const pending = el.querySelector("input").value.trim(); if (pending) add(pending); return list; } };
   }
@@ -182,14 +183,17 @@
       <details class="more" data-builder><summary><b>I don't have a resume</b><span>Answer a few questions and the app writes one with you</span></summary><div data-creator style="padding:4px 16px 16px"></div></details>
       <details class="more" ${withGithub ? "" : "hidden"}><summary><b>Add projects from my GitHub</b><span>The app reads your public projects and writes lines about them</span></summary><div data-github style="padding:4px 16px 16px"></div></details>
       <details class="more"><summary><b>Paste your resume as text</b><span>If your file won't upload</span></summary><div class="fld" style="margin-top:10px"><textarea name="text" rows="8" placeholder="Paste the full text of your resume"></textarea></div></details>
-      <div class="row-actions"><button type="button" class="btn primary" data-go>${icon("bolt")}Read my resume${cfg.profile ? " again" : ""}</button>
+      <div class="row-actions"><button type="button" class="btn primary" data-read>${icon("bolt")}Read my resume${cfg.profile ? " again" : ""}</button>
         <label class="check" ${cfg.profile ? "" : "hidden"}><input type="checkbox" name="merge" checked>Add to what I already approved</label>
-        <button type="button" class="btn ghost" data-example>Use the example profile to try the app</button></div>
+        ${cfg.profile ? "" : `<button type="button" class="btn ghost" data-example>Use the example profile to try the app</button>`}</div>
       <div data-msg></div></div>`;
     const drop = el.querySelector("[data-drop]"), input = drop.querySelector("input"), m = el.querySelector("[data-msg]");
     const draw = () => { el.querySelector("[data-files]").innerHTML = files.map((f, i) => `<div class="sub-item" style="grid-template-columns:1fr auto;display:grid;align-items:center">${icon("file")} ${esc(f.name)} <button type="button" class="btn ghost sm" data-rm="${i}">${icon("x")}</button></div>`).join("");
       el.querySelectorAll("[data-rm]").forEach((b) => b.onclick = () => { files.splice(Number(b.dataset.rm), 1); draw(); }); };
-    const addFiles = (list) => { for (const f of list) if (/\.(pdf|docx)$/i.test(f.name)) files.push(f); else msg(m, "err", `${f.name}: only PDF and .docx files`); draw(); };
+    // A file dropped or chosen is read straight away: there's no second button to find.
+    const goBtn = el.querySelector("[data-read]");
+    const addFiles = (list) => { const n = files.length; for (const f of list) if (/\.(pdf|docx)$/i.test(f.name)) files.push(f); else msg(m, "err", `${f.name}: only PDF and .docx files`); draw();
+      if (files.length > n && !goBtn.disabled) read(val(el, "merge")); };
     drop.onclick = () => input.click();
     input.onchange = () => addFiles(input.files);
     drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
@@ -198,22 +202,27 @@
     const b64 = (f) => f.arrayBuffer().then((buf) => { let s = ""; const u = new Uint8Array(buf); for (let i = 0; i < u.length; i += 32768) s += String.fromCharCode.apply(null, u.subarray(i, i + 32768)); return btoa(s); });
     creator(el.querySelector("[data-creator]"), cfg, () => onImported && setTimeout(() => onImported(cfg.profile), 2500), { offerFill: false });
     if (withGithub) github(el.querySelector("[data-github]"), cfg);
-    el.querySelector("[data-go]").onclick = async () => {
-      const text = val(el, "text");
-      if (!files.length && !text) return msg(m, "err", "Add a resume file or paste its text.");
+    const read = async (merge) => {
+      const text = val(el, "text"), these = [...files];
+      if (!these.length && !text) return msg(m, "err", "Add a resume file or paste its text.");
       msg(m, "info", "Reading your resume and turning it into pieces you can approve. This takes up to a minute per resume...");
-      el.querySelector("[data-go]").disabled = true;
-      const r = await api("/api/resumes/import", text && !files.length ? { text, merge: val(el, "merge") } : { files: await Promise.all(files.map(async (f) => ({ name: f.name, b64: await b64(f) }))), merge: val(el, "merge") });
-      el.querySelector("[data-go]").disabled = false;
+      goBtn.disabled = true;
+      const r = await api("/api/resumes/import", text && !these.length ? { text, merge } : { files: await Promise.all(these.map(async (f) => ({ name: f.name, b64: await b64(f) }))), merge });
+      goBtn.disabled = false;
       if (r.error) return msg(m, "err", r.error);
-      msg(m, "ok", "Done. Now review every piece.");
       cfg.profile = r.profile; cfg.answers = r.answers;
+      // Read, so off the list; any added while it read are read next, added to these.
+      files = files.filter((f) => !these.includes(f)); draw();
+      if (files.length) return read(true);
+      msg(m, "ok", "Done. Now review every piece.");
       onImported && onImported(r.profile);
     };
-    el.querySelector("[data-example]").onclick = async () => {
+    goBtn.onclick = () => read(val(el, "merge"));
+    const ex = el.querySelector("[data-example]");
+    if (ex) ex.onclick = async () => {
       const r = await api("/api/profile/example", {});
       cfg.profile = r.profile;
-      msg(m, "ok", "Loaded the example profile (Jordan Lee). Replace it with your own before going live.");
+      msg(m, "ok", "Loaded the example profile (Jordan Lee). Replace it with your own before you start sending.");
       onImported && onImported(r.profile);
     };
     return { save: async () => (cfg.profile ? null : "Read a resume first (or load the example to try the app).") };
@@ -463,7 +472,7 @@
       <div data-recall-host></div></div>`;
     const schoolCard = () => `<div class="form-row" data-cschool>${fld("School or training", inp("c_school", "", 'placeholder="e.g. Lincoln High School, Austin Community College"'))}
       ${fld("What you earned", inp("c_earned", "", 'placeholder="e.g. Diploma, GED, Associate degree, CNA certificate"'))}${fld("Year", inp("c_year", "", 'placeholder="e.g. 2022, or Expected 2027"'))}</div>`;
-    const mergeBox = (name) => `<label class="check" ${cfg.profile ? "" : "hidden"}><input type="checkbox" name="${name}" ${cfg.profile ? "" : "checked"}>Add to my current resume instead of starting a new one</label>`;
+    const mergeBox = (name) => `<label class="check" ${cfg.profile ? "" : "hidden"}><input type="checkbox" name="${name}" checked>Add to my current resume instead of starting a new one</label>`;
     el.innerHTML = `<div class="form">
       <div class="row-actions"><span class="mode-switch" role="group" aria-label="How to tell the app about your work"><button type="button" data-cmode="talk" class="on" aria-pressed="true">Tell it in my own words</button><button type="button" data-cmode="form" aria-pressed="false">Fill in a form</button></span></div>
       <div data-ctalk></div>
@@ -517,7 +526,15 @@
       write(el.querySelector("[data-cgo]"), "/api/resume/create", { interview, merge: val(el, "c_merge") });
     };
     // Both ways end here: the resume written, with the steps shown as they happen, then what came of it.
+    // Replacing an approved resume asks first: the button, pressed again, replaces it.
+    const approvedLines = () => ["experience", "projects"].reduce((n, k) => n + ((cfg.profile && cfg.profile[k]) || []).reduce((x, e) => x + (e.bullets || []).filter((b) => b.approved).length, 0), 0);
     const write = async (btn, route, body) => {
+      if (cfg.profile && body.merge === false && approvedLines() && btn.dataset.armed !== "1") {
+        btn.dataset.armed = "1";
+        setTimeout(() => { delete btn.dataset.armed; }, 15000);
+        return msg(m, "err", `This replaces your resume and its ${approvedLines()} approved lines with the new one. Press the button again to replace it, or tick "Add to my current resume" to keep both.`);
+      }
+      delete btn.dataset.armed;
       btn.disabled = true;
       msg(m, "info", "Writing your resume from your answers. This usually takes 1 to 3 minutes (longer when the AI service is busy). You can leave this window open and wait.");
       // The steps as they happen, so a long wait never looks stuck.
@@ -1153,19 +1170,17 @@
     const extra = `      <div class="ai-sugg" data-moveup>
         <div class="row-actions"><button type="button" class="btn sm" data-mugo>${icon("bolt")}Move up: what I could do next</button>
           <small class="hint">Work that grows from everything you've done and can do: jobs that pay more, and other directions at about the same pay. Ones you could apply for now, and ones that are one step away.</small></div>
-        <div class="fld" style="margin-top:8px"><span>Work you'd like to move toward (optional)</span><input class="inp" data-mutoward maxlength="300" value="${esc(p.moveToward || "")}" placeholder="e.g. more coding, working with data, being outdoors, helping people"></div>
+        <div class="fld" style="margin-top:8px" data-nosave><span>Work you'd like to move toward (optional)</span><input class="inp" data-mutoward maxlength="300" value="${esc(p.moveToward || "")}" placeholder="e.g. more coding, working with data, being outdoors, helping people"></div>
         <div data-mulist></div></div>
       <div class="form-row">${fld("Lowest pay you'd take (optional)", `<div class="row-actions" style="flex-wrap:nowrap"><input class="inp" name="minPay" type="number" min="0" step="0.5" value="${esc(p.minPay || "")}" placeholder="e.g. 25" style="max-width:9rem">
           ${sel("minPayPer", p.minPayPer || "hour", [["hour", "an hour"], ["year", "a year"]])}</div>`, "Jobs that post a lower top rate are skipped. Jobs that don't post pay are kept.")}</div>
 `;
     const pick = (name, label, value, opts) => `<select name="${name}" aria-label="${esc(label)}">${opts.map(([v, l]) => `<option value="${v}" ${String(v) === String(value) ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
     const lower = `      ${fld("What level?", `<div class="radio-row">${LEVELS.map(([v, l]) => `<label><input type="checkbox" name="lvl" value="${v}" ${(v === "intern" ? p.internships : (p.seniority || []).includes(v)) ? "checked" : ""}>${l}</label>`).join("")}</div>`)}
-      <div class="form-row">${fld("When a job asks for a bit more experience than you have", pick("stretchYears", "When a job asks for a bit more experience than you have", p.stretchYears ?? 1,
-          [[0, "Skip it"], [1, "Apply if I'm up to 1 year short"], [2, "Apply if I'm up to 2 years short"]]), "Many employers treat years as a guide. Forms still get your real numbers.")}
-        ${fld("Applications to one company", pick("perCompanyMonth", "Applications to one company", p.perCompanyMonth ?? 2,
+      <div class="form-row">${fld("Applications to one company", pick("perCompanyMonth", "Applications to one company", p.perCompanyMonth ?? 2,
           [[1, "At most 1 a month"], [2, "At most 2 a month"], [3, "At most 3 a month"], [0, "No limit"]]), "Never two within 3 days, so it doesn't look like spam. Where several jobs fit, the best match goes first.")}</div>
-      <div data-kinds></div>
-      <div class="fld"><span>Companies you'd love to work for (optional)</span>
+      <div data-kinds data-nosave></div>
+      <div class="fld" data-nosave><span>Companies you'd love to work for (optional)</span>
         <div class="row-actions"><input class="inp" data-watch-in aria-label="A company's name, or a link to one of its job postings" placeholder="A company's name, or a link to one of its job postings" style="flex:1 1 280px;min-width:220px">
           <button type="button" class="btn sm" data-watch-add>${icon("plus")}Add</button></div>
         <div data-watch-list class="tags" style="margin-top:6px" hidden></div><div data-watch-msg></div>
@@ -1178,14 +1193,13 @@
         <li><b>Federal jobs:</b> turn on <b>USAJOBS</b> above. The app finds them, checks the fit and makes a resume for each; you apply on USAJOBS with a free Login.gov account.</li>
         <li><b>State, county and city jobs:</b> many come through <b>HiringCafe</b> and <b>Google Jobs</b>. Most state and local governments post on GovernmentJobs.com or their own state site (CalCareers in California), which need your own account and don't allow apps to search them. When you find one there, paste its link into <b>Add a job</b>: the app makes your resume for it, and you apply on the site.</li>
         <li>Government forms often ask whether you're a U.S. citizen: answer it once under <b>About you</b>.</li></ul>`)}
-      <div class="adv">${more("More options", "Exclusions, posting age, experience limits", `
+      <div>${more("More options", "Companies to leave out, recruiters and scams, how old a posting may be", `
         ${fld("What you want the work to involve (optional)", `<div data-keywords></div>`, "The AI favors jobs like these, e.g. healthcare, React, working outdoors.")}
         ${fld("Words that rule a job title out (optional)", `<div data-titleex></div>`)}
         ${fld("Companies to never apply to", `<div data-exclude></div>`, "Your current employer, and anywhere you would not go.")}
         <label class="check"><input type="checkbox" name="excludeAgencies" ${p.excludeAgencies ? "checked" : ""}>Skip recruiters, staffing companies, repost sites and postings that look like scams</label>
         <small class="hint" style="margin-top:-6px">Scam signs: a fee to pay, interviews over WhatsApp or text chat, resumes to a personal email, the same opening in many cities from a company with almost no jobs.</small>
-        <div class="form-row">${fld("Most years of experience a job may require", inp("maxYearsRequired", p.maxYearsRequired, 'type="number" min="0" max="30"'))}
-          ${fld("Only jobs posted in the last", sel("postedWithinDays", p.postedWithinDays, [[3, "3 days"], [7, "7 days"], [14, "14 days"], [30, "30 days"], [60, "60 days"]]))}
+        <div class="form-row">${fld("Only jobs posted in the last", sel("postedWithinDays", p.postedWithinDays, [[3, "3 days"], [7, "7 days"], [14, "14 days"], [30, "30 days"], [60, "60 days"]]))}
           ${fld("Distance in", sel("radiusUnit", p.radiusUnit, [["mi", "miles"], ["km", "kilometers"]]))}
           ${fld("Remote jobs open to people in", `<select name="remoteCountry" data-countries></select>`)}</div>
         ${fld("Jobs you already applied to elsewhere", `<textarea name="alreadyApplied" rows="3" placeholder="One per line: a job link, or Company - Job title">${esc(p.alreadyApplied || "")}</textarea>`, "The app never applies to these.")}`)}</div>`;
@@ -1201,9 +1215,28 @@
       <div class="fld"><span>How far are you willing to go? <b data-radius-val>${esc(p.radius)} ${p.radiusUnit === "km" ? "km" : "miles"}</b></span>
         <input type="range" name="radius" min="1" max="100" value="${esc(Math.min(100, p.radius || 25))}" style="width:100%;max-width:420px"></div>
       <label class="check"><input type="checkbox" name="remote" ${p.remote ? "checked" : ""}>Also jobs I can do from home (remote)</label>
+      <div class="form-row years-row">${fld("Years you've done this kind of work", `<input class="inp" name="yearsInField" type="number" min="0" max="50" step="0.5" value="${esc(p.yearsInField ?? "")}" style="max-width:8rem"><small data-years-from></small>`)}
+        ${fld("When a job asks for a little more", pick("stretchYears", "When a job asks for a little more experience than you have", p.stretchYears ?? 1,
+          [[0, "Skip it"], [1, "Apply if I'm up to 1 year short"], [2, "Apply if I'm up to 2 years short"]]), "Many employers treat years as a guide. Forms still get your real numbers.")}</div>
+      <p class="hint years-rule" data-years-rule></p>
       ${setup ? more("More choices", "Pay, move up, level, where to look", `${extra}${lower}`) : `${extra}${lower}`}
     </div>`;
     const titles = tagInput(el.querySelector("[data-titles]"), p.titles, kind === "office" ? "e.g. Software Engineer" : "e.g. Cashier");
+    // What their years mean, in one line, as they change them (the same rule as the job search's, core/facts.js yearsCap).
+    // Left empty, the years their resume and answers show count, and only what they type is saved.
+    const rule = el.querySelector("[data-years-rule]"), from = el.querySelector("[data-years-from]");
+    const sayRule = () => {
+      const raw = val(el, "yearsInField"), k = Number(val(el, "stretchYears")) || 0, have = (cfg.years && cfg.years.have) || 0;
+      const old = Number(p.maxYearsRequired), y = raw === "" ? have : Number(raw);
+      from.textContent = raw !== "" ? "" : have ? `Empty, so the app goes by your resume: about ${have} year${have === 1 ? "" : "s"}.` : "Your resume's dates don't show it. Type your years so the app can tell which jobs fit.";
+      if (!Number.isFinite(y)) { rule.textContent = ""; return; }
+      const cap = raw === "" && Number.isFinite(old) && old !== 3 && p.maxYearsRequired != null ? old : raw === "" && !have ? 3 : Math.max(1, Math.ceil(y) + k);
+      rule.textContent = `So the app applies to jobs that ask for up to ${cap} year${cap === 1 ? "" : "s"} of experience, and leaves out the ones that ask for more.`;
+    };
+    el.querySelectorAll("[name=yearsInField], [name=stretchYears]").forEach((x) => { x.addEventListener("input", sayRule); x.addEventListener("change", sayRule); });
+    sayRule();
+    // The years the resume shows, now: during setup the resume was read after this page's settings were loaded.
+    api("/api/config").then((c) => { if (c && c.years) { cfg.years = c.years; sayRule(); } }).catch(() => {});
     el.querySelectorAll(".chip-add").forEach((b) => b.onclick = () => {
       const input = el.querySelector("[data-titles] input");
       input.value = b.textContent.replace(/^\+\s*/, "");
@@ -1363,7 +1396,7 @@
     const drawCities = () => {
       const host = el.querySelector("[data-cities]");
       host.innerHTML = cities.length ? cities.map((c, i) => `<span class="tag">${icon("pin")}${esc(c.label || c.name)}<button type="button" data-i="${i}">&times;</button></span>`).join("") : `<span class="muted" style="padding:0 6px">No city yet</span>`;
-      host.querySelectorAll("button").forEach((b) => b.onclick = () => { cities.splice(Number(b.dataset.i), 1); drawCities(); });
+      host.querySelectorAll("button").forEach((b) => b.onclick = () => { cities.splice(Number(b.dataset.i), 1); drawCities(); host.dispatchEvent(new Event("change", { bubbles: true })); });
     };
     drawCities();
     const box = el.querySelector("[data-city]"), list = el.querySelector(".suggest-list");
@@ -1372,7 +1405,7 @@
       const res = await api("/api/cities?q=" + encodeURIComponent(box.value));
       list.hidden = !res.length;
       list.innerHTML = res.map((c, i) => `<div data-i="${i}">${esc(c.label)}</div>`).join("");
-      list.querySelectorAll("div").forEach((d) => d.onclick = () => { const c = res[Number(d.dataset.i)]; if (!cities.some((x) => x.label === c.label)) cities.push(c); box.value = ""; list.hidden = true; drawCities(); });
+      list.querySelectorAll("div").forEach((d) => d.onclick = () => { const c = res[Number(d.dataset.i)]; if (!cities.some((x) => x.label === c.label)) cities.push(c); box.value = ""; list.hidden = true; drawCities(); box.dispatchEvent(new Event("change", { bubbles: true })); });
     }, 150); };
     box.onblur = () => setTimeout(() => { list.hidden = true; }, 200);
     api("/api/countries").then((cs) => { el.querySelector("[data-countries]").innerHTML = cs.map((c) => `<option value="${c.code}" ${c.code === p.remoteCountry ? "selected" : ""}>${esc(c.name)}</option>`).join(""); });
@@ -1383,7 +1416,8 @@
           titles: titles.get(), keywords: keywords.get(), titleExclude: titleEx.get(), excludeCompanies: exclude.get(),
           cities, radius: Number(val(el, "radius")) || 25, radiusUnit: val(el, "radiusUnit"), remote: val(el, "remote"), remoteCountry: val(el, "remoteCountry") || p.remoteCountry || "US",
           seniority: lv.filter((x) => x !== "intern").flatMap((x) => (x === "lead" ? ["lead", "staff", "principal"] : [x])), internships: lv.includes("intern"),
-          maxYearsRequired: Number(val(el, "maxYearsRequired")) || 0, postedWithinDays: Number(val(el, "postedWithinDays")) || 14,
+          postedWithinDays: Number(val(el, "postedWithinDays")) || 14,
+          yearsInField: val(el, "yearsInField") === "" ? null : Number(val(el, "yearsInField")),
           excludeAgencies: val(el, "excludeAgencies"), alreadyApplied: val(el, "alreadyApplied"), boards,
           minPay: Number(val(el, "minPay")) || 0, minPayPer: val(el, "minPayPer") || "hour",
           stretchYears: Number(val(el, "stretchYears")), perCompanyMonth: Number(val(el, "perCompanyMonth")),
@@ -1440,7 +1474,7 @@
     const draw = () => {
       const pr = presets[preset];
       el.innerHTML = `<div class="form" data-ai-form>
-        <p class="hint" style="margin:0">Optional. Greenhouse sometimes emails a security code that must be typed into the form; with your mailbox connected the app reads it and finishes the application. It also uses employers' "thank you for applying" emails to avoid applying twice, and shows you when an employer writes back about an application (an interview, a test, a question or a no). The app only reads; it never sends, deletes or marks anything.</p>
+        <p class="hint" style="margin:0">Optional. With your mailbox connected, you see when an employer writes back about an application (an interview, a test, a question or a no), and the app can finish forms that email a security code to type in. It also uses employers' "thank you for applying" emails so it never applies twice. The app only reads; it never sends, deletes or marks anything.</p>
         ${fld("Email provider", radios("preset", preset, Object.entries(presets).map(([k, v]) => [k, v.name])))}
         <div class="callout ${pr.unsupported ? "amber" : "blue"}" style="margin:0"><div><b>${pr.unsupported ? "Not supported directly" : "Create an app password"}</b><ol style="margin:6px 0 0;padding-left:18px">${pr.steps.map((s) => `<li>${esc(s)}</li>`).join("")}</ol>
           ${pr.appPasswordUrl ? `<button type="button" class="btn sm" style="margin-top:8px" data-open="${esc(pr.appPasswordUrl)}">${icon("ext")}Open ${esc(pr.name)} settings</button>` : ""}</div></div>
@@ -1588,7 +1622,7 @@
         input.value = "";
         if (r.error) return msg(m, "err", r.error);
         await draw();
-        msg(el.querySelector("[data-ppl-msg]"), "ok", `Imported ${r.count.toLocaleString()} connections at ${r.companies.toLocaleString()} companies.${r.held ? ` ${r.held} job${r.held === 1 ? "" : "s"} in your queue ${r.held === 1 ? "is" : "are"} at a company where you know someone: ${r.held === 1 ? "it waits" : "they wait"} so you can ask first.` : ""}`);
+        msg(el.querySelector("[data-ppl-msg]"), "ok", `Imported ${r.count.toLocaleString()} connections at ${r.companies.toLocaleString()} companies.${r.held ? ` ${r.held} job${r.held === 1 ? "" : "s"} up next ${r.held === 1 ? "is" : "are"} at a company where you know someone: ${r.held === 1 ? "it waits" : "they wait"} so you can ask first.` : ""}`);
       };
     };
     draw();

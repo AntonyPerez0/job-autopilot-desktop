@@ -125,6 +125,23 @@ test("near misses on years: the rule is there only when the person chose it, and
   assert.doesNotMatch(rules(7), /short of is NOT a hard fail/, "only 1 or 2");
 });
 
+test("the most years a job may ask: theirs plus the near miss they accept; an older limit until they give theirs; 3 when nothing shows them", async () => {
+  const { yearsCap, yearsInField } = await import("../core/facts.js");
+  const two = { experience: [{ dates: "Jan 2021 – Dec 2022" }] }, five = { experience: [{ dates: "Jan 2018 – Dec 2022" }] };
+  assert.strictEqual(yearsInField({}, two, {}), 2, "the resume's dates");
+  assert.strictEqual(yearsInField({ years: [{ type: "Driving", years: 4 }] }, two, {}), 4, "or more, for one kind of work they told");
+  assert.strictEqual(yearsInField({ totalYears: 6 }, two, { yearsInField: 1.5 }), 1.5, "the years they gave for this kind of work win");
+  assert.strictEqual(yearsCap({}, two, { stretchYears: 1 }), 3);
+  assert.strictEqual(yearsCap({}, two, { stretchYears: 0 }), 2);
+  assert.strictEqual(yearsCap({}, null, { yearsInField: 0, stretchYears: 0 }), 1, "never under 1");
+  assert.strictEqual(yearsCap({}, null, { yearsInField: 0.5, stretchYears: 2 }), 3, "part of a year counts as a year");
+  assert.strictEqual(yearsCap({}, two, { maxYearsRequired: 8, stretchYears: 1 }), 8, "a limit they chose before still counts");
+  assert.strictEqual(yearsCap({}, five, { maxYearsRequired: 3, stretchYears: 1 }), 6, "the old default nobody saw doesn't");
+  assert.strictEqual(yearsCap({}, two, { maxYearsRequired: 8, yearsInField: 2, stretchYears: 1 }), 3, "their years replace the old limit");
+  assert.strictEqual(yearsCap({}, { experience: [] }, { stretchYears: 1 }), 3, "nothing shows their years: the old 3, not 1");
+  assert.match(autopilotRules(exampleAnswers(), approvedExample(Profile), { ...examplePrefs(), yearsInField: 6, stretchYears: 2 }), /more than 8 years/);
+});
+
 test("Finish with me: the form moved on when its address changes or most of its questions do, seen twice in a row", async () => {
   const { movedOn } = await import("../core/apply.js");
   const page1 = ["First name *", "Last name *", "Shirt size *"];

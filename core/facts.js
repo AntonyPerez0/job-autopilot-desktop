@@ -146,6 +146,25 @@ export function standardAnswers(a) {
   return out;
 }
 
+// The years of experience the job search goes by: the ones the person gave for the kind of work they're looking for,
+// else all their work (their answer, or their resume's dates).
+const given = (v) => v !== null && v !== undefined && v !== "" && Number.isFinite(Number(v));
+export function yearsInField(a = {}, profile = null, prefs = {}) {
+  if (given(prefs.yearsInField)) return Number(prefs.yearsInField);
+  const typed = Math.max(0, ...(Array.isArray(a.years) ? a.years : []).map((y) => Number(y && y.years) || 0));
+  return Math.max(Number(a.totalYears) || yearsFromDates((profile && profile.experience) || []), typed);
+}
+// The most years a job may ask for: theirs plus the near miss they accept ("up to 1 year short"), never under 1. Until
+// they give their years, an older limit someone chose in Settings counts (3 was the default nobody saw), and years
+// nothing shows keep that old 3 rather than leaving out nearly every job.
+export function yearsCap(a = {}, profile = null, prefs = {}) {
+  const stretch = [1, 2].includes(Number(prefs.stretchYears)) ? Number(prefs.stretchYears) : 0;
+  if (!given(prefs.yearsInField) && given(prefs.maxYearsRequired) && Number(prefs.maxYearsRequired) !== 3) return Number(prefs.maxYearsRequired);
+  const y = yearsInField(a, profile, prefs);
+  if (!given(prefs.yearsInField) && !y) return 3;
+  return Math.max(1, Math.ceil(y) + stretch);
+}
+
 // Facts the screening and fact-check prompts see.
 export function candidateFacts(a, profile, prefs) {
   const g = latestEducation(a);
@@ -166,7 +185,7 @@ export function candidateFacts(a, profile, prefs) {
     needsSponsorship: a.needsSponsorship === "yes" ? true : a.needsSponsorship === "no" ? false : null,
     citizen: a.citizen === "yes" ? true : a.citizen === "no" ? false : null,
     cannotClaim: [...((profile && profile.cannotClaim) || []), ...(a.cannotClaim || [])].slice(0, 200),
-    maxYearsRequired: prefs ? Number(prefs.maxYearsRequired) : null,
+    maxYearsRequired: prefs ? yearsCap(a, profile, prefs) : null,
     wantsInternships: !!(prefs && prefs.internships),
     interests: prefs ? prefs.keywords || [] : [],
     // What hourly postings ask about. Missing means "not stated", never "no".

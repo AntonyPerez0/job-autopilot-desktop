@@ -20,17 +20,16 @@
     <div class="brand"><div class="logo"><svg class="i" aria-hidden="true"><use href="#i-bolt"/></svg></div>Job Autopilot</div>
     <nav id="nav" aria-label="Pages"></nav>
     <div class="side-foot">
-      <div class="row"><span style="display:flex;align-items:center;gap:8px"><span id="mode-dot" class="dot"></span><b id="mode-txt">…</b></span>
-        <button class="btn sm" id="pause"></button></div>
-      <div class="row"><span>Send for real <span class="muted">(off: practice)</span></span><button class="switch" id="live" role="switch" aria-checked="false" aria-label="Send applications for real"></button></div>
+      <div class="mode-box" id="mode-box"></div>
+      <div class="row"><span>Up to</span><div class="stepper"><button id="cap-dn" aria-label="Fewer a day">&minus;</button><span id="cap">0</span><button id="cap-up" aria-label="More a day">+</button></div><span>a day</span></div>
       <div class="row adv"><span>Day starts</span><span class="muted" id="daystart"></span></div>
-      <div class="row adv"><span>Daily limit</span><div class="stepper"><button id="cap-dn" aria-label="Lower">&minus;</button><span id="cap">0</span><button id="cap-up" aria-label="Raise">+</button></div></div>
       <div class="muted adv" id="model"></div>
       <div class="row"><span>Show</span><span class="mode-switch" role="group" aria-label="How much to show"><button type="button" data-mode="simple">Simple</button><button type="button" data-mode="advanced">Advanced</button></span></div>
       <div id="update-side"></div>
     </div>
   </aside>
   <div>
+    <div class="mobile-mode" id="mmode"></div>
     <nav class="mobile-bar" id="mnav" aria-label="Pages"></nav>
     <main class="main" id="main" tabindex="-1"></main>
   </div>
@@ -44,11 +43,11 @@
 const VIEWS = [
   { id: "overview", label: "Overview", icon: "grid" },
   { id: "applied", label: "Applied", icon: "send", status: "applied" },
-  { id: "queued", label: "Queue", icon: "clock", status: "queued" },
-  { id: "failed", label: "Needs attention", icon: "alert", status: "failed" },
+  { id: "queued", label: "Up next", icon: "clock", status: "queued" },
+  { id: "failed", label: "Needs you", icon: "alert", status: "failed" },
   { id: "manual", label: "Apply yourself", icon: "ext", status: "manual" },
-  { id: "filled", label: "Practice runs", icon: "eye", status: "filled" },
-  { id: "skipped", label: "Skipped", icon: "skip", status: "skipped", adv: true },
+  { id: "filled", label: "Practice", icon: "eye", status: "filled" },
+  { id: "skipped", label: "Not applied", icon: "skip", status: "skipped" },
   { id: "all", label: "All jobs", icon: "list", adv: true },
   { id: "log", label: "Activity", icon: "act", adv: true },
   { id: "profile", label: "Resume", icon: "file" },
@@ -56,13 +55,13 @@ const VIEWS = [
   { id: "help", label: "Help", icon: "help" },
 ];
 const TITLES = {
-  overview: ["Overview", "Jobs that match your preferences, found and applied to automatically."],
-  applied: ["Applied", "Applications the employer confirmed it received."],
-  queued: ["Queue", "Screened as a fit and waiting their turn."],
-  failed: ["Needs attention", "Stopped before submitting, so nothing incomplete went out."],
-  filled: ["Practice runs", "Filled in and checked, but not sent: practice mode."],
-  manual: ["Apply yourself", "Good matches on sites that need an account, a chat bot, or a job board. Open each one, apply, then press \"I applied\"."],
-  skipped: ["Skipped", "Closed postings, poor fits, and boards that need an account."],
+  overview: ["Overview", "What the app did, and what needs you."],
+  applied: ["Applied", "Applications sent in your name, and where each one stands."],
+  queued: ["Up next", "Jobs that fit you, waiting their turn."],
+  failed: ["Needs you", "Applications that stopped before anything incomplete was sent. Each one says what it needs."],
+  filled: ["Practice applications", "Filled in but not sent. Check one; when they look right, start sending."],
+  manual: ["Apply yourself", "Good matches on sites that need your own account, a chat bot, or a job board. Open each one, apply, then press \"I applied\"."],
+  skipped: ["Not applied", "Jobs the app found and left out, and why. Change a setting, or apply anyway."],
   all: ["All jobs", "Everything the autopilot has seen."],
   log: ["Activity", "What the autopilot did, newest first."],
   profile: ["Resume", "Check it, improve it, make a new one, and download it."],
@@ -106,34 +105,37 @@ const cleanTitle = (t) => String(t || "").trim();
 const SOURCE = { greenhouse: "Greenhouse", lever: "Lever", ashby: "Ashby", usajobs: "USAJOBS", neogov: "GovernmentJobs.com", calcareers: "CalCareers" };
 
 // Turn a raw reason into a short category a person reads at a glance.
+// Every status is a word, an icon and a colour. Amber only for what waits on the person; red only for errors.
 function category(j) {
   const r = j.reason || "";
   switch (j.status) {
-    case "applied": return { label: "Applied", tone: "green" };
-    case "working": return { label: "Applying now", tone: "blue", pulse: true };
-    case "submitting": return { label: "Submitting", tone: "blue", pulse: true };
-    case "queued": return { label: "Queued", tone: "blue" };
-    case "filled": return { label: "Practice run", tone: "violet" };
-    case "manual": return { label: "Apply yourself", tone: "amber" };
+    case "applied": return { label: "Applied", tone: "green", icon: "check" };
+    case "working": return { label: st && st.state.job && st.state.job.practice ? "Practicing now" : "Filling in now", tone: "blue", pulse: true, icon: "bolt" };
+    case "submitting": return { label: "Sending", tone: "blue", pulse: true, icon: "send" };
+    case "queued": return j.hold_until && toDate(j.hold_until) > Date.now() ? { label: "Waiting for your referral", tone: "blue", icon: "user" } : { label: "Up next", tone: "blue", icon: "clock" };
+    case "filled": return { label: "Practice application", tone: "violet", icon: "eye" };
+    case "manual": return { label: "Apply yourself", tone: "blue", icon: "ext" };
     case "skipped":
-      if (/^screen:|fails a must-have/.test(r)) return { label: "Not a fit", tone: "gray" };
-      if (/closed|404/.test(r)) return { label: "Posting closed", tone: "gray" };
-      if (/account/.test(r)) return { label: "Needs an account", tone: "gray" };
-      if (/already-applied list|already applied/.test(r)) return { label: "Already applied", tone: "gray" };
-      return { label: "Skipped", tone: "gray" };
+      if (/^screen:|fails a must-have/.test(r)) return { label: "Not a fit", tone: "gray", icon: "skip" };
+      if (/closed|404/.test(r)) return { label: "Posting closed", tone: "gray", icon: "skip" };
+      if (/account/.test(r)) return { label: "Needs an account", tone: "gray", icon: "skip" };
+      if (/already-applied list|already applied/.test(r)) return { label: "Already applied", tone: "gray", icon: "skip" };
+      return { label: "Not applied", tone: "gray", icon: "skip" };
     case "failed":
-      if (/security code/.test(r)) return { label: "Email code needed", tone: "amber" };
-      if (/captcha/i.test(r)) return { label: "CAPTCHA", tone: "amber" };
-      if (/needs you|no answer|still empty/.test(r)) return { label: "Missing info", tone: "amber" };
-      if (/no confirmation/.test(r)) return { label: "Not confirmed", tone: "red" };
-      return { label: "Error", tone: "red" };
+      if (/may have gone through/.test(r)) return { label: "May have gone through", tone: "amber", icon: "alert" };
+      if (/security code|verify email/.test(r)) return { label: "Email code needed", tone: "amber", icon: "mail" };
+      if (/captcha/i.test(r)) return { label: "Needs you: CAPTCHA", tone: "amber", icon: "alert" };
+      if (/needs you|no answer|still empty/.test(r)) return { label: "Needs your answer", tone: "amber", icon: "alert" };
+      return { label: "Not sent", tone: "red", icon: "alert" };
   }
   return { label: j.status, tone: "gray" };
 }
-const STAGE_BADGE = { interviewing: { label: "Interviewing", tone: "green" }, offer: { label: "Offer", tone: "green" }, rejected: { label: "Not moving forward", tone: "gray" }, withdrew: { label: "You withdrew", tone: "gray" } };
-const badge = (c) => `<span class="badge ${c.tone}"><span class="dot ${c.pulse ? "pulse" : ""}"></span>${esc(c.label)}</span>`;
+const STAGE_BADGE = { interviewing: { label: "Interviewing", tone: "green", icon: "user" }, offer: { label: "Offer", tone: "green", icon: "check" }, rejected: { label: "Not selected", tone: "gray" }, withdrew: { label: "You withdrew", tone: "gray" } };
+const badge = (c) => `<span class="badge ${c.tone}">${c.pulse ? '<span class="spin" aria-hidden="true"></span>' : c.icon ? icon(c.icon) : ""}${esc(c.label)}</span>`;
+// An application sent three weeks ago or more with nothing back, and no stage set: said plainly.
+const quiet = (j) => j.status === "applied" && !j.reply && !j.stage && (Date.now() - (toDate(j.applied_at) || Date.now())) > 21 * 86400000;
 // Replies from employers, found in the connected mailbox.
-const REPLY = { offer: ["Offer", "green"], interview: ["Wants to talk", "green"], assessment: ["Test or task", "blue"], info: ["Needs something from you", "amber"], rejection: ["Not moving forward", "gray"], other: ["Replied", "blue"] };
+const REPLY = { offer: ["Offer", "green"], interview: ["Wants to talk", "green"], assessment: ["Test or task", "blue"], info: ["Needs something from you", "amber"], rejection: ["Not selected", "gray"], other: ["Replied", "blue"] };
 const replyBadge = (k) => (k && REPLY[k] ? `<span class="badge ${REPLY[k][1]} reply-badge">${icon("mail", 'style="width:13px;height:13px"')}${REPLY[k][0]}</span>` : "");
 const replyItem = (r) => `<div class="list-item" data-open-job="${esc(r.slug)}">${avatar(r.company)}<div class="li-main"><div class="t">${jobLink(r)}</div><div class="s">${meta(esc(r.company), esc(r.subject))}</div></div>
   ${replyBadge(r.kind)}<span class="time hide-md">${ago(r.at)}</span></div>`;
@@ -148,14 +150,14 @@ function humanReason(j) {
   const r = j.reason || "";
   if (j.status === "applied") return "Submitted and confirmed by the employer.";
   if (/^screen:/.test(r)) return r.replace(/^screen:\s*/, "");
-  if (/^(dry|practice) run: /.test(r)) return "Practice run (not sent): " + r.replace(/^(dry|practice) run: /, "").replace(/\bnot submitted\b/, "not sent");
+  if (/^(dry|practice) run: /.test(r)) return "Practice application, not sent: " + r.replace(/^(dry|practice) run: /, "").replace(/\bnot submitted\b/, "not sent");
   if (/security code/.test(r)) return "Greenhouse wants the verification code it emailed. Connect your mailbox in Settings and this retries on its own.";
   if (/^could not fill every required field/.test(r)) return "Waiting for your answer: " + r.replace(/^could not fill every required field( \(page \d+\))?:\s*/, "").replace(/(required, no answer|needs you|still empty): /g, "");
   return r;
 }
 
 // ---------- shell ----------
-const NAV_TONE = { applied: "done", queued: "work", failed: "attn", manual: "attn", filled: "attn" };
+const NAV_TONE = { applied: "done", queued: "work", failed: "attn", manual: "work", filled: "practice" };
 function renderNav() {
   const c = (st && st.counts) || {};
   const total = Object.values(c).reduce((a, b) => a + b, 0);
@@ -165,16 +167,25 @@ function renderNav() {
   $("nav").innerHTML = html(false);
   $("mnav").innerHTML = html(true);
 }
+// The mode, in words, with the one thing to press: Practice mode (nothing is sent) [Start sending], Sending [Pause],
+// Paused [Continue]. In the sidebar, and above the pages in a narrow window.
+function modeBox(compact) {
+  const s = st.settings, p = st.practice || { count: 0, unchecked: 0 };
+  const line = (tone, word, text, buttons) => `<div class="mode-line ${tone}"><b id="${compact ? "mmode-txt" : "mode-txt"}">${word}</b>${compact ? "" : `<span class="mode-text">${text}</span>`}</div><div class="mode-acts">${buttons}</div>`;
+  const id = (x) => (compact ? "m-" : "") + x;
+  if (s.paused) return line("paused", "Paused", s.dryRun ? "Nothing is filled in. Continue goes back to practicing." : "Nothing is filled in or sent. Continue goes back to sending.",
+    `<button class="btn sm primary" id="${id("pause")}">${icon("play")}Continue</button>`);
+  if (s.dryRun) return line("practice", "Practice mode", `Nothing is sent.${p.count ? ` ${p.count} practice application${p.count === 1 ? "" : "s"} to check.` : ""}`,
+    `<button class="btn sm primary" id="${id("start")}">${icon("send")}Start sending</button><button class="btn sm ghost" id="${id("pause")}">${icon("pause")}Pause</button>`);
+  return line("sending", "Sending", "Applications go out in your name.",
+    `<button class="btn sm" id="${id("pause")}">${icon("pause")}Pause</button><button class="btn sm ghost" id="${id("practice")}">Back to practice</button>`);
+}
+const modeHtml = {};
 function renderControls() {
   if (!st) return;
   const s = st.settings;
-  const mode = s.paused ? ["red", "Paused"] : s.dryRun ? ["amber", "Practicing"] : ["green", "Sending"];
-  $("mode-dot").className = "dot " + mode[0] + (s.paused ? "" : " pulse");
-  $("mode-txt").textContent = mode[1];
-  $("pause").innerHTML = s.paused ? `${icon("play")}Resume` : `${icon("pause")}Pause`;
-  $("pause").classList.toggle("primary", s.paused);
-  $("live").classList.toggle("on", !s.dryRun);
-  $("live").setAttribute("aria-checked", String(!s.dryRun));
+  // Drawn again only when it changes, so a button the keyboard is on keeps the focus.
+  for (const [id, compact] of [["mode-box", false], ["mmode", true]]) { const h = modeBox(compact); if (modeHtml[id] !== h) { $(id).innerHTML = h; modeHtml[id] = h; } }
   $("cap").textContent = s.dailyCap;
   $("daystart").textContent = new Date(2000, 0, 1, s.dayStartsAtHour || 0).toLocaleTimeString([], { hour: "numeric" });
   $("model").textContent = "Model: " + st.model;
@@ -220,27 +231,33 @@ function liveChip() {
   const s = st.state, set = st.settings;
   let tone = "green", txt = esc(s.now);
   if (s.finish && s.finish.phase !== "waiting") { tone = s.finish.phase === "yours" ? "green" : "blue"; txt = s.finish.phase === "yours" ? `Your turn: <b>${esc(s.finish.company)}</b>` : `Filling in <b>${esc(s.finish.company)}</b> for you to finish`; }
-  else if (set.paused) { tone = "red"; txt = "Paused"; }
+  else if (set.paused) { tone = "gray"; txt = "Paused"; }
+  else if (s.job && s.job.practice) { tone = "violet"; txt = `Practice application for <b>${esc(s.job.company)}</b>: stops before Submit`; }
   else if (s.job) { tone = "blue"; txt = `Applying to <b>${esc(s.job.company)}</b>, ${esc(cleanTitle(s.job.title))}`; }
   else if (s.now === "searching") { tone = "blue"; txt = "Searching for new jobs"; }
-  else if (/review the first/.test(s.now)) { tone = "amber"; txt = "Waiting for you to check the first filled application"; }
-  else if (/cap/.test(s.now)) { tone = "amber"; txt = `Daily limit reached, resumes ${s.resumesAt ? new Date(s.resumesAt).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }) : "tomorrow"}`; }
+  else if (/check the first practice/.test(s.now)) { tone = "amber"; txt = "Waiting for you to check the first practice application"; }
+  else if (/look at the \d+ new practice/.test(s.now)) { tone = "amber"; txt = "Waiting for you to look at the new practice applications"; }
+  else if (/cap/.test(s.now)) { tone = "gray"; txt = `Done for today: it goes on ${s.resumesAt ? new Date(s.resumesAt).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }) : "tomorrow"}`; }
   else if (/waiting between/.test(s.now)) txt = "Pacing between applications";
-  else if (/queue empty/.test(s.now)) txt = "Queue empty, waiting for the next search";
+  else if (/queue empty/.test(s.now)) txt = "Nothing up next: waiting for the next search";
   else if (/applied to in the last few days/.test(s.now)) txt = "The next jobs wait a few days: you just applied to those companies";
   const busy = (s.finish && s.finish.phase === "filling") || (!set.paused && (s.job || s.now === "searching"));
   return `<div class="live ${tone}" role="status"><span class="dot ${tone}"></span>${busy ? '<span class="spin" aria-hidden="true"></span>' : ""}<span class="txt">${txt}</span></div>`;
 }
 function header() {
-  const [t, sub] = TITLES[view];
+  const [t, sub0] = TITLES[view];
+  const sub = view === "overview" && st && st.settings.dryRun ? "Practice mode: nothing is sent until you start sending." : sub0;
   const list = !["overview", "log", "profile", "settings", "help"].includes(view);
+  // Finding jobs belongs with the jobs: the Overview and the lists, not Settings, Resume or Help.
+  const jobs = list || view === "overview";
   return `<div class="top"><div><h1>${t}</h1><p>${sub}</p></div><div class="actions">${liveChip()}
     ${list ? `<div class="search">${icon("search")}<input id="q" aria-label="Search jobs" placeholder="Search company, role, location" value="${esc(q)}" oninput="q=this.value;renderList()"></div>` : ""}
-    <button class="btn" onclick="addJobDialog()">${icon("plus")}Add a job</button>
-    <button class="btn" onclick="searchNow()">${icon("refresh")}Search now</button></div></div><div id="banner-host">${banners()}</div><div id="progress-host">${progressCard()}</div>`;
+    ${jobs ? `<button class="btn" onclick="addJobDialog()">${icon("plus")}Add a job</button>
+    <button class="btn" onclick="searchNow()">${icon("refresh")}Search now</button>` : ""}</div></div><div id="banner-host">${banners()}</div><div id="progress-host">${jobs ? progressCard() : ""}</div>`;
 }
 
 // ---------- progress ----------
+let progOpen = false;
 const SHORT = { browser: "Browser", open: "Open form", read: "Read form", account: "Sign in", plan: "AI tailoring", build: "Resume + fact-check",
   fill: "Fill form", verify: "Check answers", submit: "Submit", code: "Email code", confirm: "Confirmation" };
 let skew = 0;
@@ -255,7 +272,8 @@ function progressCard() {
   if (!p) return "";
   if (p.kind === "apply" && st.state.job) {
     const job = st.state.job;
-    const steps = p.steps.filter((x) => !["code", "account"].includes(x.key) || p.step === x.key || p.done.includes(x.key));
+    // A practice application stops before Submit: no Submit or confirmation steps to wait for.
+    const steps = p.steps.filter((x) => (!["code", "account"].includes(x.key) || p.step === x.key || p.done.includes(x.key)) && !(job.practice && ["submit", "code", "confirm"].includes(x.key)));
     const cur = steps.findIndex((x) => x.key === p.step);
     const inStep = (now() - p.stepAt) / 1000;
     let total = 0, doneT = 0;
@@ -265,38 +283,34 @@ function progressCard() {
     const pct = Math.min(99, Math.round((100 * (doneT + partial)) / Math.max(1, total)));
     const remaining = Math.max(0, total - doneT - Math.max(inStep, partial));
     const over = cur >= 0 && inStep > curT * 1.5 && inStep > 20;
-    return `<div class="card prog">
-      <div class="prog-top">${avatar(job.company)}<div class="prog-title"><div class="t">Applying to ${esc(job.company)}</div><div class="s">${esc(cleanTitle(job.title))}</div></div>
+    const what = job.practice ? `Practice application for ${esc(job.company)}` : `Applying to ${esc(job.company)}`;
+    const browser = st.browser && st.browser.open && st.browser.mode !== "headless" ? `<a href="#" onclick="showBrowser(true);return false">Show the browser</a>` : "";
+    // One line; the steps on request.
+    if (!progOpen) return `<div class="card prog prog-line ${job.practice ? "practice" : ""}"><span class="spin" aria-hidden="true"></span>
+      <span class="pl-t"><b>${what}</b> ${esc(cleanTitle(job.title))}</span><span class="pl-m">${esc(SHORT[steps[Math.max(0, cur)] && steps[Math.max(0, cur)].key] || "Starting")} · ${over ? "taking longer than usual" : left(remaining)}${job.practice ? " · stops before Submit" : ""}</span>
+      <span class="pl-a">${browser}<a href="#" onclick="progOpen=true;tickProgress();return false">Show the steps</a></span></div>`;
+    return `<div class="card prog ${job.practice ? "practice" : ""}">
+      <div class="prog-top">${avatar(job.company)}<div class="prog-title"><div class="t">${what}</div><div class="s">${esc(cleanTitle(job.title))}${job.practice ? " · stops before Submit: nothing is sent" : ""}</div></div>
         <div class="prog-meta"><b>${pct}%</b><span>${meta(`${mmss(now() - p.startedAt)} elapsed`, over ? "taking longer than usual" : left(remaining))}</span></div></div>
       <div class="pbar"><i style="width:${pct}%"></i></div>
       <div class="steps">${steps.map((x, i) => `<div class="stp ${i < cur ? "done" : i === cur ? "cur" : ""}"><div class="ln"></div>
         <div class="lb" title="${esc(x.label)}">${i < cur ? icon("check") : i === cur ? '<span class="spin"></span>' : ""}${esc(SHORT[x.key] || x.label)}</div></div>`).join("")}</div>
       <div class="prog-foot"><span>Step ${cur + 1} of ${steps.length}: ${esc(cur >= 0 ? steps[cur].label : "Starting")}</span><span><span class="fig">${mmss(inStep * 1000)}</span> on this step</span>
-        ${st.browser && st.browser.open && st.browser.mode !== "headless" ? `<a href="#" onclick="showBrowser(true);return false">Show the browser</a><a href="#" onclick="showBrowser(false);return false">Minimize it</a>` : ""}</div></div>`;
+        ${browser ? `${browser}<a href="#" onclick="showBrowser(false);return false">Minimize it</a>` : ""}<a href="#" onclick="progOpen=false;tickProgress();return false">Hide the steps</a></div></div>`;
   }
   if (p.kind === "search") {
     const searchShare = 35;
     const frac = p.n ? (p.i + 0.5) / p.n : 0;
     const pct = Math.round(p.phase === "search" ? frac * searchShare : searchShare + frac * (100 - searchShare));
-    const what = p.phase === "search" ? (p.n ? meta(`Search ${Math.min(p.i + 1, p.n)} of ${p.n}`, p.label ? `“${esc(p.label)}”` : "") : meta("Getting ready to search", ""))
-      : meta(`Reviewing new posting ${Math.min(p.i + 1, p.n)} of ${p.n}`, p.label ? esc(p.label) : "");
-    return `<div class="card prog">
-      <div class="prog-top"><span class="ico">${icon("search")}</span>
-        <div class="prog-title"><div class="t">${p.phase === "search" ? "Searching for new jobs" : "Checking new jobs for fit"}</div><div class="s">${what}</div></div>
-        <div class="prog-meta"><b>${pct}%</b><span>${meta(`${mmss(now() - p.startedAt)} elapsed`, p.phase === "review" && p.added ? `${p.added} added to the queue` : "")}</span></div></div>
-      <div class="pbar"><i style="width:${pct}%"></i></div>
-      <div class="prog-foot">${p.phase === "search" ? "Step 1 of 2: searching" : "Step 2 of 2: AI checks each new posting for fit before it joins the queue"}</div></div>`;
+    const what = p.phase === "search" ? (p.n ? `search ${Math.min(p.i + 1, p.n)} of ${p.n}${p.label ? `: ${esc(p.label)}` : ""}` : "getting ready")
+      : `checking new posting ${Math.min(p.i + 1, p.n)} of ${p.n} for fit${p.added ? ` · ${p.added} added` : ""}`;
+    return `<div class="card prog prog-line"><span class="spin" aria-hidden="true"></span><span class="pl-t"><b>${p.phase === "search" ? "Searching for new jobs" : "Checking new jobs for fit"}</b></span>
+      <span class="pl-m">${what} · ${pct}%</span></div>`;
   }
   if (p.kind === "wait") {
-    const span = Math.max(1, p.until - p.from), gone = now() - p.from;
-    const pct = Math.min(100, Math.round((100 * gone) / span));
     const next = st.next;
-    return `<div class="card prog">
-      <div class="prog-top"><span class="ico">${icon("clock")}</span>
-        <div class="prog-title"><div class="t">Next application in ${mmss(p.until - now())}</div>
-        <div class="s">${next ? `Up next: ${esc(next.company)}, ${esc(cleanTitle(next.title))}` : "Nothing queued yet"}</div></div>
-        <div class="prog-meta"><span>Applications are spaced ${st.settings.minutesBetweenApplies} minutes apart</span></div></div>
-      <div class="pbar calm"><i style="width:${pct}%"></i></div></div>`;
+    return `<div class="card prog prog-line calm">${icon("clock")}<span class="pl-t"><b>Next application in ${mmss(p.until - now())}</b></span>
+      <span class="pl-m">${next ? `${esc(next.company)}, ${esc(cleanTitle(next.title))}` : "Nothing waiting yet"}</span></div>`;
   }
   return "";
 }
@@ -315,20 +329,25 @@ async function renderOverview() {
   const cats = {};
   for (const j of failed) { const k = category(j).label; cats[k] = (cats[k] || 0) + 1; }
   const seen = Object.values(c).reduce((a, b) => a + b, 0);
-  const pipe = [["Found", seen], ["Screened in", (c.applied || 0) + (c.queued || 0) + (c.failed || 0) + (c.working || 0) + (c.filled || 0) + (c.manual || 0)], ["Attempted", done + stopped], ["Applied", done]];
-  // This week, in one line.
-  const week = Date.now() - 7 * 86400000;
-  const sent = applied.filter((j) => (toDate(j.applied_at) || 0) >= week).length, wrote = new Set((replies || []).filter((r) => (toDate(r.at) || 0) >= week).map((r) => r.slug)).size;
-  const line = [`${sent} application${sent === 1 ? "" : "s"} sent`, rs.mailbox || wrote ? `${wrote} employer${wrote === 1 ? "" : "s"} wrote back` : "", `${(c.queued || 0) + (c.working || 0)} waiting their turn`].filter(Boolean).join(", ");
+  const pipe = [["Found", seen], ["Fit you", (c.applied || 0) + (c.queued || 0) + (c.failed || 0) + (c.working || 0) + (c.filled || 0) + (c.manual || 0)], ["Tried", done + stopped], ["Applied", done]];
+  // The last day, in one line: what was sent (or practiced), what needs the person, and what was left out.
+  const dy = st.day || { sent: 0, practiced: 0, notApplied: 0 };
+  // Toward the daily limit: what was sent, and in practice mode the practice applications too.
+  const today = st.appliedToday + (s.dryRun ? st.practicedToday || 0 : 0);
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  const needs = todoItems().filter((x) => x.prio <= 5).length;
+  const bits = [s.dryRun && !dy.sent ? plural(dy.practiced, "practice application filled in", "practice applications filled in") : plural(dy.sent, "application sent", "applications sent"),
+    needs ? `<a href="#todo-h" onclick="$('todo-h').scrollIntoView({behavior:'smooth'});return false">${plural(needs, "thing needs you", "things need you")}</a>` : "nothing needs you",
+    dy.notApplied ? `<a href="#skipped" data-go="skipped">${plural(dy.notApplied, "job", "jobs")} not applied to</a>` : ""].filter(Boolean);
   $("main").innerHTML = header() + `
-  <p class="week">This week: ${line}.</p>
-  ${todoCard()}
+  <p class="week">Since yesterday: ${bits.join(", ")}.</p>
+  ${todoTip()}${todoCard()}
   <div class="grid-kpi adv">
     ${kpi("applied", "Applications sent", done, `${ago(applied[0] && applied[0].applied_at) ? "Last " + ago(applied[0].applied_at) : "None yet"}`)}
-    <a class="kpi done" href="#applied" onclick="go('applied');return false"><div class="lbl">Today</div>
-      <div class="val">${st.appliedToday}<small>/ ${s.dailyCap}</small></div><div class="bar"><i style="width:${Math.min(100, (100 * st.appliedToday) / Math.max(1, s.dailyCap))}%"></i></div></a>
-    ${kpi("queued", "In queue", (c.queued || 0) + (c.working || 0), "Screened as a fit")}
-    ${kpi("failed", "Needs attention", stopped, Object.entries(cats).sort((a, b) => b[1] - a[1]).slice(0, 1).map(([k, n]) => `${n}: ${k}`)[0] || "All clear")}
+    <a class="kpi done" href="#applied" onclick="go('applied');return false"><div class="lbl">${s.dryRun ? "Today, with practice" : "Today"}</div>
+      <div class="val">${today}<small>/ ${s.dailyCap}</small></div><div class="bar"><i style="width:${Math.min(100, (100 * today) / Math.max(1, s.dailyCap))}%"></i></div></a>
+    ${kpi("queued", "Up next", (c.queued || 0) + (c.working || 0), "Checked: they fit you")}
+    ${kpi("failed", "Needs you", stopped, Object.entries(cats).sort((a, b) => b[1] - a[1]).slice(0, 1).map(([k, n]) => `${n}: ${k}`)[0] || "All clear")}
     ${kpi("all", "Success rate", rate + "%", `${done} of ${done + stopped} attempts`)}
   </div>
   <div class="grid-2">
@@ -337,15 +356,15 @@ async function renderOverview() {
         <span class="right">${rs.mailbox ? `<button class="btn ghost sm" onclick="checkReplies(this)">${icon("refresh")}Check now</button>` : ""}</span></div>
         ${(replies || []).length ? replies.slice(0, 5).map(replyItem).join("") : empty("mail", "No replies yet", "When an employer writes back about an application, it shows here: an interview, a test, a question, or a no.")}</div>` : ""}
       <div class="card"><div class="card-h"><h2>Recent applications</h2><span class="right"><button class="btn ghost sm" onclick="go('applied')">View all</button></span></div>
-        ${applied.length ? applied.slice(0, 6).map(item).join("") : empty("send", "No applications yet", "The first ones will appear here as soon as an employer confirms.")}</div>
+        ${applied.length ? applied.slice(0, 6).map(item).join("") : s.dryRun ? empty("eye", "Nothing sent yet: you're in practice mode", `Practice applications are filled in but not sent. ${(st.practice || {}).count ? `<a href="#" data-go="filled">Check one</a>, then start sending.` : "The first one shows up in your To do list."}`) : empty("send", "Nothing sent yet", "The first ones show up here as soon as they're sent.")}</div>
       ${insightsCard(works)}
       <div class="card adv"><div class="card-h"><h2>Applications per day</h2><span class="sub">Last 14 days</span></div>
         <div class="card-b"><div class="chart">${per.map((n, i) => `<div class="col"><div class="b ${n ? "" : "zero"}" data-n="${n} applied" style="height:${n ? Math.max(8, (100 * n) / max) : 2}%"></div>
           <div class="d">${i % 2 === 1 || per.length < 8 ? days[i].toLocaleDateString([], { month: "numeric", day: "numeric" }) : ""}</div></div>`).join("")}</div></div></div>
     </div>
     <div class="stack">
-      <div class="card"><div class="card-h"><h2>Up next</h2><span class="right"><button class="btn ghost sm" onclick="go('queued')">Queue</button></span></div>
-        ${queue.length ? queue.slice(0, 4).map(item).join("") : empty("clock", "Queue is empty", "New roles are screened in on the next search.")}</div>
+      <div class="card"><div class="card-h"><h2>Up next</h2><span class="right"><button class="btn ghost sm" onclick="go('queued')">See all</button></span></div>
+        ${queue.length ? queue.slice(0, 4).map(item).join("") : empty("clock", "Nothing waiting", `The app looks for new jobs every few hours. <a href="#" onclick="searchNow();return false">Search now</a>`)}</div>
       <div class="card adv"><div class="card-h"><h2>Pipeline</h2></div><div class="card-b pipeline">
         ${pipe.map(([l, n]) => `<div class="pipe-row"><span>${l}</span><div class="bar"><i style="width:${seen ? Math.max(2, (100 * n) / seen) : 0}%"></i></div><b>${n}</b></div>`).join("")}</div></div>
       <div class="card adv"><div class="card-h"><h2>Activity</h2><span class="right"><button class="btn ghost sm" onclick="go('log')">All activity</button></span></div>
@@ -367,38 +386,87 @@ function evTone(e) {
   if (/applied:/.test(e.message)) return "green";
   return "blue";
 }
+// The log's own words for where a job went, in the app's words.
+const EV_WORD = { applied: "Sent", failed: "Stopped", skipped: "Not applied", queued: "Up next", filled: "Practice application", manual: "Apply yourself" };
 function evText(e) {
-  return esc(e.message.replace(/^(applied|failed|skipped|queued): /, (m) => m[0].toUpperCase() + m.slice(1)).slice(0, 220));
+  return esc(e.message.replace(/^(applied|failed|skipped|queued|filled|manual): /, (m, w) => EV_WORD[w] + ": ").slice(0, 220));
 }
 const feedItem = (e) => `<div class="feed-item"><span class="dot ${evTone(e)}"></span><div>${evText(e)}<div class="when">${ago(e.at)}</div></div></div>`;
 
 // ---------- lists ----------
 async function renderListView() {
   const v = VIEWS.find((x) => x.id === view);
-  jobsCache[view] = await api("/api/jobs" + (v.status ? "?status=" + v.status : ""));
+  [jobsCache[view], skipsCache] = await Promise.all([api("/api/jobs" + (v.status ? "?status=" + v.status : "")), view === "skipped" ? api("/api/skips") : null]);
   if (!$("list-host")) $("main").innerHTML = header() + `<div class="card table-wrap" id="list-host"></div>`;
   else { $("main").querySelector(".top .live").outerHTML = liveChip(); tickProgress(); }
   renderList();
+}
+let skipsCache = null;
+// What an empty list means, and the way forward.
+const EMPTY = {
+  applied: () => st.settings.dryRun ? ["eye", "Nothing sent yet: you're in practice mode", `Practice applications are filled in but not sent. ${(st.practice || {}).count ? `<a href="#" data-go="filled">Check one</a>, then start sending.` : "The first one shows up in your To do list."}`] : ["send", "Nothing sent yet", "Applications show up here as soon as they're sent."],
+  queued: () => ["clock", "Nothing waiting", `New jobs that fit you are added after each search, every few hours. <a href="#" onclick="searchNow();return false">Search now</a>`],
+  failed: () => ["check", "Nothing needs you", "When an application stops on something only you can do, it shows up here with what it needs."],
+  manual: () => ["ext", "Nothing to apply to yourself", "Good matches on sites that need your own account show up here."],
+  filled: () => ["eye", "No practice applications", st.settings.dryRun ? "The app fills one in as practice soon. It shows up in your To do list." : "You're sending for real, so the app doesn't practice."],
+  skipped: () => ["skip", "Nothing left out", "Jobs the app finds but doesn't apply to show up here, with the reason."],
+};
+// Why jobs weren't applied to, in groups, each with the setting behind it.
+function skipGroups() {
+  const x = skipsCache;
+  if (!x || !x.total) return "";
+  const row = (g) => `<li><span><b>${g.count}</b> ${esc(g.why)}</span>${g.fix ? `<button type="button" class="btn sm" data-fix-section="${esc(g.fix.section || "")}" data-fix-field="${esc(g.fix.field || "")}" data-fix-page="${esc(g.fix.page || "")}">${esc(g.fix.label)}</button>` : ""}</li>`;
+  return `<div class="list-note skip-why"><div><b>Why, in the last 30 days</b><ul class="why-list">${x.groups.slice(0, 8).map(row).join("")}</ul>
+    <small class="hint">Don't agree? Change the setting behind it, or open a job and press <b>Apply anyway</b>.</small></div></div>`;
 }
 function renderList() {
   const host = $("list-host"); if (!host) return;
   const needle = q.trim().toLowerCase();
   const rows = (jobsCache[view] || []).filter((j) => !needle || [j.company, j.title, j.location, j.source].join(" ").toLowerCase().includes(needle));
-  if (!rows.length) { host.innerHTML = empty("list", needle ? "No matches" : "Nothing here yet", needle ? "Try another search." : "Jobs show up here as the autopilot works."); return; }
+  const top = view === "skipped" ? skipGroups() : "";
+  if (!rows.length) { const [ic, t, sub] = needle ? ["list", "No matches", "Try another search."] : (EMPTY[view] || (() => ["list", "Nothing here yet", "Jobs show up here as the app works."]))(); host.innerHTML = top + empty(ic, t, sub); return; }
   const whenLabel = view === "applied" ? "Applied" : "Updated";
-  const sendAll = view === "filled" && rows.length ? `<div class="list-note"><span>These were filled in and checked, but not sent. Send the ones whose postings are still open: each is filled in again and sent, ${st.settings.dailyCap} a day.</span>
-    <button class="btn sm primary" onclick="sendPractice()">${icon("send")}Send them for real</button></div>` : "";
+  const note = view === "filled" ? (st.settings.dryRun
+    ? `<div class="list-note"><span>Filled in, not sent. Open one to check its answers, resume and screenshots. When they look right, start sending: each is filled in again and sent, ${st.settings.dailyCap} a day.</span>
+      <button class="btn sm primary" onclick="goLive()">${icon("send")}Start sending</button></div>`
+    : `<div class="list-note"><span>These were filled in as practice, not sent. Send the ones whose postings are still open: each is filled in again and sent, ${st.settings.dailyCap} a day.</span>
+      <button class="btn sm primary" onclick="sendPractice()">${icon("send")}Send them for real</button></div>`)
+    : view === "applied" ? `<div class="list-note"><span>Need a record of your applications for unemployment claims, or your own files?</span>
+      <button class="btn sm" onclick="saveApplications(this)">${icon("file")}Save a list of them</button></div>` : "";
   const canSkip = ["queued", "failed", "manual"].includes(view);
-  host.innerHTML = `${sendAll}<table><thead><tr><th>Role</th><th class="hide-md">Location</th><th class="hide-md">Board</th><th>Status</th><th class="hide-md">${whenLabel}</th></tr></thead><tbody>
+  host.innerHTML = `${top}${note}<table><thead><tr><th>Role</th><th class="hide-md">Location</th><th class="hide-md adv">Found on</th><th>Status</th><th class="hide-md adv">${whenLabel}</th></tr></thead><tbody>
     ${rows.map((j) => `<tr data-open-job="${esc(j.slug)}">
       <td><div class="co-cell">${avatar(j.company)}<div><div class="t">${jobLink(j)}</div><div class="s">${meta(esc(j.company), j.salary ? esc(j.salary.replace(/^USD /, "$").replace(/\/year$/, "")) : "")}</div></div></div></td>
       <td class="hide-md muted">${esc(j.location)}${j.work_mode ? `<div class="reason">${esc(j.work_mode)}</div>` : ""}</td>
-      <td class="hide-md"><span class="tag">${esc(SOURCE[j.source] || j.source)}</span></td>
-      <td>${badge(category(j))}${j.stage && STAGE_BADGE[j.stage] ? `<div style="margin-top:4px">${badge(STAGE_BADGE[j.stage])}</div>` : j.reply ? `<div style="margin-top:4px">${replyBadge(j.reply)}</div>` : ""}${j.status !== "applied" ? `<div class="reason">${esc(humanReason(j))}</div>` : ""}
-        ${canSkip && SKIPPABLE.includes(j.status) ? `<button type="button" class="btn sm ghost row-skip" data-skip-job="${esc(j.slug)}" aria-label="Skip ${esc(cleanTitle(j.title))} at ${esc(j.company)}">${icon("skip")}Skip</button>` : ""}</td>
-      <td class="hide-md time">${fmtTime(j.applied_at || j.updated_at)}</td></tr>`).join("")}
+      <td class="hide-md adv"><span class="tag">${esc(SOURCE[j.source] || j.source)}</span></td>
+      <td>${badge(category(j))}${j.stage && STAGE_BADGE[j.stage] ? `<div style="margin-top:4px">${badge(STAGE_BADGE[j.stage])}</div>` : j.reply ? `<div style="margin-top:4px">${replyBadge(j.reply)}</div>` : quiet(j) ? `<div style="margin-top:4px">${badge({ label: "No reply yet", tone: "gray", icon: "clock" })}</div>` : ""}${j.status !== "applied" ? `<div class="reason">${esc(humanReason(j))}</div>` : ""}
+        ${canSkip && SKIPPABLE.includes(j.status) ? `<button type="button" class="btn sm ghost row-skip" data-skip-job="${esc(j.slug)}" aria-label="Skip ${esc(cleanTitle(j.title))} at ${esc(j.company)}">${icon("skip")}Skip</button>` : ""}
+        ${j.status === "skipped" ? `<button type="button" class="btn sm ghost row-skip" data-apply-anyway="${esc(j.slug)}" aria-label="Apply anyway: ${esc(cleanTitle(j.title))} at ${esc(j.company)}">${icon("send")}Apply anyway</button>` : ""}</td>
+      <td class="hide-md adv time">${fmtTime(j.applied_at || j.updated_at)}</td></tr>`).join("")}
   </tbody></table>${view === "failed" ? `<p class="hint" style="padding:12px 16px;margin:0">Lots of these, or the same question over and over? <a href="#help" data-go="help">Make a diagnostics report</a> (on the Help page) and send it to whoever helps you with the app.</p>` : ""}`;
 }
+// The list of applications sent, by date, as a spreadsheet (unemployment claims, the person's own records).
+async function saveApplications(btn) {
+  btn.disabled = true;
+  try { const r = await window.ja.saveApplications(); if (r) toast(`Saved ${r.count} application${r.count === 1 ? "" : "s"}. Its folder is open.`); }
+  catch (e) { toast("The list couldn't be saved: " + String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, "")); }
+  finally { btn.disabled = false; }
+}
+// A job the app left out, applied to anyway (from its row or its panel).
+async function applyAnyway(slug) {
+  const r = await api("/api/job/" + encodeURIComponent(slug), { action: "apply-anyway" });
+  if (r && r.error) return toast(r.error);
+  toast("It's up next. The app applies to it in its turn, whatever it said before.");
+  if (open && open.slug === slug) await openJob(slug);
+  refresh(true);
+}
+// Before the row's own click (which opens the job): Apply anyway, and a fix for a group of reasons.
+document.addEventListener("click", (e) => {
+  const a = e.target.closest && e.target.closest("[data-apply-anyway]");
+  if (a) { e.preventDefault(); e.stopPropagation(); a.disabled = true; applyAnyway(a.getAttribute("data-apply-anyway")); return; }
+  const f = e.target.closest && e.target.closest("[data-fix-section], [data-fix-page]");
+  if (f && (f.dataset.fixSection || f.dataset.fixPage)) { e.preventDefault(); e.stopPropagation(); if (f.dataset.fixPage) go(f.dataset.fixPage); else openSettings(f.dataset.fixSection, f.dataset.fixField); }
+}, true);
 
 // ---------- activity ----------
 async function renderLog() {
@@ -483,40 +551,47 @@ function closeDrawer() {
 function renderDrawer() {
   const j = open, d = j.details || {}, c = category(j);
   const tabs = [["answers", "Answers"], ["fit", "Fit"], ["resume", "Resume"], ["shots", "Screenshots"], ["posting", "Posting"], ...(j.standing ? [["prep", "Interview prep"]] : [])];
-  const toneCallout = { green: "green", red: "red", amber: "amber", blue: "blue", violet: "blue", gray: "gray" }[c.tone];
-  const actions = [
-    `<a class="btn sm" href="${esc(j.url)}" target="_blank" rel="noopener">${icon("ext")}Posting</a>`,
-    j.apply_url ? `<a class="btn sm" href="${esc(j.apply_url)}" target="_blank" rel="noopener">${icon("ext")}Application form</a>` : "",
-    j.resume_file ? `<a class="btn sm" href="ap-file://resumes/${esc(j.resume_file)}" target="_blank">${icon("file")}${j.status === "applied" ? "Resume sent" : "Resume"}</a>` : "",
-    j.status === "filled" && !j.reviewed && st.settings.dryRun ? `<button class="btn sm primary" data-start-sending="${esc(j.slug)}">${icon("check")}It looks right: start sending for real</button>
-      <button class="btn sm" onclick="somethingWrong()">${icon("alert")}Something's wrong</button>` : "",
-    j.status === "filled" && !j.reviewed && !st.settings.dryRun ? `<button class="btn sm primary" onclick="act('reviewed')">${icon("check")}I checked these answers</button>` : "",
-    j.status === "filled" && j.reviewed ? `<span class="tag">${icon("check")}You checked this one</span>` : "",
-    j.status === "filled" ? `<button class="btn sm" onclick="sendPractice([open.slug])">${icon("send")}Send this one for real</button>` : "",
-    j.status === "manual" && !j.resume_file ? `<button class="btn sm" onclick="makeResume(this)">${icon("file")}Make my resume for this job</button>` : "",
-    j.status === "manual" ? `<button class="btn sm primary" data-open-url="${esc(j.apply_url || j.url)}">${icon("ext")}Open the application</button>
-      <button class="btn sm" onclick="act('applied-myself')">${icon("check")}I applied</button>` : "",
-    j.finishable && !(st.state.finish && st.state.finish.slug === j.slug) ? `<button class="btn sm ${["failed", "manual"].includes(j.status) && !(j.asks || []).length ? "primary" : ""}" onclick="finishWithMe()">${icon("user")}Finish it with me</button>` : "",
-    SKIPPABLE.includes(j.status) ? `<button class="btn sm danger" onclick="act('skip')">${icon("skip")}Skip this job</button>` : "",
-    d.category && [...SKIPPABLE, "filled"].includes(j.status) ? `<button class="btn sm ghost" onclick="notThisKind()">${icon("x")}Not this kind of work</button>` : "",
-    ["failed", "skipped", "filled"].includes(j.status) ? `<button class="btn sm ${(j.status === "filled" && !j.reviewed) || (j.asks || []).length ? "" : "primary"}" onclick="act('retry')">${icon("retry")}${j.status === "skipped" ? "Queue it" : "Try again"}</button>` : "",
-  ].join("");
+  const toneCallout = { green: "green", red: "red", amber: "amber", blue: "blue", violet: "violet", gray: "gray" }[c.tone];
+  // Questions only the person can answer (a resume that wouldn't attach isn't one: Try again is the way on).
+  const asks = (j.asks || []).filter((q) => !q.file).length, fin = st.state.finish && st.state.finish.slug === j.slug;
+  const B = (cls, attrs, ic, label) => `<button type="button" class="btn sm ${cls}" ${attrs}>${ic ? icon(ic) : ""}${label}</button>`;
+  // The one or two things to do now, by where the application is; everything else under More.
+  const main = [], more = [];
+  const finish = j.finishable && !fin ? B("", `onclick="finishWithMe()"`, "user", "Finish it with me") : "";
+  if (j.status === "filled") {
+    if (st.settings.dryRun) more.push(B("", `onclick="sendPractice([open.slug])"`, "send", "Send only this one for real"));
+    if (finish) more.push(finish);
+    if (st.settings.dryRun) more.push(B("", `onclick="act('retry')"`, "retry", "Fill it in again as practice"));
+  } else if (j.status === "failed") {
+    if (finish) main.push(finish.replace("btn sm ", asks ? "btn sm " : "btn sm primary "));
+    if (!asks && !/may have gone through/.test(j.reason || "")) main.push(B("", `onclick="act('retry')"`, "retry", "Try again"));
+    if (/may have gone through/.test(j.reason || "")) main.push(B("", `onclick="act('applied-myself')"`, "check", "It went through: mark it applied"), B("", `onclick="act('retry')"`, "retry", "It didn't: try again"));
+  } else if (j.status === "manual") {
+    main.push(`<button type="button" class="btn sm primary" data-open-url="${esc(j.apply_url || j.url)}">${icon("ext")}Open the application</button>`, B("", `onclick="act('applied-myself')"`, "check", "I applied"));
+    if (finish) main.push(finish);
+    if (!j.resume_file) more.push(B("", `onclick="makeResume(this)"`, "file", "Make my resume for this job"));
+  } else if (j.status === "skipped") main.push(B("primary", `onclick="applyAnyway(open.slug)"`, "send", "Apply anyway"));
+  if (SKIPPABLE.includes(j.status)) more.push(B("danger", `onclick="act('skip')"`, "skip", "Skip this job"));
+  if (d.category && [...SKIPPABLE, "filled"].includes(j.status)) more.push(B("", `onclick="notThisKind()"`, "x", "Not this kind of work"));
+  if (j.apply_url && j.status !== "manual") more.push(`<a class="btn sm" href="${esc(j.apply_url)}" target="_blank" rel="noopener">${icon("ext")}The application form</a>`);
+  const actions = `${main.join("")}${more.length ? `<details class="more-acts"><summary class="btn sm">More${icon("chev")}</summary><div class="more-list">${more.join("")}</div></details>` : ""}`;
   $("drawer").innerHTML = `
     <div class="dr-head">
       <div class="dr-title">${avatar(j.company, "lg")}<div style="min-width:0"><h2 id="dr-title" tabindex="-1">${esc(cleanTitle(j.title))}</h2><div class="s">${esc(j.company)}</div></div>
-        <button class="btn ghost sm dr-close" onclick="closeDrawer()" aria-label="Close">${icon("x")}</button></div>
+        <button class="btn ghost sm dr-close" onclick="closeDrawer()" aria-label="Close">${icon("x")}<span class="dr-back">Back</span></button></div>
       <div class="chips">${badge(c)}${j.location ? `<span class="tag">${icon("pin", 'style="width:13px;height:13px"')}${esc(j.location)}</span>` : ""}
         ${j.salary ? `<span class="tag">${icon("dollar", 'style="width:13px;height:13px"')}${esc(j.salary.replace(/^USD /, "$"))}</span>` : ""}
-        ${j.source ? `<span class="tag">${esc(SOURCE[j.source] || j.source)}</span>` : ""}${j.posted_at ? `<span class="tag">Posted ${ago(j.posted_at)}</span>` : ""}
+        ${j.source ? `<span class="tag adv">Found on ${esc(SOURCE[j.source] || j.source)}</span>` : ""}${j.posted_at ? `<span class="tag">Posted ${ago(j.posted_at)}</span>` : ""}
         ${d.check && d.check.checked ? `<button type="button" class="tag tag-btn" data-tab="fit">${icon("check", 'style="width:13px;height:13px"')}Meets ${d.check.met} of ${d.check.checked}</button>` : ""}
         ${d.real && d.real.level ? `<button type="button" class="tag tag-btn warn" data-tab="fit">${icon("alert", 'style="width:13px;height:13px"')}${d.real.level === "likely" ? "Likely" : "Possibly"} not being filled</button>` : ""}</div>
-      <div class="callout ${toneCallout}"><div><b>${esc(c.label)}${j.applied_at ? ", " + fmtTime(j.applied_at) : ""}</b>${esc(humanReason(j))}</div></div>
+      ${j.status === "filled" ? checkBlock(j) : `<div class="callout ${toneCallout}"><div><b>${esc(c.label)}${j.applied_at ? ", " + fmtTime(j.applied_at) : ""}</b>${esc(humanReason(j))}</div></div>`}
       ${(j.replies || []).length ? `<div class="replies"><div class="section-t">Replies from ${esc(j.company)}</div>${j.replies.map((r) => `<div class="reply">
         <div class="reply-h">${replyBadge(r.kind)}<b>${esc(r.subject)}</b><span class="time">${fmtTime(r.at)}</span></div>
         <div class="muted">${esc(r.sender.replace(/\s*<[^>]*>/, "") || r.sender)}</div>${r.snippet ? `<div class="reply-t">${esc(r.snippet)}</div>` : ""}</div>`).join("")}
         <small class="hint">From your mailbox. Answer the employer from your own email; the app never replies for you.</small></div>` : ""}
       <div id="dr-finish">${finishBlock(j)}</div>${keepTypedBlock(j)}${peopleBlock(j)}${standingBlock(j)}
-      <div class="dr-actions">${actions}</div>
+      ${main.length || more.length ? `<div class="dr-actions">${actions}</div>` : ""}
+      ${historyBlock(j)}
     </div>
     <div class="tabs" role="tablist" aria-label="About this application">${tabs.map(([k, l]) => `<button type="button" role="tab" id="tab-${k}" aria-selected="${dtab === k}" class="${dtab === k ? "on" : ""}" data-tab="${k}">${l}</button>`).join("")}</div>
     <div class="dr-body" role="tabpanel" tabindex="0" aria-labelledby="tab-${dtab}">${drawerTab(j, d)}</div>`;
@@ -536,13 +611,73 @@ function renderDrawer() {
   if (kt) kt.onclick = () => keepTyped(true);
   const nt = $("drawer").querySelector("[data-keep-none]");
   if (nt) nt.onclick = () => keepTyped(false);
+  $("drawer").querySelectorAll("[data-edit-answer]").forEach((b) => b.onclick = () => editAnswer(Number(b.dataset.editAnswer)));
+}
+// A practice application: the three things to check, and the two ways on.
+function checkBlock(j) {
+  const s = st.settings;
+  return `<div class="check-block"><b>Check it before anything is sent</b>
+    <ol class="checks"><li><button type="button" class="link" data-tab="answers">The answers</button> it gave, and where each came from</li>
+      <li><button type="button" class="link" data-tab="resume">The resume</button> it made for this job</li>
+      <li><button type="button" class="link" data-tab="shots">The screenshots</button> of the filled form</li></ol>
+    <div class="row-actions">${s.dryRun ? `<button type="button" class="btn primary" data-start-sending="${esc(j.slug)}">${icon("check")}Looks right: start sending</button>`
+      : `<button type="button" class="btn primary" onclick="sendPractice([open.slug])">${icon("send")}Send it for real</button>`}
+      <button type="button" class="btn" onclick="somethingWrong()">${icon("alert")}Something's wrong</button></div>
+    <small class="hint">${s.dryRun ? `Nothing is sent until you press Start sending. Then this one and the next go out in your name, up to ${s.dailyCap} a day.` : "It's filled in again and sent in your name, first in line."}</small></div>`;
+}
+// What happened to this application, in the person's words: found, filled, sent, stopped, replies, what they did.
+const BOARD_NAME = { hiringcafe: "HiringCafe", freehire: "freehire", simplify: "Simplify", google: "Google Jobs", usajobs: "USAJOBS", watchlist: "a company you chose", ...SOURCE };
+const found = (b) => BOARD_NAME[b] || b;
+const HISTORY = [
+  [/^queued: .* via (\S+)/, (m) => `Found on ${found(m[1])}: it fits you`], [/^manual: .* via (\S+)/, (m) => `Found on ${found(m[1])}: one for you to apply to yourself`],
+  [/^skipped: .* via \S+ - (.*)/, (m) => `Left out: ${m[1]}`], [/^(closed before|skipped: posting closed)/, () => "The posting closed"], [/^skipped: (.*)/, (m) => `Left out: ${m[1]}`],
+  [/^added by you/, () => "You added it by its link"], [/: left for you to apply to$/, () => "Left for you to apply to yourself"],
+  [/^applying: .*\(practice (run|application)\)/, () => "Filled in as practice"], [/^applying: /, () => "Filling it in to send"], [/^applied: /, () => "Sent"], [/^filled: /, () => "Practice application ready to check"],
+  [/^failed: (.*)/, (m) => `Stopped: ${humanReason({ status: "failed", reason: m[1] })}`], [/^reply from [^:]+: (\w+)/, (m) => `The employer wrote back (${(REPLY[m[1]] || REPLY.other)[0].toLowerCase()})`],
+  [/^(you |your turn|finish with me)/, (m, t) => t.charAt(0).toUpperCase() + t.slice(1)], [/^made interview prep notes/, () => "Interview prep notes made"],
+];
+function historyBlock(j) {
+  const rows = [];
+  for (const e of j.events || []) {
+    const hit = HISTORY.find(([rx]) => rx.test(e.message));
+    if (!hit) continue;
+    const t = hit[1](e.message.match(hit[0]), e.message);
+    if (rows.length && rows[rows.length - 1].t === t) continue;
+    rows.push({ at: e.at, t: t.length > 160 ? t.slice(0, 157) + "..." : t });
+  }
+  if (rows.length < 2) return "";
+  return `<details class="history"><summary>What happened (${rows.length})</summary><ol>${rows.map((r) => `<li><span class="time">${fmtTime(r.at)}</span>${esc(r.t)}</li>`).join("")}</ol></details>`;
+}
+// An answer it gave, corrected in place: kept (for this job, or every application that asks), and the application filled
+// in again with it.
+function editAnswer(i) {
+  const k = ((open.details || {}).kit || []).filter((x) => x.kind !== "blank")[i];
+  const row = $("drawer").querySelector(`[data-qa="${i}"]`);
+  if (!k || !row) return;
+  const label = k.label.replace(/:\s*(yes\s*no|no\s*yes)\s*$/i, "").replace(/\*\s*$/, "");
+  // What happens next, said on the button: a practice application is filled in again as practice; one left over from
+  // practice mode, once sending, is sent; one that stopped is tried again.
+  const practice = open.status === "filled" && st.settings.dryRun, leftover = open.status === "filled" && !st.settings.dryRun;
+  row.innerHTML = `<div class="q">${esc(label)}</div><div class="a edit"><input class="inp" aria-label="Your answer to: ${esc(label)}" value="${esc(k.value || "")}">
+    <label class="check"><input type="checkbox" ${String(k.value || "").length <= 80 ? "checked" : ""}>Use this answer for other applications that ask the same</label>
+    <div class="row-actions"><button type="button" class="btn sm primary" data-save-answer>${icon("check")}${practice ? "Save, and fill it in again" : leftover ? "Save, and send it" : "Save, and try again"}</button><button type="button" class="btn sm ghost" data-cancel-answer>Cancel</button></div></div>`;
+  const box = row.querySelector("input.inp"); box.focus(); box.select();
+  row.querySelector("[data-cancel-answer]").onclick = () => renderDrawer();
+  row.querySelector("[data-save-answer]").onclick = async () => {
+    const value = box.value.trim();
+    if (!value) return toast("Type the answer first");
+    const r = await api("/api/job/" + encodeURIComponent(open.slug), { action: "answer", answers: [{ label: k.label, value, remember: row.querySelector("[type=checkbox]").checked }] });
+    if (r && r.error) return toast(r.error);
+    toast(practice ? "Saved. The app fills in a new practice application with your answer next." : leftover ? "Saved. It's sent next, with your answer." : "Saved. The app tries this application again next, with your answer.");
+    await openJob(open.slug); refresh(true);
+  };
 }
 // ---------- Finish with me ----------
 // The app fills the application in a browser window in front of the person; where it would stop (a question it can't
 // answer, a sign-in, a CAPTCHA), it's their turn, and they press Submit themselves. The app sees when it's sent.
 function finishWithMe() {
   const j = open;
-  const m = modal(`<h2>Finish it with the app</h2>
+  const m = modal(`<h2>Finish it with me</h2>
     <p>A browser window opens in front of you and the app fills in ${esc(j.company)}'s application with everything it knows. Where it can't go on (${j.status === "manual" ? "a sign-in, or a check that you're a person" : "a question only you can answer, a CAPTCHA, a page the site refuses"}), a note at the bottom of the page says what's left: you do that part, then press Submit yourself.</p>
     <p class="muted">The app sees when it's sent, and can keep what you type for your next applications. Stop any time: nothing is sent unless you press Submit.${st.state.job || st.state.now === "searching" ? " It starts as soon as what the app is doing now is done." : ""}</p>
     <div class="row-actions" style="margin-top:18px"><button class="btn primary" id="m-go">${icon("user")}Start</button><button class="btn" id="m-close">Not now</button></div>`);
@@ -614,7 +749,7 @@ function finishNews() {
   if (first && Date.now() - d.at > 60000) return; // from before this window opened
   toast(d.status === "applied" ? `Sent: ${d.title} at ${d.company}.`
     : d.maybe ? "Stopped. A button that sends it was pressed, so it may have gone through: check your email before trying again."
-      : d.status === "skipped" ? "That posting has closed, so it moved to Skipped."
+      : d.status === "skipped" ? "That posting has closed, so it moved to Not applied."
         : d.status === "manual" ? `${d.company}'s form is one to fill in yourself: it's under Apply yourself.`
           : d.outcome === "timeout" ? "Finishing it ran out of time. It's back where it was."
             : d.outcome === "error" ? `Finishing it stopped: ${d.error || "something went wrong"}`
@@ -688,18 +823,18 @@ function askForm(j) {
   if (!asks.length) return "";
   const company = String(j.company || "").toLowerCase();
   const control = (q, i) => q.file
-    ? `<div class="msg info">The app couldn't attach your resume to this form. Press <b>Try again</b> above; if it happens again, open the application form and upload it yourself (the Resume button above has the file).</div>`
+    ? `<div class="msg info">The app couldn't attach your resume to this form. Press <b>Try again</b> above; if it happens again, open the application form and upload it yourself (the <b>Resume</b> tab has the file).</div>`
     : q.options.length
     ? `<select name="ask-${i}" class="inp"><option value="">Pick an answer</option>${q.options.map((o) => `<option>${esc(o)}</option>`).join("")}</select>`
     : q.long ? `<textarea name="ask-${i}" rows="4" class="inp" placeholder="Your answer, in your own words"></textarea>`
-    : `<input name="ask-${i}" class="inp" placeholder="Your answer">${q.choice ? `<small class="hint">This is a list on the form, and the app couldn't read its choices. Type your answer the way the form words it; press <b>Application form</b> above or the <b>Screenshots</b> tab to see the choices.</small>` : ""}`;
+    : `<input name="ask-${i}" class="inp" placeholder="Your answer">${q.choice ? `<small class="hint">This is a list on the form, and the app couldn't read its choices. Type your answer the way the form words it; the <b>Screenshots</b> tab, or <b>More</b> > <b>The application form</b> above, shows the choices.</small>` : ""}`;
   const everywhere = (q) => !q.long && !(company && q.label.toLowerCase().includes(company));
   return `<div class="ask" id="ask-form"><h3>Answer to continue</h3>
     <p class="hint">The app stopped here instead of guessing: these required questions have no answer in your facts. Answer them, and the app fills them in exactly as you wrote and tries again. Only say what's true.</p>
     ${asks.map((q, i) => `<div class="fld ask-q"><span>${esc(q.label)}</span>${q.note ? `<small>${esc(q.note)}</small>` : ""}${control(q, i)}
       ${q.file ? "" : `<label class="check"><input type="checkbox" name="ask-all-${i}" ${everywhere(q) ? "checked" : ""}>Use this answer for other applications that ask the same question</label>`}</div>`).join("")}
     <div class="row-actions"><button class="btn primary" id="ask-go" onclick="answerAsks()">${icon("check")}Save my answers and try again</button>
-      <button class="btn" onclick="act('skip')">${icon("skip")}Skip this job instead</button></div>
+      <button class="btn" onclick="act('skip')">${icon("skip")}Skip this job</button></div>
     <small class="hint">Rather not answer, or don't want this one after all? Skip it: nothing is sent, and the app won't apply to it.</small><div id="ask-msg"></div></div>`;
 }
 async function answerAsks() {
@@ -723,9 +858,11 @@ function drawerTab(j, d) {
     if ((d.audit || []).length) h += `<div class="section-t adv">Truth checks applied before submitting</div><ul class="bul adv">${d.audit.map((a) => `<li>${esc(a)}</li>`).join("")}</ul>`;
     if ((d.hardFails || []).length) h += `<div class="section-t">Must-haves not met</div><ul class="bul">${d.hardFails.map((f) => `<li>${esc(f.requirement)} <span>${esc(f.why || "")}</span></li>`).join("")}</ul>`;
     if (kit.length) {
-      const names = { text: "From profile", suggest: "AI choice", draft: "AI written", file: "Upload", decide: "Left for you" };
-      h += `<div class="section-t">Answers given (${kit.length})</div><div class="qa">${kit.map((k) => `<div class="qa-row"><div class="q">${esc(k.label.replace(/:\s*(yes\s*no|no\s*yes)\s*$/i, "").replace(/\*\s*$/, ""))}</div>
-        <div class="a">${esc(k.value || "")}<span class="kind ${k.kind}">${names[k.kind] || k.kind}</span>${k.note && k.kind !== "text" ? `<span class="why">${esc(k.note)}</span>` : ""}</div></div>`).join("")}</div>`;
+      const names = { text: "From your answers", suggest: "AI choice", draft: "AI written", file: "Upload", decide: "Left for you" };
+      // A practice application or a stopped one: any answer can be corrected here, and it's filled in again with it.
+      const fix = ["filled", "failed"].includes(j.status) && !/may have gone through/.test(j.reason || "");
+      h += `<div class="section-t">Answers given (${kit.length})</div>${fix ? `<p class="hint" style="margin:0 0 6px">Wrong? Press <b>Change</b> next to it.</p>` : ""}<div class="qa">${kit.map((k, i) => `<div class="qa-row" data-qa="${i}"><div class="q">${esc(k.label.replace(/:\s*(yes\s*no|no\s*yes)\s*$/i, "").replace(/\*\s*$/, ""))}</div>
+        <div class="a">${esc(k.value || "")}<span class="kind ${k.kind}">${names[k.kind] || k.kind}</span>${k.note && k.kind !== "text" ? `<span class="why">${esc(k.note)}</span>` : ""}${fix && k.kind !== "file" ? `<button type="button" class="btn sm ghost qa-fix" data-edit-answer="${i}" aria-label="Change the answer to ${esc(k.label.slice(0, 80))}">Change</button>` : ""}</div></div>`).join("")}</div>`;
     }
     if ((p.notClaimed || []).length) h += `<div class="section-t adv">Deliberately not claimed</div><ul class="bul adv">${p.notClaimed.map((n) => `<li>${esc(n.what)} <span>${esc(n.why || "")}</span></li>`).join("")}</ul>`;
     return ask + h || empty("list", "No answers recorded", j.status === "queued" ? "This job has not been attempted yet." : j.status === "manual" ? "You apply to this one yourself: Make my resume for this job, then Open the application." : "This job stopped before the form was filled.");
@@ -734,7 +871,7 @@ function drawerTab(j, d) {
   if (dtab === "resume") {
     if (!j.resume_file) return empty("file", "No resume built", "A resume is tailored when the application starts.");
     const r = d.resume || {};
-    return `<div class="shot-cap"><span>${esc(r.fileName || j.resume_file)}</span><span>${r.slack != null ? r.slack + "pt free at the bottom" : ""}</span></div>
+    return `<div class="shot-cap"><span>${esc(r.fileName || j.resume_file)}</span><a class="link" href="ap-file://resumes/${esc(j.resume_file)}" target="_blank">Open it</a></div>
       <iframe class="pdf" src="ap-file://resumes/${esc(j.resume_file)}#view=FitH"></iframe>`;
   }
   if (dtab === "shots") {
@@ -742,7 +879,7 @@ function drawerTab(j, d) {
     const shots = /-after\./.test(j.screenshot) ? [["After submitting", j.screenshot], ["Filled form", j.screenshot.replace("-after", "-filled")]] : [["Filled form", j.screenshot]];
     return shots.map(([l, f]) => `<div class="shot-cap"><span>${l}</span><a class="link" href="ap-file://shots/${esc(f)}" target="_blank">Open full size</a></div><img class="shot" loading="lazy" src="ap-file://shots/${esc(f)}" alt="${l}">`).join("");
   }
-  if (dtab === "posting") return d.description ? `<div class="posting">${esc(d.description)}</div>` : empty("file", "No posting text", "");
+  if (dtab === "posting") return `<div class="shot-cap"><span>The job posting</span><a class="link" href="${esc(j.url)}" target="_blank" rel="noopener">Open it on its site</a></div>${d.description ? `<div class="posting">${esc(d.description)}</div>` : empty("file", "No posting text", "")}`;
   if (dtab === "prep") return prepTab(d.prep);
   return "";
 }
@@ -779,8 +916,9 @@ async function act(action) {
   if (action === "skip") { const j = open; await skipJob(j.slug, j.status, j.reason); if (open && open.slug === j.slug) await openJob(j.slug); return; }
   const r = await api("/api/job/" + encodeURIComponent(open.slug), { action });
   if (r && r.error) { toast(r.error); return; }
-  const said = { skip: "Skipped", reviewed: "Thanks. Start sending for real whenever you're ready.", "applied-myself": "Marked as applied. It won't be applied to again.", "apply-now": "It no longer waits: it's applied to in its turn." };
-  toast(said[action] || "Added back to the queue");
+  const said = { skip: "Skipped", reviewed: "Thanks. Start sending for real whenever you're ready.", "applied-myself": "Marked as applied. It won't be applied to again.", "apply-now": "It no longer waits: it's applied to in its turn.",
+    retry: open.status === "filled" ? "A new practice application is filled in next." : "It's up next again." };
+  toast(said[action] || "It's up next again.");
   await openJob(open.slug); refresh(true);
 }
 
@@ -799,7 +937,7 @@ function applyMode(mode) {
   document.body.classList.toggle("simple", m === "simple");
   document.querySelectorAll("[data-mode]").forEach((b) => { b.classList.toggle("on", b.dataset.mode === m); b.setAttribute("aria-pressed", String(b.dataset.mode === m)); });
   // A page that Simple hides isn't left open behind it.
-  if (m === "simple" && ["skipped", "all", "log"].includes(view)) go("overview");
+  if (m === "simple" && ["all", "log"].includes(view)) go("overview");
 }
 async function setMode(mode) {
   await api("/api/settings", { uiMode: mode });
@@ -811,19 +949,31 @@ async function setMode(mode) {
 document.querySelectorAll("[data-mode]").forEach((b) => b.onclick = () => setMode(b.dataset.mode));
 
 // ---------- actions ----------
-function go(v) { closeDrawer(); view = v; location.hash = v; q = ""; refresh(true); window.scrollTo(0, 0); }
+function go(v) { leaveSettings(() => { closeDrawer(); view = v; location.hash = v; q = ""; refresh(true); window.scrollTo(0, 0); }); }
 async function searchNow() { await api("/api/search", {}); toast("Searching for new roles"); refresh(); }
-$("pause").onclick = async () => { await api("/api/settings", { paused: !st.settings.paused }); toast(st.settings.paused ? "Autopilot resumed" : "Autopilot paused"); refresh(); };
-$("live").onclick = () => {
-  if (!st.settings.dryRun) return api("/api/settings", { dryRun: true }).then(() => { toast("Back to practice mode: nothing is sent"); refresh(); });
-  goLive();
-};
+// The mode box's buttons (drawn again with every look at the status).
+for (const box of [$("mode-box"), $("mmode")]) box.addEventListener("click", async (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  const what = b.id.replace(/^m-/, "");
+  if (what === "start") return goLive();
+  if (what === "pause") { await api("/api/settings", { paused: !st.settings.paused }); toast(st.settings.paused ? "Continuing" : "Paused: nothing is filled in or sent"); }
+  else if (what === "practice") { await api("/api/settings", { dryRun: true }); toast("Back to practice mode: nothing is sent"); }
+  const kept = document.activeElement && document.activeElement !== document.body;
+  await refresh();
+  // The button pressed is gone (the box says the new mode): the keyboard goes on from the box's first button.
+  if (kept && (!document.activeElement || document.activeElement === document.body)) { const f = box.querySelector("button"); if (f) f.focus(); }
+});
 const setCap = async (n) => { await api("/api/settings", { dailyCap: Math.max(0, Math.min(100, n)) }); refresh(); };
 $("cap-dn").onclick = () => setCap(st.settings.dailyCap - 1);
 $("cap-up").onclick = () => setCap(st.settings.dailyCap + 1);
 $("scrim").onclick = closeDrawer;
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDrawer(); if (e.key === "/" && $("q") && document.activeElement !== $("q")) { e.preventDefault(); $("q").focus(); } });
-window.addEventListener("hashchange", () => { const v = location.hash.slice(1); if (v && v !== view && TITLES[v]) { closeDrawer(); view = v; refresh(true); } });
+window.addEventListener("hashchange", () => {
+  const v = location.hash.slice(1);
+  if (!v || v === view || !TITLES[v]) return;
+  if (["settings", "profile"].includes(view) && dirty.size) { history.replaceState(null, "", "#" + view); return leaveSettings(() => go(v)); }
+  closeDrawer(); view = v; refresh(true);
+});
 
 async function refresh(full) {
   st = await api("/api/status");
@@ -842,7 +992,7 @@ async function refresh(full) {
   afterStatus();
 }
 if (!TITLES[view]) view = "overview";
-refresh(true).then(() => { if (st && st.settings.onboarded && !st.settings.touredAt) showTour(); });
+refresh(true);
 // A notification was clicked: the job it's about, or a page.
 if (window.ja.onNavigate) window.ja.onNavigate((t) => { if (t && t.job) openJob(t.job); else if (t && t.view) (t.view === "settings" ? openSettings("ai") : go(t.view)); });
 setInterval(tickProgress, 1000);
@@ -916,81 +1066,105 @@ async function checkUpdate(el) {
   toast(u.error || (u.phase === "available" ? `Version ${u.info.latest} is available: press Update now` : u.phase === "uptodate" ? `You have the latest version (${u.info.current})` : u.error || "Could not check for updates"));
   refreshStatusOnly(true);
 }
-// Everything that needs the person, most important first, each with one thing to press. The Overview shows them as one
-// To do list; the other pages show only the urgent ones, as banners.
+// Everything that needs the person, ranked by what holds applications back: prio 0-2 stops everything (the AI, practice
+// mode), 3 stops forms (answers, codes), 4 stopped applications, 5 employers waiting on them, 6-9 helpful but optional.
+// The Overview shows them as one To do list; other pages show one line saying how many there are.
 function todoItems() {
   if (!st) return [];
   const s = st.settings, c = st.counts || {}, out = [];
   const add = (x) => out.push(x);
   const sr = st.search;
-  if (sr && sr.aiProblem) add({ urgent: true, tone: "red", icon: "alert", title: "The AI stopped working", text: `${sr.aiProblem} The jobs it found are checked again on the next search.`,
+  const one = (n, a, b) => `${n} ${n === 1 ? a : b}`;
+  if (sr && sr.aiProblem) add({ prio: 0, urgent: true, tone: "red", icon: "alert", title: "The AI stopped working", text: `${sr.aiProblem} The jobs it found are checked again on the next search.`,
     actions: `<button class="btn sm primary" onclick="openSettings('ai')">Open AI settings</button>` });
-  if (s.dryRun && !s.reviewedDryRun && st.firstFilled) add({ urgent: true, tone: "violet", icon: "eye", title: "Check your practice application",
-    text: `It's filled in for ${esc(String(st.firstFilled.company).replace(/\.$/, ""))}, but not sent. Look it over, then start sending for real.`, actions: `<button class="btn sm primary" data-open-job="${esc(st.firstFilled.slug)}">Check it</button>` });
+  if (s.dryRun && !s.reviewedDryRun && st.firstFilled) add({ prio: 1, urgent: true, tone: "violet", icon: "eye", title: "Check your practice application",
+    text: `It's filled in for ${esc(String(st.firstFilled.company).replace(/\.$/, ""))}, but not sent. Look it over: when it looks right, start sending.`, actions: `<button class="btn sm primary" data-open-job="${esc(st.firstFilled.slug)}">Check it</button>` });
+  const pr = st.practice || { count: 0, unchecked: 0 };
+  if (s.dryRun && s.reviewedDryRun) add({ prio: 1, urgent: true, tone: "violet", icon: "eye", title: pr.count ? `Practice mode: ${one(pr.count, "application is", "applications are")} filled in, none sent` : "Practice mode: nothing is sent",
+    text: `${pr.held ? `${pr.unchecked} new ones since you last looked: the app fills in no more until you open one. ` : pr.unchecked ? `${one(pr.unchecked, "new one", "new ones")} since you last looked. ` : ""}When they look right, start sending: up to ${s.dailyCap} a day, each filled in again and sent in your name.`,
+    actions: `${pr.count && pr.first ? `<button class="btn sm" data-open-job="${esc(pr.first.slug)}">Check one</button>` : ""}<button class="btn sm primary" onclick="goLive()">${icon("send")}Start sending</button>` });
   const waiting = st.toAnswer || { count: 0 };
-  if (waiting.count && waiting.first) add({ urgent: true, tone: "amber", icon: "alert", title: `${waiting.count} application${waiting.count === 1 ? " needs" : "s need"} your answer`,
+  if (waiting.count && waiting.first) add({ prio: 3, urgent: true, tone: "amber", icon: "alert", title: `${waiting.count} application${waiting.count === 1 ? " needs" : "s need"} your answer`,
     text: "The app stopped on a question only you can answer. Answer it once and it carries on, and remembers.", actions: `<button class="btn sm primary" data-open-job="${esc(waiting.first.slug)}">Answer now</button>` });
-  const rp = st.replies || {};
-  if (rp.act && rp.first) {
-    const f = rp.first, k = REPLY[f.kind] || REPLY.other;
-    add({ urgent: true, tone: "green", icon: "mail", title: rp.act === 1 ? `${esc(f.company)}: ${esc(k[0].toLowerCase())}` : `${rp.act} employers wrote back`,
-      text: `${esc(f.subject)}. Read it, then answer from your own email.`, actions: `<button class="btn sm primary" data-open-job="${esc(f.slug)}">Read it</button>` });
-  }
-  const rf = st.referrals || { count: 0 };
-  if (rf.count && rf.first) add({ tone: "blue", icon: "user", title: rf.count === 1 ? `You know someone at ${esc(rf.first.company)}` : `You know someone at ${rf.count} of the jobs in your queue`,
-    text: "Ask them for a referral before the app applies: it waits a few days so you can. A referral gets far more replies than applying cold.", actions: `<button class="btn sm primary" data-open-job="${esc(rf.first.slug)}">Ask for a referral</button>` });
-  const iv = st.interviews || { count: 0 };
-  if (iv.count && iv.first) add({ urgent: true, tone: "green", icon: "bolt", title: `Get ready for your interview with ${esc(iv.first.company)}`,
-    text: "The app makes prep notes: the questions they'll likely ask, stories from your own resume to answer with, and questions to ask them.", actions: `<button class="btn sm primary" data-open-prep="${esc(iv.first.slug)}">Get ready</button>` });
-  if (st.followups) add({ tone: "blue", icon: "mail", title: `Follow up on ${st.followups} application${st.followups === 1 ? "" : "s"}`,
-    text: "You applied over 10 days ago and haven't heard back. A short, polite note keeps you in mind; the app writes it, you send it.", actions: `<button class="btn sm primary" onclick="showFollowUps()">Show ${st.followups === 1 ? "it" : "them"}</button>` });
-  const codes = st.codes || { count: 0 };
-  if (codes.count && !rp.mailbox) add({ urgent: true, tone: "amber", icon: "mail", title: `Connect your mailbox to finish ${codes.count === 1 ? "an application" : codes.count + " applications"}`,
-    text: "The employer emailed a code or a link to confirm. With your mailbox connected, the app reads it and finishes the application.", actions: `<button class="btn sm primary" onclick="openSettings('mailbox')">Connect my mailbox</button>` });
   const gaps = st.missingAnswers || [];
-  if (gaps.length && !(s.dismissed || []).includes("missing-answers")) add({ tone: "amber", icon: "user", title: `Add ${gaps.length === 1 ? gaps[0] : gaps.slice(0, -1).join(", ") + " and " + gaps[gaps.length - 1]}`,
+  if (gaps.length && !(s.dismissed || []).includes("missing-answers")) add({ prio: 3, tone: "amber", icon: "user", title: `Add ${gaps.length === 1 ? gaps[0] : gaps.slice(0, -1).join(", ") + " and " + gaps[gaps.length - 1]}`,
     text: "Most application forms ask for this. Without it, each one stops and waits for you; added once, it goes into every form.",
     actions: `<button class="btn sm primary" onclick="openSettings('questions')">Add ${gaps.length === 1 ? "it" : "them"}</button><button class="btn sm ghost" onclick="dismiss('missing-answers')">Not now</button>` });
+  const rp = st.replies || {};
+  const codes = st.codes || { count: 0 };
+  if (codes.count && !rp.mailbox) add({ prio: 3, urgent: true, tone: "amber", icon: "mail", title: `Connect your mailbox to finish ${codes.count === 1 ? "an application" : codes.count + " applications"}`,
+    text: "The employer emailed a code or a link to confirm. With your mailbox connected, the app reads it and finishes the application.", actions: `<button class="btn sm primary" onclick="openSettings('mailbox')">Connect my mailbox</button>` });
+  const mb = st.maybe || { count: 0 };
+  if (mb.count && mb.first) add({ prio: 4, tone: "amber", icon: "mail", title: `${one(mb.count, "application", "applications")} may have gone through`,
+    text: "Submit was pressed, but no confirmation came. Look in your email for the employer's thank-you, then say whether it went through.",
+    actions: `<button class="btn sm primary" data-open-job="${esc(mb.first.slug)}">Look at ${mb.count === 1 ? "it" : "the first"}</button>` });
+  const sp = st.stopped || { count: 0 };
+  if (sp.count && sp.first) add({ prio: 4, tone: "amber", icon: "alert", title: `${one(sp.count, "application", "applications")} stopped for another reason`,
+    text: "A CAPTCHA, a page the site refused, or an error. Nothing incomplete was sent. Finish each one with the app in a window in front of you, or try again.",
+    actions: `<button class="btn sm primary" data-open-job="${esc(sp.first.slug)}">Look at ${sp.count === 1 ? "it" : "the first"}</button>${sp.count > 1 ? `<button class="btn sm" onclick="go('failed')">All of them</button>` : ""}` });
+  if (rp.act && rp.first) {
+    const f = rp.first, k = REPLY[f.kind] || REPLY.other;
+    add({ prio: 5, urgent: true, tone: "green", icon: "mail", title: rp.act === 1 ? `${esc(f.company)}: ${esc(k[0].toLowerCase())}` : `${rp.act} employers wrote back`,
+      text: `${esc(f.subject)}. Read it, then answer from your own email.`, actions: `<button class="btn sm primary" data-open-job="${esc(f.slug)}">Read it</button>` });
+  }
+  const iv = st.interviews || { count: 0 };
+  if (iv.count && iv.first) add({ prio: 5, urgent: true, tone: "green", icon: "bolt", title: `Get ready for your interview with ${esc(iv.first.company)}`,
+    text: "The app makes prep notes: the questions they'll likely ask, stories from your own resume to answer with, and questions to ask them.", actions: `<button class="btn sm primary" data-open-prep="${esc(iv.first.slug)}">Get ready</button>` });
+  const rf = st.referrals || { count: 0 };
+  if (rf.count && rf.first) add({ prio: 6, tone: "blue", icon: "user", title: rf.count === 1 ? `You know someone at ${esc(rf.first.company)}` : `You know someone at ${rf.count} of the jobs up next`,
+    text: "Ask them for a referral before the app applies: it waits a few days so you can. A referral gets far more replies than applying cold.", actions: `<button class="btn sm primary" data-open-job="${esc(rf.first.slug)}">Ask for a referral</button>` });
+  if (st.followups) add({ prio: 6, tone: "blue", icon: "mail", title: `Follow up on ${st.followups} application${st.followups === 1 ? "" : "s"}`,
+    text: "You applied over 10 days ago and haven't heard back. A short, polite note keeps you in mind; the app writes it, you send it.", actions: `<button class="btn sm" onclick="showFollowUps()">Show ${st.followups === 1 ? "it" : "them"}</button>` });
   const mine = c.manual || 0;
-  if (mine) add({ tone: "amber", icon: "ext", title: `${mine} good match${mine === 1 ? "" : "es"} for you to apply to yourself`, text: "These sites need your own account or use a chat bot, so the app can't apply there. Each takes a few minutes.",
+  if (mine) add({ prio: 7, tone: "blue", icon: "ext", title: `${mine} good match${mine === 1 ? "" : "es"} for you to apply to yourself`, text: "These sites need your own account or use a chat bot, so the app can't apply there by itself. Each takes a few minutes, or press Finish it with me on one.",
     actions: `<button class="btn sm" onclick="go('manual')">Show them</button>` });
   if (sr && sr.problems && sr.problems.length && !sr.aiProblem) {
     const all = sr.found === 0;
-    add({ tone: all ? "red" : "amber", icon: "alert", title: `${all ? "The last search found nothing: " : ""}${sr.problems.map((x) => esc(x.source)).join(" and ")} could not be searched`,
+    add({ prio: all ? 2 : 8, tone: all ? "red" : "amber", icon: "alert", title: `${all ? "The last search found nothing: " : ""}${sr.problems.map((x) => esc(x.source)).join(" and ")} could not be searched`,
       text: `${esc(sr.problems[0].message)}. ${all && (sr.sources || []).length < 2 ? "It's the only place the app looks right now: turn on another in Settings > Jobs to look for." : "The app tries again on the next search."}`, actions: `<button class="btn sm" onclick="searchNow()">Search now</button>` });
   } else if (sr && sr.at && sr.done && !sr.queued && !sr.toYou && !(sr.skipped && sr.skipped.total) && !c.queued && !c.working && !c.filled && !st.state.job && st.state.now !== "searching") {
-    add({ tone: "amber", icon: "search", title: `The last search found nothing to apply to${sr.nextAt ? `. Next search around ${new Date(sr.nextAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""}`,
+    add({ prio: 8, tone: "amber", icon: "search", title: `The last search found nothing to apply to${sr.nextAt ? `. Next search around ${new Date(sr.nextAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""}`,
       text: "Job sites had nothing new for these titles near you. Shorter, more common job titles or a wider distance find more.", actions: `<button class="btn sm" onclick="openSettings('prefs')">Change what to look for</button>` });
-  } else if (sr && sr.done && sr.skipped && sr.skipped.total && !c.queued && !c.working && !st.state.job && st.state.now !== "searching" && !c.filled && !c.applied) {
+  } else if (sr && sr.done && sr.skipped && sr.skipped.total && !c.queued && !c.working && !st.state.job && st.state.now !== "searching") {
     const why = sr.skipped.top.map((x) => `${x.count} ${esc(x.why)}`).join(", ");
-    add({ tone: "amber", icon: "search", title: "Nothing to apply to right now", text: `${sr.skipped.total} job${sr.skipped.total === 1 ? " was" : "s were"} found and left out${why ? `: ${why}` : ""}. More job titles or a wider distance find more.`,
-      actions: `<button class="btn sm" onclick="go('skipped')">See why</button><button class="btn sm" onclick="openSettings('prefs')">Change what to look for</button>` });
+    add({ prio: 8, tone: "amber", icon: "search", title: "Nothing new to apply to", text: `${sr.skipped.total} job${sr.skipped.total === 1 ? " was" : "s were"} found and left out${why ? `: ${why}` : ""}.`,
+      actions: `<button class="btn sm primary" onclick="go('skipped')">See why</button>` });
   }
-  if (s.dryRun && s.reviewedDryRun) add({ tone: "amber", icon: "eye", title: "Practice mode is on", text: "Applications are filled in and checked, but nothing is sent.", actions: `<button class="btn sm primary" onclick="startSending()">Start sending for real</button>` });
-  if (!rp.mailbox && (c.applied || 0) > 0 && !(s.dismissed || []).includes("mailbox-tip")) add({ tone: "blue", icon: "mail", title: "See when employers write back",
+  if (!rp.mailbox && (c.applied || 0) > 0 && !(s.dismissed || []).includes("mailbox-tip")) add({ prio: 9, tone: "blue", icon: "mail", title: "See when employers write back",
     text: "Connect your mailbox (the app only reads it) and replies show up here: interviews, tests, questions and answers.", actions: `<button class="btn sm" onclick="openSettings('mailbox')">Connect my mailbox</button><button class="btn sm ghost" onclick="dismiss('mailbox-tip')">Not now</button>` });
-  return out;
+  return out.sort((x, y) => x.prio - y.prio);
 }
-const todoRow = (x) => `<div class="todo ${x.tone}">${icon(x.icon)}<div><b>${x.title}</b><span>${x.text}</span></div>${x.actions ? `<div class="right">${x.actions}</div>` : ""}</div>`;
+// Only the first item gets the strong button: one main action on the page.
+const todoRow = (x, i) => `<div class="todo ${x.tone}">${icon(x.icon)}<div><b>${x.title}</b><span>${x.text}</span></div>${x.actions ? `<div class="right">${i ? x.actions.replace(/btn sm primary/g, "btn sm") : x.actions}</div>` : ""}</div>`;
 function todoCard() {
   const items = todoItems(), s = st.settings;
-  const quiet = s.paused ? "The app is paused. Press Resume at the bottom left to carry on."
+  const quiet = s.paused ? "The app is paused. Press Continue at the bottom left to carry on."
     : s.dryRun && !s.reviewedDryRun ? "The app is looking for a good match to fill in as practice. It shows up here when it's ready."
       : "Nothing needs you right now. The app keeps looking for jobs and applying on its own.";
-  return `<section class="card todo-card" aria-labelledby="todo-h"><div class="card-h"><h2 id="todo-h">To do</h2>${items.length ? `<span class="sub">${items.length} thing${items.length === 1 ? "" : "s"}</span>` : ""}</div>
+  return `<section class="card todo-card" aria-labelledby="todo-h"><div class="card-h"><h2 id="todo-h">To do</h2>${items.length ? `<span class="sub">${items.length} thing${items.length === 1 ? "" : "s"}, most important first</span>` : ""}</div>
     ${items.length ? items.map(todoRow).join("") : `<div class="todo blue">${icon("check")}<div><span>${quiet}</span></div></div>`}</section>`;
 }
+// The first time: what the To do list is (in place of a tour).
+function todoTip() {
+  if ((st.settings.dismissed || []).includes("tip-todo")) return "";
+  return `<div class="tip">${icon("help")}<span><b>This is your To do list.</b> Whatever needs you shows up here, most important first, with one button to press. When it's empty, the app is busy on its own. Closing the window doesn't stop it.</span>
+    <button class="btn sm ghost" onclick="dismiss('tip-todo')">Got it</button></div>`;
+}
+// Other pages: updates, a finish in progress, and one line saying what needs the person, not every item again.
 function banners() {
   if (!st) return "";
   let h = updateBanner() + finishBanner();
   if (view === "overview") return h;
-  for (const x of todoItems().filter((y) => y.urgent)) h += `<div class="banner ${x.tone}">${icon(x.icon)}<div><b>${x.title}</b>${x.text}</div>${x.actions ? `<div class="right">${x.actions}</div>` : ""}</div>`;
+  const urgent = todoItems().filter((y) => y.urgent);
+  if (urgent.length === 1) { const x = urgent[0]; h += `<div class="banner ${x.tone}">${icon(x.icon)}<div><b>${x.title}</b>${x.text}</div>${x.actions ? `<div class="right">${x.actions}</div>` : ""}</div>`; }
+  else if (urgent.length > 1) h += `<div class="banner ${urgent[0].tone}">${icon(urgent[0].icon)}<div><b>${urgent.length} things need you</b>First: ${urgent[0].title}</div><div class="right"><button class="btn sm primary" data-go="overview">Open To do</button></div></div>`;
   return h;
 }
 async function dismiss(key) { await api("/api/settings", { dismissed: [...(st.settings.dismissed || []), key] }); refresh(); }
 // Settings, opened at one section ("mailbox", "ai", "prefs", "questions").
-let wantSection = null;
-function openSettings(section) { wantSection = section; go("settings"); }
+let wantSection = null, wantField = null;
+// Settings, at one section, and in it the setting to change (a To do item's or a reason's button).
+function openSettings(section, field) { wantSection = section; wantField = field || null; go("settings"); }
 // A dialog: announced as one, named by its heading, the page behind locked while it's open,
 // Escape closes it, and the focus goes back to where it was.
 function modal(html) {
@@ -1027,33 +1201,36 @@ function goLive() {
   }
   startSending();
 }
-// "It looks right: start sending for real": the practice application is marked as checked, and after one plain
-// question, applications go out for real.
+// "Looks right: start sending": the practice application is marked as checked, and after one plain question (which can
+// include the practice applications), applications go out for real.
 function startSending(slug) {
-  const s = st.settings;
+  const s = st.settings, waiting = (st.practice || {}).count || 0;
   const m = modal(`<h2>Start sending applications for real?</h2>
-    <p>From now on the app sends applications in your name: up to <b>${s.dailyCap} a day</b>, ${s.minutesBetweenApplies} minutes apart. Each one only when every answer comes from your resume and your answers.</p>
-    <p class="muted">You can pause any time with the button at the bottom left, or go back to practice mode.</p>
+    <p>From now on the app sends applications in your name: up to <b>${s.dailyCap} a day</b>, a few minutes apart, each only when every answer comes from your resume and your answers.</p>
+    ${waiting ? `<label class="check"><input type="checkbox" id="m-also" checked><span>${waiting === 1 ? "Also send your practice application, if its posting is still open (it's filled in again first)" : `Also send the ${waiting} practice applications whose postings are still open (each is filled in again first)`}</span></label>` : ""}
+    <p class="muted">Pause any time at the bottom left, or go back to practice.</p>
     <div class="row-actions" style="margin-top:18px"><button class="btn primary" id="m-go">${icon("send")}Start sending</button><button class="btn" id="m-close">Keep practicing</button></div>`);
   m.querySelector("#m-close").onclick = () => m.remove();
   m.querySelector("#m-go").onclick = async () => {
+    const also = !!(m.querySelector("#m-also") || {}).checked;
+    m.querySelector("#m-go").disabled = true;
     if (slug) { const r0 = await api("/api/job/" + encodeURIComponent(slug), { action: "reviewed" }); if (r0 && r0.error) { m.remove(); return toast(r0.error); } }
     const r = await api("/api/golive", { confirm: true });
+    if (r.error) { m.remove(); return toast(r.error); }
+    const sent = also ? await api("/api/practice/send", {}) : null;
     m.remove();
-    if (r.error) return toast(r.error);
     closeDrawer();
-    toast("Sending for real. Pause any time at the bottom left.");
-    await refresh(true);
-    if ((st.counts.filled || 0) > 0) sendPractice(null, true);
+    toast(sent && sent.queued ? `Sending for real. ${sent.queued} practice application${sent.queued === 1 ? "" : "s"} go first.` : "Sending for real. Pause any time at the bottom left.");
+    refresh(true);
   };
 }
 // Practice runs sent for real (slugs: some of them, or all): each is filled in again and submitted at the daily pace;
 // the ones whose postings closed are left out. afterGoLive: offered right after "Start sending".
-function sendPractice(slugs, afterGoLive) {
+function sendPractice(slugs) {
   const n = slugs ? slugs.length : st.counts.filled || 0, s = st.settings;
   const one = slugs && slugs.length === 1;
-  const m = modal(`<h2>${afterGoLive ? `Send your ${n} practice application${n === 1 ? "" : "s"} too?` : one ? "Send this application for real?" : `Send ${n} practice application${n === 1 ? "" : "s"} for real?`}</h2>
-    <p>${one ? "The app fills the form in again and sends it in your name" : "Each one is filled in again and sent in your name"}${s.dryRun ? ", even though the rest stay in practice mode" : ""}: up to <b>${s.dailyCap} a day</b>, ${one ? "first in line" : "before the rest of the queue"}. ${one ? "If the posting has closed, nothing is sent." : "Postings that have closed are left out, and at any one company they go a few days apart, within your monthly limit, so they never look like a flood."}</p>
+  const m = modal(`<h2>${one ? "Send this application for real?" : `Send ${n} practice application${n === 1 ? "" : "s"} for real?`}</h2>
+    <p>${one ? "The app fills the form in again and sends it in your name" : "Each one is filled in again and sent in your name"}${s.dryRun ? ", even though the rest stay in practice mode" : ""}: up to <b>${s.dailyCap} a day</b>, ${one ? "first in line" : "before the rest of the jobs up next"}. ${one ? "If the posting has closed, nothing is sent." : "Postings that have closed are left out, and at any one company they go a few days apart, within your monthly limit, so they never look like a flood."}</p>
     <div class="row-actions" style="margin-top:18px"><button class="btn primary" id="m-go">${icon("send")}${one ? "Send it" : "Send them"}</button><button class="btn" id="m-close">Not now</button></div>`);
   m.querySelector("#m-close").onclick = () => m.remove();
   m.querySelector("#m-go").onclick = async () => {
@@ -1061,57 +1238,37 @@ function sendPractice(slugs, afterGoLive) {
     const r = one ? await api("/api/job/" + encodeURIComponent(slugs[0]), { action: "send" }) : await api("/api/practice/send", slugs ? { slugs } : {});
     m.remove();
     if (r && r.error) { toast(r.error); refresh(true); return; }
-    toast(one ? "It's next in line to be sent." : `${r.queued} queued to be sent${r.closed ? `; ${r.closed} had closed` : ""}.`);
+    toast(one ? "It's next in line to be sent." : `${r.queued} up next to be sent${r.closed ? `; ${r.closed} had closed` : ""}.`);
     if (open && one) await openJob(slugs[0]);
     refresh(true);
   };
 }
-// "Something's wrong" with a practice application: where to fix it.
+// "Something's wrong" with a practice application: fix it where it is.
 function somethingWrong() {
-  const m = modal(`<h2>What's wrong?</h2><p class="muted">Nothing has been sent. Fix it, then press <b>Try again</b> on this application to see a new practice run.</p>
+  const practice = st.settings.dryRun;
+  const m = modal(`<h2>What's wrong?</h2><p class="muted">Nothing has been sent.</p>
     <div class="wrong-list">
-      <button class="btn" id="w-answer">${icon("user")}<span><b>An answer it gave</b><small>Your name, contact details, or how you answered a question</small></span></button>
+      <button class="btn" id="w-answer">${icon("user")}<span><b>An answer it gave</b><small>${practice ? "Change it here: the app fills in a new practice application with your answer" : "Change it here, and it's sent with your answer"}</small></span></button>
       <button class="btn" id="w-resume">${icon("file")}<span><b>A line on my resume</b><small>Something that isn't true, or isn't said right</small></span></button>
       <button class="btn" id="w-jobs">${icon("search")}<span><b>It's the wrong kind of job</b><small>Change the job titles or where it looks</small></span></button>
       <button class="btn" id="w-other">${icon("help")}<span><b>Something else</b><small>Keep practicing for now</small></span></button></div>`);
-  const to = (fn) => () => { m.remove(); closeDrawer(); fn(); };
-  m.querySelector("#w-answer").onclick = to(() => openSettings("questions"));
-  m.querySelector("#w-resume").onclick = to(() => go("profile"));
-  m.querySelector("#w-jobs").onclick = to(() => openSettings("prefs"));
-  m.querySelector("#w-other").onclick = () => { m.remove(); toast("Still practicing: nothing is sent until you start sending for real."); };
-}
-
-// ---------- the short tour, shown once after setup ----------
-const TOUR = [
-  ["Your To do list", "Anything that needs you shows up at the top of the Overview, with one button to press. When it's empty, the app is busy on its own."],
-  ["It practices first", "Your first application is filled in but not sent. Check it, then press Start sending for real. You can pause any time with the button at the bottom left."],
-  ["It keeps working", `Closing the window doesn't stop it: it keeps looking and applying, and you open it again from the ${window.ja && window.ja.platform === "darwin" ? "menu bar at the top of the screen" : "system tray, next to the clock"}. Questions? Press Help at the bottom of the menu on the left.`],
-];
-function showTour() {
-  let k = 0;
-  const m = modal(`<div id="tour"></div>`);
-  const done = () => { m.remove(); api("/api/settings", { touredAt: true }); };
-  const draw = () => {
-    m.querySelector("#tour").innerHTML = `<p class="muted" style="margin:0">${k + 1} of ${TOUR.length}</p><h2 id="modal-title">${TOUR[k][0]}</h2><p>${TOUR[k][1]}</p>
-      <div class="row-actions" style="margin-top:16px">${k ? `<button class="btn" id="t-back">Back</button>` : ""}<button class="btn primary" id="t-next">${k === TOUR.length - 1 ? "Done" : "Next"}</button></div>`;
-    m.querySelector("#t-next").onclick = () => { if (k === TOUR.length - 1) return done(); k++; draw(); m.querySelector("#t-next").focus(); };
-    const b = m.querySelector("#t-back"); if (b) b.onclick = () => { k--; draw(); m.querySelector("#t-next").focus(); };
-  };
-  draw();
-  m.querySelector(".modal").setAttribute("aria-labelledby", "modal-title");
-  const close = m.remove.bind(m);
-  m.remove = () => { close(); api("/api/settings", { touredAt: true }); };
+  m.querySelector("#w-answer").onclick = () => { m.remove(); dtab = "answers"; renderDrawer(); const b = $("drawer").querySelector("[data-edit-answer]"); if (b) { b.scrollIntoView({ block: "center" }); b.focus(); } toast("Press Change next to the answer that's wrong."); };
+  m.querySelector("#w-resume").onclick = () => { m.remove(); closeDrawer(); go("profile"); toast(practice ? "Fix the line, then open the practice application and press More > Fill it in again as practice." : "Fix the line: the next applications use it."); };
+  m.querySelector("#w-jobs").onclick = () => { m.remove(); closeDrawer(); openSettings("prefs", "titles"); };
+  m.querySelector("#w-other").onclick = () => { m.remove(); toast(practice ? "Still practicing: nothing is sent until you start sending." : "Nothing more is sent from this one until you choose."); };
 }
 
 // ---------- Help ----------
 const HELP = [
-  ["How do I start sending applications for real?", "The app starts in practice mode: it fills in one application and doesn't send it. Open it from your To do list, look at the answers, the resume and the screenshots, and press <b>It looks right: start sending for real</b>. Or turn on <b>Send for real</b> at the bottom left."],
-  ["How do I stop it, or take a break?", "Press <b>Pause</b> at the bottom left. Nothing more is sent until you press <b>Resume</b>. To stop sending but keep practicing, turn off <b>Send for real</b>."],
-  ["Does it keep working when I close the window?", `Yes. It keeps looking for jobs and applying. Open it again from the ${window.ja && window.ja.platform === "darwin" ? "menu bar at the top of the screen" : "system tray, next to the clock"}, where there's also <b>Quit</b>. You can change this in Settings > Running.`],
-  ["An application stopped and asks me something. What do I do?", "Some questions only you can answer. Open the application from your To do list, answer the question, and press <b>Save my answers and try again</b>. The app remembers your answer for the next forms that ask."],
-  ["Why didn't it apply to a job?", "Open the job: the reason is at the top, and the <b>Fit</b> tab shows what the posting asks for and what your resume shows. Jobs it left out are on the <b>Skipped</b> page (switch to Advanced at the bottom left to see it)."],
-  ["How do I change the jobs it looks for?", "Go to <b>Settings</b> > Jobs to look for: the job titles, your city and how far you'll go."],
+  ["Why isn't anything being sent?", `Look at the box at the bottom left. <b>Practice mode</b>: applications are filled in but not sent; open one from your To do list, and when it looks right press <b>Start sending</b>. <b>Paused</b>: press <b>Continue</b>. <b>Sending</b> but nothing goes out: the daily limit may be reached (it starts again the next day), the next jobs may be at companies you just applied to (they wait a few days), or nothing is up next (see <a href="#" data-go="queued">Up next</a>).`],
+  ["Why were so many jobs not applied to?", `The <a href="#" data-go="skipped">Not applied</a> page lists every job the app left out and groups the reasons, each with the setting behind it. The most common is years of experience: Settings > Jobs to look for has your years and how far short of a job's ask you'll still apply. Open any job there and press <b>Apply anyway</b> to apply to it.`],
+  ["How do I start sending applications for real?", "The app starts in practice mode: it fills in an application and doesn't send it. Open it from your To do list, check the answers, the resume and the screenshots, and press <b>Looks right: start sending</b>. Or press <b>Start sending</b> at the bottom left."],
+  ["How do I stop it, or take a break?", "Press <b>Pause</b> at the bottom left. Nothing more is filled in or sent until you press <b>Continue</b>. To keep practicing instead of sending, press <b>Back to practice</b>."],
+  ["Does it keep working when I close the window?", `Yes. It keeps looking for jobs and applying. Open it again from the ${window.ja && window.ja.platform === "darwin" ? "menu bar at the top of the screen" : "system tray, next to the clock"}, where there's also <b>Quit</b>. You can change this in Settings > While it works.`],
+  ["An application stopped and asks me something. What do I do?", "Some questions only you can answer. Open the application from your To do list, answer the question, and press <b>Save my answers and try again</b>. The app remembers your answer for the next forms that ask. Or press <b>Finish it with me</b> and answer it on the form yourself."],
+  ["How do I change the jobs it looks for?", "Go to <b>Settings</b> > Jobs to look for: the job titles, your city and how far you'll go, and your years of experience."],
   ["How do I fix my resume?", "Go to <b>Resume</b> in the menu on the left. <b>All your resume pieces</b> has every line: change it, delete it, or untick it so it's never used."],
+  ["I need a list of my applications (unemployment claims).", `On the <a href="#" data-go="applied">Applied</a> page, press <b>Save a list of them</b>: a spreadsheet with the date, employer, job title, place and link of every application sent.`],
   ["The AI stopped working, or my credit ran out.", "Go to <b>Settings</b> > AI. If your OpenRouter credit ran out, add a few dollars on OpenRouter's Credits page; $5 lasts for hundreds of applications. Then press <b>Connect again</b> or <b>Test key</b>."],
   ["Where is my information kept?", "On this computer only, except what goes to the AI and to the job sites you apply to. <b>Settings</b> > Your data shows the folder."],
 ];
@@ -1133,8 +1290,7 @@ const diagCard = () => `<div class="card sec" style="margin-top:12px"><h2>Someth
   <div class="row-actions"><button class="btn primary" onclick="saveDiagnostics(this)">${icon("file")}Make a diagnostics report</button></div><div id="diag-msg" style="margin-top:10px"></div></div>`;
 function renderHelp() {
   $("main").innerHTML = header() + `<div class="card"><div class="help-list">${HELP.map(([q, a]) => `<details class="more"><summary><b>${q}</b></summary><div class="help-a">${a}</div></details>`).join("")}</div>
-    <div class="row-actions" style="padding:16px"><button class="btn" onclick="showTour()">${icon("eye")}Show the tour again</button>
-      <button class="btn" data-open-url="https://github.com/AntonyPerez0/job-autopilot-desktop#readme">${icon("ext")}Read the full guide</button>
+    <div class="row-actions" style="padding:16px"><button class="btn" data-open-url="https://github.com/AntonyPerez0/job-autopilot-desktop#readme">${icon("ext")}Read the full guide</button>
       <button class="btn ghost" data-open-url="https://github.com/AntonyPerez0/job-autopilot-desktop/issues/new">${icon("ext")}Report a problem</button></div></div>${diagCard()}`;
 }
 
@@ -1143,8 +1299,9 @@ let cfg = null;
 async function renderConfig() {
   cfg = await api("/api/config");
   // Each section folds away; the ones people change most start open.
-  const card = (id, title, sub, open, adv) => `<details class="card card-fold ${adv ? "adv" : ""}" ${open ? "open" : ""}><summary><div class="card-h"><h2>${title}</h2><span class="sub">${sub || ""}</span></div></summary>
-    <div class="sec" id="sec-${id}"></div><div class="save-bar"><button class="btn primary" data-save="${id}">${icon("check")}Save changes</button><div id="msg-${id}" style="flex:1"></div></div></details>`;
+  // The save bar shows up once something in the section changes, and stays in view until it's saved.
+  const card = (id, title, sub, open, adv) => `<details class="card card-fold ${adv ? "adv" : ""}" id="card-${id}" ${open ? "open" : ""}><summary><div class="card-h"><h2>${title}</h2><span class="sub">${sub || ""}</span></div></summary>
+    <div class="sec" id="sec-${id}"></div><div class="save-bar" hidden><span class="unsaved">${icon("alert")}Changes here aren't saved yet</span><button class="btn primary" data-save="${id}">${icon("check")}Save changes</button><div id="msg-${id}" style="flex:1"></div></div></details>`;
   if (view === "profile") {
     const fold = (id, title, sub, open) => `<details class="card card-fold" ${open ? "open" : ""}><summary><div class="card-h"><h2>${title}</h2><span class="sub">${sub}</span></div></summary><div class="sec" id="sec-${id}"></div></details>`;
     $("main").innerHTML = header() + `<div id="cfg-host">
@@ -1161,9 +1318,21 @@ async function renderConfig() {
     Forms.github($("sec-github"), cfg, added);
     bindSaves(forms);
   } else {
+    // Most-changed first; links to each section at the top.
+    const LINKS = [["prefs", "Jobs to look for"], ["questions", "About you"], ["yours", "Your answers"], ["people", "People you know"], ["ai", "AI"], ["mailbox", "Mailbox"], ["background", "While it works"], ["accounts", "Job site accounts"], ["theme", "Appearance"], ["data", "Your data"]];
     $("main").innerHTML = header() + `<div id="cfg-host">
-      <div class="card" style="margin-bottom:12px"><div class="card-h"><h2>Updates</h2></div><div class="sec" id="update-card">${updateCard()}</div></div>
-      <div class="card" style="margin-bottom:12px"><div class="card-h"><h2>Appearance</h2><span class="sub">Light or dark, text size, and how much to show</span></div><div class="sec" id="sec-theme">
+      <nav class="sec-links" aria-label="Settings sections">${LINKS.map(([id, l]) => `<a href="#" data-sec="${id}">${l}</a>`).join("")}</nav>
+      ${card("prefs", "Jobs to look for", "Job titles, where, your years of experience, and which sites to search", true)}
+      ${card("questions", "About you", "The answers application forms ask for")}
+      <div class="card" id="card-yours" style="margin-bottom:12px"><div class="card-h"><h2>Your answers to form questions</h2><span class="sub">Questions you answered when an application stopped; the app uses them again</span></div><div class="sec" id="sec-yours"></div></div>
+      <div class="card" id="card-people" style="margin-bottom:12px"><div class="card-h"><h2>People you know</h2><span class="sub">Optional: ask for a referral where you know someone</span></div><div class="sec" id="sec-people"></div></div>
+      ${card("ai", "AI", "The AI service the app uses")}
+      ${card("mailbox", "Mailbox", "Optional: see replies from employers, and let the app finish forms that email a code")}
+      ${card("background", "While it works", "Closing the window, starting with your computer, notifications")}
+      ${card("accounts", "Job site accounts", "Optional: let the app make accounts on Workday sites and apply there too")}
+      ${card("running", "Pace and browser", "How many a day, and the browser window", false, true)}
+      <div class="card adv" style="margin-bottom:12px"><div class="card-h"><h2>Application history</h2><span class="sub">So you never apply twice, even after a reinstall</span></div><div class="sec" id="sec-history"></div></div>
+      <div class="card" id="card-theme" style="margin-bottom:12px"><div class="card-h"><h2>Appearance</h2><span class="sub">Light or dark, text size, and how much to show</span></div><div class="sec" id="sec-theme">
         <div class="radio-row" role="radiogroup" aria-label="Appearance">${[["system", "Match my computer"], ["light", "Light"], ["dark", "Dark"]].map(([v, l]) =>
           `<label><input type="radio" name="theme" value="${v}" ${(cfg.settings.theme || "system") === v ? "checked" : ""}>${l}</label>`).join("")}</div>
         <div class="fld" style="margin-top:12px"><span>Text size</span><div class="radio-row" role="radiogroup" aria-label="Text size">${[[1, "Normal"], [1.15, "Larger"], [1.3, "Largest"]].map(([v, l]) =>
@@ -1171,17 +1340,8 @@ async function renderConfig() {
           <small>Makes everything in the window bigger. Ctrl and + or - (Cmd on a Mac) zooms too.</small></div>
         <div class="fld" style="margin-top:12px"><span>How much to show</span><div class="radio-row" role="radiogroup" aria-label="How much to show">${[["simple", "Simple: just what you need"], ["advanced", "Advanced: every option and statistic"]].map(([v, l]) =>
           `<label><input type="radio" name="uiMode" value="${v}" ${(cfg.settings.uiMode || "simple") === v ? "checked" : ""}>${l}</label>`).join("")}</div></div></div></div>
-      ${card("prefs", "Jobs to look for", "Job titles, where, and which sites to search", true)}
-      ${card("questions", "About you", "The answers application forms ask for")}
-      ${card("ai", "AI", "The AI service the app uses")}
-      ${card("mailbox", "Mailbox", "Optional: email codes, jobs you already applied to, and replies from employers")}
-      ${card("background", "While it works", "Closing the window, starting with your computer, notifications")}
-      ${card("accounts", "Job site accounts", "Optional: let the app make accounts on Workday sites and apply there too", false, true)}
-      ${card("running", "Pace and browser", "How many a day, and the browser window", false, true)}
-      <div class="card adv" style="margin-bottom:12px"><div class="card-h"><h2>Application history</h2><span class="sub">So you never apply twice, even after a reinstall</span></div><div class="sec" id="sec-history"></div></div>
-      <div class="card" style="margin-bottom:12px"><div class="card-h"><h2>People you know</h2><span class="sub">Optional: ask for a referral where you know someone</span></div><div class="sec" id="sec-people"></div></div>
-      <div class="card" style="margin-bottom:12px"><div class="card-h"><h2>Your answers to form questions</h2><span class="sub">Questions you answered when an application stopped; the app uses them again</span></div><div class="sec" id="sec-yours"></div></div>
-      <div class="card sec adv"><h2>Your data</h2><p>Everything lives in one folder on this computer: <span class="mono">${esc(cfg.dataDir)}</span>. Version ${esc(cfg.version)}.</p>
+      <div class="card" style="margin-bottom:12px"><div class="card-h"><h2>Updates</h2></div><div class="sec" id="update-card">${updateCard()}</div></div>
+      <div class="card sec" id="card-data"><h2>Your data</h2><p>Everything lives in one folder on this computer: <span class="mono">${esc(cfg.dataDir)}</span>. Version ${esc(cfg.version)}.</p>
         <div class="row-actions"><button class="btn sm" onclick="window.ja.showDataFolder()">${icon("ext")}Open the folder</button>
         <button class="btn sm" onclick="window.ja.go('onboarding.html')">${icon("retry")}Run the setup again</button></div></div></div>`;
     const forms = { prefs: Forms.prefs($("sec-prefs"), cfg), questions: Forms.questions($("sec-questions"), cfg), ai: Forms.ai($("sec-ai"), cfg),
@@ -1197,9 +1357,10 @@ async function renderConfig() {
       cfg.settings.theme = window.ja.setTheme ? await window.ja.setTheme(r.value) : r.value;
     });
     bindSaves(forms);
-    // Opened at one section (a To do item's button): that one open and in view.
-    if (wantSection && $("sec-" + wantSection)) { const d = $("sec-" + wantSection).closest("details"); if (d) d.open = true; $("sec-" + wantSection).closest(".card").scrollIntoView({ block: "start" }); }
-    wantSection = null;
+    $("cfg-host").querySelectorAll("[data-sec]").forEach((a) => a.onclick = (e) => { e.preventDefault(); showSection(a.dataset.sec); });
+    // Opened at one section (a To do item's or a reason's button): that one open and in view, at the setting to change.
+    if (wantSection) showSection(wantSection, wantField);
+    wantSection = null; wantField = null;
   }
 }
 async function drawYours() {
@@ -1211,15 +1372,73 @@ async function drawYours() {
     : `<p class="muted" style="margin:0">None yet. When an application stops on a question only you can answer, you answer it in the job's panel and it shows up here.</p>`;
   host.querySelectorAll("[data-i]").forEach((b) => b.onclick = async () => { const x = list[Number(b.dataset.i)]; await api("/api/your-answers/remove", { key: x.key, scope: x.scope }); drawYours(); });
 }
+// A section of Settings, opened and in view; with field, the setting itself, focused (inside a fold, the fold opened).
+function showSection(id, field) {
+  const card = $("card-" + id) || ($("sec-" + id) && $("sec-" + id).closest(".card"));
+  if (!card) return;
+  if (card.tagName === "DETAILS") card.open = true;
+  let target = card;
+  if (field) {
+    const f = card.querySelector(`[name="${CSS.escape(field)}"], [data-${CSS.escape(field)}]`);
+    if (f) {
+      for (let n = f.parentElement; n && n !== card; n = n.parentElement) if (n.tagName === "DETAILS") n.open = true;
+      target = f.closest(".fld") || f.closest(".check, label") || f;
+      // The box to type in or choose from; a list of buttons (the kinds left out) only scrolls into view.
+      const box = f.matches("input, select, textarea") ? f : f.querySelector("input, select, textarea");
+      if (box) setTimeout(() => box.focus({ preventScroll: true }), 350);
+    }
+  }
+  target.scrollIntoView({ block: field ? "center" : "start", behavior: "smooth" });
+  if (field) { target.classList.add("flash"); setTimeout(() => target.classList.remove("flash"), 2200); }
+}
+// Settings keep what's typed: a section that changes shows its save bar (in view at the bottom of the window) until it's
+// saved, and leaving Settings with changes not saved asks first. Settings that save on their own are marked data-nosave.
+const dirty = new Set();
 function bindSaves(forms) {
+  dirty.clear();
+  const mark = (e) => {
+    if (e.target.closest("[data-nosave]")) return;
+    const card = e.target.closest(".card-fold"), bar = card && card.querySelector(".save-bar");
+    if (!bar) return;
+    const id = bar.querySelector("[data-save]").dataset.save;
+    if (!forms[id]) return;
+    dirty.add(id); bar.hidden = false; bar.classList.add("dirty");
+  };
+  for (const ev of ["input", "change"]) $("cfg-host").addEventListener(ev, mark);
+  saveAll.forms = forms;
   document.querySelectorAll("[data-save]").forEach((b) => b.onclick = async () => {
     const id = b.dataset.save;
     b.disabled = true;
     const e = await forms[id].save();
     b.disabled = false;
     Forms.msg($("msg-" + id), e ? "err" : "ok", e || "Saved.");
-    if (!e) refreshStatusOnly();
+    if (!e) {
+      dirty.delete(id);
+      const bar = b.closest(".save-bar"); bar.classList.remove("dirty");
+      setTimeout(() => { if (!dirty.has(id)) bar.hidden = true; }, 1800);
+      toast("Saved");
+      refreshStatusOnly();
+    }
   });
+}
+// Save every section with changes; the first one that can't be saved is shown, and the answer is false.
+async function saveAll() {
+  for (const id of [...dirty]) {
+    const e = await saveAll.forms[id].save();
+    if (e) { showSection(id); Forms.msg($("msg-" + id), "err", e); return false; }
+    dirty.delete(id);
+  }
+  return true;
+}
+// Leaving Settings with changes not saved: save them, drop them, or stay.
+function leaveSettings(then) {
+  if (!["settings", "profile"].includes(view) || !dirty.size) return then();
+  const names = [...dirty].map((id) => (($("card-" + id) || {}).querySelector ? $("card-" + id).querySelector("h2").textContent : id));
+  const m = modal(`<h2>Save your changes?</h2><p>You changed ${names.join(" and ")} without saving.</p>
+    <div class="row-actions" style="margin-top:16px"><button class="btn primary" id="lv-save">${icon("check")}Save them</button><button class="btn" id="lv-drop">Don't save</button><button class="btn ghost" id="lv-stay">Stay here</button></div>`);
+  m.querySelector("#lv-stay").onclick = () => m.remove();
+  m.querySelector("#lv-drop").onclick = () => { dirty.clear(); m.remove(); then(); };
+  m.querySelector("#lv-save").onclick = async () => { m.remove(); if (await saveAll()) { toast("Saved"); then(); } };
 }
 
 </script>

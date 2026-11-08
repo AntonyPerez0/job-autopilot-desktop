@@ -4,6 +4,7 @@
 // needs no account, and lists the rest under "Apply yourself".
 import { getDb, log, setJob, sqlTime } from "./db.js";
 import { loadProfile, screen } from "./engine.js";
+import { yearsCap, yearsInField } from "./facts.js";
 import { plainAiError } from "./llm.js";
 import { km, remoteOk, toKm, withinRadius } from "./geo.js";
 import fs from "node:fs";
@@ -238,16 +239,22 @@ export async function discover(progress = () => {}, ctx = {}) {
   // People they know, for jobs worth asking a referral for first.
   const people = Number(prefs.referralHoldDays) > 0 ? loadConnections().people || [] : [];
   const leftOut = new Map();
+  const haveYears = Math.round(yearsInField(a, profile, prefs) * 10) / 10, cap = yearsCap(a, profile, prefs);
   for (let j of list) {
     if (yieldNow()) { log(null, `search stopped after ${ji} of ${list.length} new postings so you can finish an application; the rest are read on the next search`); break; }
     progress({ phase: "review", i: ji++, n: list.length, label: `${j.title} at ${j.company}`, added });
     if (!titleOk(j.title, prefs) || !levelOk(j, prefs) || excludedCompany(j.company, prefs) || !locationOk(j, prefs)) continue;
     // An opening at a company they chose counts however long it's been up.
     if (j.board !== "watchlist" && Number.isFinite(posted(j)) && Date.now() - posted(j) > maxAge) continue;
-    if (j.minYears !== null && j.minYears !== undefined && Number.isFinite(Number(prefs.maxYearsRequired)) && j.minYears > Number(prefs.maxYearsRequired)) continue;
     if (j.sponsorship === false && a.needsSponsorship === "yes") continue;
     const key = jobKey(j.company, j.title);
     if (inSet(keys, j.url, key) || inSet(roles, j.url, roleKey(j.company, j.title)) || (j.url && urls.has(cleanUrl(j.url)))) continue;
+    // More years than they have (and the near miss they accept): kept, with the reason, so they see it and can change it.
+    if (j.minYears !== null && j.minYears !== undefined && Number(j.minYears) > cap) {
+      insertJob(j, key, "skipped", `asks for ${j.minYears}+ years of experience (${haveYears ? `you have about ${haveYears}; ` : ""}jobs asking for more than ${cap} are left out)`, null);
+      addTo(keys, j.url, key);
+      continue;
+    }
     if (j.category && hidden.has(j.category)) {
       insertJob(j, key, "skipped", `not the kind of work you're looking for (${kindName(j.category)})`, null);
       addTo(keys, j.url, key);
@@ -314,7 +321,7 @@ export async function discover(progress = () => {}, ctx = {}) {
     insertJob(j, key, "skipped", `screen failed ${n} times, so it isn't tried again for a day: ${plainAiError(error).slice(0, 200)}`, null);
     log(j.slug, `skipped: screen failed ${n} times`, "warn");
   }
-  log(null, `discovery done: ${found.size} new results, ${added} queued, ${toYou} for you to apply to`);
+  log(null, `search done: ${found.size} new results, ${added} up next, ${toYou} for you to apply to`);
   Object.assign(lastSearch, { found: found.size, queued: added, toYou, done: true });
   return added;
 }

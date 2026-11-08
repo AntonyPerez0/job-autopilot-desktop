@@ -293,7 +293,7 @@ const INTERVIEW = /\binterview\b|\bphone screen\b|\b(schedule|set up|book|find) 
 const ASSESS = /\bassessment\b|\bskills? test\b|\bquestionnaire\b|\bcomplete (the|this|a|our) (test|task|assignment|exercise|challenge)\b|\bhirevue\b|\bcodesignal\b|\bhackerrank\b|\bcriteria corp\b|\bpre-?employment test\b/i;
 const INFO = /\b(additional|more|further) (information|details|documents?)\b|\bplease (provide|send|complete|confirm|upload|fill out)\b|\bbackground (check|screening)\b|\breferences\b|\baction (required|needed)\b|\bmissing (information|documents?)\b/i;
 const MAYBE = /\b(if|should|once|whether)\b[^.!?]{0,160}\b(we|you|your|there|qualifications|background|experience|skills)\b|\bwill (be in touch|contact you|reach out|get back to you)\b|\bmay (contact|reach out)\b/i;
-export const REPLY_KINDS = { offer: "Offer", interview: "Wants to talk", assessment: "Test or task", info: "Needs something from you", rejection: "Not moving forward", received: "Application received", other: "Reply" };
+export const REPLY_KINDS = { offer: "Offer", interview: "Wants to talk", assessment: "Test or task", info: "Needs something from you", rejection: "Not selected", received: "Application received", other: "Reply" };
 export function classifyReply(subject, text) {
   const all = `${subject || ""}. ${String(text || "").slice(0, 8000)}`;
   if (OFFER.test(all)) return "offer";

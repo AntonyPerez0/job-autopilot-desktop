@@ -101,16 +101,25 @@ for (const size of process.env.QUICK ? [] : [{ width: 900, height: 700 }, { widt
   }
 }
 
-// The dialogs: the short tour, and "Something's wrong" with a practice application.
+// The dialogs: Start sending (with the practice applications), "Something's wrong" with a practice application, and
+// an answer corrected in place.
 await win.setViewportSize({ width: 1400, height: 900 }).catch(() => {});
 for (const scheme of ["light", "dark"]) {
   await win.emulateMedia({ colorScheme: scheme, reducedMotion: "reduce" });
   await go("overview");
-  await win.evaluate(() => showTour());
-  await win.waitForSelector(".modal #tour");
-  await audit(`tour (${scheme})`);
+  await win.evaluate(() => startSending());
+  await win.waitForSelector(".modal #m-also");
+  await audit(`start sending (${scheme})`);
   await win.keyboard.press("Escape");
   await go("filled");
+  await win.evaluate(() => openJob("acme-3"));
+  await win.waitForSelector("#drawer [data-edit-answer]");
+  await win.click("#drawer [data-edit-answer]");
+  await win.waitForSelector("#drawer [data-save-answer]");
+  await win.click("#drawer .more-acts > summary");
+  await audit(`practice application, an answer being changed, More open (${scheme})`);
+  await win.keyboard.press("Escape");
+  await win.waitForSelector("#drawer.open", { state: "detached" }).catch(() => {});
   await win.evaluate(() => openJob("acme-3"));
   await win.waitForSelector('#drawer button:has-text("Something")');
   await win.click('#drawer button:has-text("Something")');
@@ -125,7 +134,8 @@ for (const scheme of ["light", "dark"]) {
 // The keyboard alone: Tab reaches the sidebar's pages and a job; Enter opens it; Escape closes it and focus returns.
 await win.setViewportSize({ width: 1400, height: 900 }).catch(() => {});
 await go("all");
-await win.evaluate(() => document.activeElement && document.activeElement.blur());
+// From the top of the window, as when the app opens (the last dialog closed left the focus on the page itself).
+await win.evaluate(() => document.querySelector(".skip").focus());
 const reached = new Set();
 let opened = false, returned = false;
 for (let i = 0; i < 80 && !opened; i++) {

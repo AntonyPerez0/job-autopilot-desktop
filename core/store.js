@@ -72,6 +72,7 @@ export const PREFS_DEFAULTS = {
   seniority: ["junior", "middle"], // freehire levels the user accepts
   internships: false,
   maxYearsRequired: 3,
+  yearsInField: null,        // years of the kind of work they look for (null: their resume's dates); with stretchYears, the most a job may ask
   stretchYears: 1,           // apply when a job asks for at most this many more years than they have (0: never)
   perCompanyMonth: 2,        // at most this many applications to one employer in 30 days (0: no limit)
   notForMeKinds: [],         // kinds of work (freehire categories) they said aren't for them
@@ -158,6 +159,7 @@ export function clampPrefs(patch = {}) {
   if ("alreadyApplied" in p) p.alreadyApplied = String(p.alreadyApplied || "").slice(0, 50000);
   const pick = (k, ok, fallback) => { if (k in p && !ok.includes(Number(p[k]))) p[k] = fallback; else if (k in p) p[k] = Number(p[k]); };
   pick("stretchYears", [0, 1, 2], 1);
+  if ("yearsInField" in p) p.yearsInField = p.yearsInField === null || p.yearsInField === "" || !Number.isFinite(Number(p.yearsInField)) ? null : Math.max(0, Math.min(50, Math.round(Number(p.yearsInField) * 2) / 2));
   pick("perCompanyMonth", [0, 1, 2, 3], 2);
   pick("referralHoldDays", [0, 2, 3, 5], 3);
   if ("notForMeKinds" in p) p.notForMeKinds = strs(p.notForMeKinds, 60, 40);

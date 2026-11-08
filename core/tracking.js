@@ -4,7 +4,7 @@ import { getDb } from "./db.js";
 import { titleOk } from "./discover.js";
 import { loadConnections, peopleAt, wording } from "./referrals.js";
 
-export const STAGES = { waiting: "Waiting to hear", interviewing: "Interviewing", offer: "Offer", rejected: "Not moving forward", withdrew: "You withdrew" };
+export const STAGES = { waiting: "Waiting to hear", interviewing: "Interviewing", offer: "Offer", rejected: "Not selected", withdrew: "You withdrew" };
 const parse = (s) => { try { return JSON.parse(s || "{}") || {}; } catch { return {}; } };
 const SENT = "status IN ('applied', 'submitting') AND applied_at IS NOT NULL";
 

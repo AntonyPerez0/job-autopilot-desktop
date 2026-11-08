@@ -22,6 +22,8 @@
   --color-scrim: oklch(20% 0.014 262 / 0.4);
   --color-done: oklch(46% 0.115 150); --color-done-bg: oklch(95% 0.04 152);
   --color-work: oklch(46% 0.085 215); --color-work-bg: oklch(95% 0.028 215);
+  /* Practice: filled in, nothing sent. Its own colour, so it never reads as something waiting on the person. */
+  --color-practice: oklch(47% 0.13 300); --color-practice-bg: oklch(95.5% 0.025 300);
   --color-attn-strong: oklch(64% 0.15 68);
   --radius-card: 8px; --radius-input: 6px; --radius-pill: 999px; --radius-stock: 8px; --rule-hair: 1px;
   --shadow-card: 0 1px 2px oklch(20% 0.014 262 / 0.06);
@@ -45,6 +47,7 @@
     --color-attn: oklch(83% 0.11 85); --color-attn-bg: oklch(26% 0.016 262);
     --color-done: oklch(79% 0.11 150); --color-done-bg: oklch(25% 0.04 155);
     --color-work: oklch(81% 0.075 205); --color-work-bg: oklch(25% 0.035 220);
+    --color-practice: oklch(82% 0.08 300); --color-practice-bg: oklch(25% 0.035 300);
     --color-attn-strong: oklch(80% 0.13 80);
     --color-scrim: oklch(8% 0.01 262 / 0.6);
     --shadow-card: none;
