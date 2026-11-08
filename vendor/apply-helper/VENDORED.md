@@ -47,4 +47,11 @@ Local changes, kept as small as possible:
     other text is found from the first `{` to the last `}` with indexOf (the same span `/\{[\s\S]*\}/`
     matched, without its quadratic time on a reply full of braces). Security audit 3.6.
 
-To update: copy the new files over these, reapply the ten edits, run `npm test`.
+11. `content.js` (`labelOf`, `collect`, `sectionOf`, `pickFromList`): fixes from diagnostics reports. A label that
+    wraps its control gives its own words only, "(required)" marks a field as required, a label used twice is named
+    after its section (headings read without their buttons' words), and a list entry is matched on its first line too.
+
+12. `content.js` (`values`): a `values` message reports what each field holds now, as the person sees it, so
+    "Finish with me" can keep the answers a person types into the questions the app couldn't answer.
+
+To update: copy the new files over these, reapply the twelve edits, run `npm test`.

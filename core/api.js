@@ -2,8 +2,8 @@
 // wires it to IPC; nothing listens on the network.
 import fs from "node:fs";
 import path from "node:path";
-import { getDb, getJob, setJob, appliedToday, log } from "./db.js";
-import { state, kick, forceSearch, searchBrowser, checkReplies } from "./worker.js";
+import { getDb, getJob, setJob, appliedToday, log, sqlTime } from "./db.js";
+import { state, kick, forceSearch, searchBrowser, checkReplies, closedOnes, peekNext, finishable, finishControl, requestFinish } from "./worker.js";
 import {
   dataDir, getAnswers, getPrefs, getProfile, getSecret, getSettings, saveAnswers, savePrefs, saveProfile, saveSettings, setSecret,
 } from "./store.js";
@@ -27,6 +27,14 @@ import { importProjects, listRepos, placeProjects, usernameOf } from "./github.j
 import { LIMITS, clearTalk, getTalk, notReady, say } from "./talk.js";
 import { cancelConnect, connectOpenRouter } from "./oauth.js";
 import { diagnostics } from "./diagnostics.js";
+import { hiddenKinds, kindName } from "./kinds.js";
+import { findBoard } from "./sources/watchlist.js";
+import { clearConnections, loadConnections, parseConnections, peopleAt, referralNote, saveConnections } from "./referrals.js";
+import { STAGES, followUpNote, followUps, insights, stageOf } from "./tracking.js";
+import { prepFor } from "./prep.js";
+import { suggestPay } from "./pay.js";
+import { candidateFacts } from "./facts.js";
+import { LEGAL_RX } from "./truth.js";
 import { asksFor, removeYourAnswer, saveYourAnswers } from "./asked.js";
 import { monthUse, testKey as testSerpKey } from "./sources/google.js";
 import { testKey as testUsajobsKey } from "./sources/usajobs.js";
@@ -78,7 +86,9 @@ const SKIP_GROUPS = [
   [/title|does not match|doesn't match|different (kind|role)|not a .* role|unrelated/i, "are a different kind of job than your titles"],
   [/already applied/i, "you already applied to"],
   [/closed/i, "had closed"],
-  [/agency|staffing/i, "are from staffing agencies"],
+  [/agency|staffing|recruit/i, "are from recruiters or staffing companies"],
+  [/scam|training program/i, "look like scams"],
+  [/not the kind of work/i, "are kinds of work you left out"],
 ];
 function skipSummary(db) {
   const rows = db.prepare("SELECT reason FROM jobs WHERE status = 'skipped' AND updated_at > datetime('now', '-1 day')").all();
@@ -91,18 +101,23 @@ function status() {
   const db = getDb();
   const counts = Object.fromEntries(db.prepare("SELECT status, COUNT(*) n FROM jobs GROUP BY status").all().map((r) => [r.status, r.n]));
   const s = getSettings();
-  const next = db.prepare(`SELECT slug, title, company FROM jobs WHERE status = 'queued' AND attempts < ?
-    ORDER BY (reason LIKE 'you answered %') DESC, (work_mode = 'remote') ASC, posted_at DESC LIMIT 1`).get(s.maxAttempts) || null;
+  const n0 = peekNext();
+  const next = n0 && { slug: n0.slug, title: n0.title, company: n0.company };
   const firstFilled = db.prepare("SELECT slug, title, company FROM jobs WHERE status = 'filled' ORDER BY updated_at ASC LIMIT 1").get() || null;
   const toAnswer = db.prepare("SELECT slug, title, company FROM jobs WHERE status = 'failed' AND reason LIKE 'could not fill every required field%' ORDER BY updated_at DESC").all();
   // Applications stopped at an emailed code or confirmation link: the mailbox would finish them.
   const codes = db.prepare("SELECT slug, title, company FROM jobs WHERE status = 'failed' AND (reason LIKE 'security code:%' OR reason LIKE 'verify email:%') ORDER BY updated_at DESC").all();
+  const follow = followUps(db);
+  // Interviews to get ready for: an employer asked to talk (or the person said so), and no prep notes yet.
+  const interviews = db.prepare(`SELECT slug, title, company FROM jobs j WHERE status IN ('applied', 'submitting') AND details NOT LIKE '%"prep":{%'
+    AND (stage = 'interviewing' OR (stage IS NULL AND EXISTS (SELECT 1 FROM replies r WHERE r.slug = j.slug AND r.kind IN ('interview', 'assessment')))) ORDER BY updated_at DESC`).all();
+  const holds = db.prepare("SELECT slug, title, company, hold_until FROM jobs WHERE status = 'queued' AND hold_until > ? ORDER BY hold_until ASC").all(sqlTime());
   const { wake, ...st } = state;
   // Replies from employers the person hasn't opened yet, the ones asking something of them first.
   const replies = db.prepare(`SELECT r.slug, r.kind, r.subject, r.at, j.company, j.title FROM replies r JOIN jobs j ON j.slug = r.slug WHERE r.seen = 0
     ORDER BY CASE r.kind WHEN 'offer' THEN 0 WHEN 'interview' THEN 1 WHEN 'assessment' THEN 2 WHEN 'info' THEN 3 ELSE 4 END, r.at DESC`).all();
   return { state: st, counts, appliedToday: appliedToday(), settings: s, model: s.ai.model, serverNow: Date.now(), next, firstFilled, toAnswer: { count: toAnswer.length, first: toAnswer[0] || null },
-    codes: { count: codes.length, first: codes[0] || null },
+    codes: { count: codes.length, first: codes[0] || null }, referrals: { count: holds.length, first: holds[0] || null }, followups: follow.length, interviews: { count: interviews.length, first: interviews[0] || null },
     replies: { unseen: replies.length, act: replies.filter((r) => ["offer", "interview", "assessment", "info"].includes(r.kind)).length, first: replies[0] || null, checkedAt: s.repliesCheckedAt || null, mailbox: !!(s.mailbox && getSecret("mailPassword")) }, search: lastSearch.at ? { ...lastSearch, nextAt: state.nextSearch || null, skipped: lastSearch.done && !counts.queued ? skipSummary(db) : null } : null, version: VERSION,
     browser: { open: browserOpen(), mode: windowModeOf(s) }, update: updater ? updater.state() : null, missingAnswers: missingAnswers() };
 }
@@ -116,6 +131,9 @@ function missingAnswers(a = getAnswers(), prefs = getPrefs()) {
   if (prefs.jobKind !== "hourly" && !(a.years || []).some((y) => y && y.type)) out.push("your years of experience");
   // Only some forms ask a county; once one has stopped on it, the To do list asks.
   if (!String(a.county || "").trim() && getDb().prepare("SELECT 1 FROM jobs WHERE status = 'failed' AND reason LIKE '%: County%' LIMIT 1").get()) out.push("your county");
+  // The same for pay: a form that wants a number for it stops without one.
+  if (!String(a.salary || "").trim() && getDb().prepare(`SELECT 1 FROM jobs WHERE status = 'failed' AND reason LIKE 'could not fill every required field%'
+    AND (reason LIKE '%salary%' OR reason LIKE '%compensation%' OR reason LIKE '%desired pay%' OR reason LIKE '%pay expectation%' OR reason LIKE '%expected pay%' OR reason LIKE '%hourly rate%' OR reason LIKE '%wage%') LIMIT 1`).get()) out.push("your desired pay");
   return out;
 }
 
@@ -153,12 +171,27 @@ const ROUTES = {
   "GET /api/jobs": (_, q) => {
     const st = q.get("status");
     const sql = `SELECT slug, title, company, location, work_mode, source, url, apply_url, salary, posted_at, found_at, status, reason,
-      attempts, updated_at, applied_at, reviewed, resume_file, screenshot, (SELECT kind FROM replies r WHERE r.slug = jobs.slug ORDER BY r.at DESC LIMIT 1) AS reply FROM jobs ${st ? "WHERE status = ?" : ""}
+      attempts, updated_at, applied_at, reviewed, resume_file, screenshot, stage, (SELECT kind FROM replies r WHERE r.slug = jobs.slug ORDER BY r.at DESC LIMIT 1) AS reply FROM jobs ${st ? "WHERE status = ?" : ""}
       ORDER BY CASE status WHEN 'working' THEN 0 WHEN 'applied' THEN 1 WHEN 'filled' THEN 2 WHEN 'queued' THEN 3 WHEN 'failed' THEN 4 ELSE 5 END,
       COALESCE(applied_at, updated_at) DESC LIMIT 1000`;
     return st ? getDb().prepare(sql).all(st) : getDb().prepare(sql).all();
   },
   "GET /api/events": () => getDb().prepare("SELECT * FROM events ORDER BY id DESC LIMIT 300").all(),
+  // Practice runs sent for real: each is filled in again and submitted (a practice run is never sent as it is),
+  // at the daily pace. The ones whose postings have closed are left out.
+  "POST /api/practice/send": async (b) => {
+    const db = getDb();
+    const rows = db.prepare("SELECT * FROM jobs WHERE status = 'filled'").all().filter((j) => !Array.isArray(b.slugs) || b.slugs.includes(j.slug));
+    const closed = await closedOnes(rows);
+    for (const j of rows) {
+      if (closed.has(j.slug)) setJob(j.slug, { status: "skipped", reason: "posting closed before it could be sent" });
+      else setJob(j.slug, { status: "queued", attempts: 0, real: 1, reviewed: 1, reason: "a practice run you chose to send for real" });
+    }
+    if (rows.length > closed.size && !getSettings().reviewedDryRun) saveSettings({ reviewedDryRun: true });
+    log(null, `practice runs sent for real: ${rows.length - closed.size} queued${closed.size ? `, ${closed.size} closed` : ""}`);
+    kick();
+    return { queued: rows.length - closed.size, closed: closed.size };
+  },
   "POST /api/search": () => { forceSearch(); return { ok: true }; },
   "POST /api/settings": (b) => {
     const cur = getSettings(), patch = {};
@@ -327,6 +360,69 @@ const ROUTES = {
     const next = b.clear ? [] : code && !cur.some((x) => x.code === code) ? [...cur, { code, title: String(b.title || code).slice(0, 80) }] : cur;
     savePrefs({ notForMe: next });
     return { notForMe: next };
+  },
+  // "What pay should I ask for?": what open postings for their kind of work, level and country pay (freehire's figures).
+  "GET /api/pay/suggest": async () => {
+    const a = getAnswers(), prefs = getPrefs();
+    const titles = (prefs.titles || []).length ? prefs.titles : [a.currentTitle].filter(Boolean);
+    try { return await suggestPay({ titles, years: candidateFacts(a, approvedOnly(getProfile() || {}), prefs).totalYears, answers: a, prefs }); } catch (e) { return bad(e.message); }
+  },
+  // Applications worth a follow-up (sent 10 to 60 days ago, no answer), each with a note to send.
+  "GET /api/followups": () => { const a = getAnswers(); return followUps().map((j) => ({ ...j, note: followUpNote(j, a) })); },
+  // What's working: replies and interviews by where jobs were found, job title, resume version and fit.
+  "GET /api/insights": () => insights(getPrefs(), getProfile()),
+  // People they know, from LinkedIn's Connections.csv: kept on this computer. Jobs waiting in the queue at their
+  // companies wait a few days too, so they can ask for a referral first.
+  "GET /api/connections": () => { const c = loadConnections(); return { count: (c.people || []).length, at: c.at || null, holdDays: getPrefs().referralHoldDays }; },
+  "POST /api/connections/import": (b) => {
+    let list;
+    try { list = parseConnections(String(b.csv || "").slice(0, 20e6)); } catch (e) { return bad(e.message); }
+    if (!list.length) return bad("That file has no connections in it.");
+    saveConnections(list);
+    const days = Number(getPrefs().referralHoldDays) || 0;
+    let held = 0;
+    if (days) for (const j of getDb().prepare("SELECT slug, company FROM jobs WHERE status = 'queued' AND attempts = 0 AND hold_until IS NULL").all()) {
+      if (peopleAt(j.company, list).length) { setJob(j.slug, { hold_until: sqlTime(Date.now() + days * 86400000) }); held++; }
+    }
+    log(null, `imported ${list.length} LinkedIn connections${held ? `; ${held} queued job${held === 1 ? "" : "s"} wait so you can ask for a referral` : ""}`);
+    return { count: list.length, companies: new Set(list.map((p) => p.company.toLowerCase())).size, held };
+  },
+  "POST /api/connections/clear": () => {
+    clearConnections();
+    getDb().prepare("UPDATE jobs SET hold_until = NULL WHERE status = 'queued'").run();
+    kick();
+    return { count: 0 };
+  },
+  "POST /api/connections/hold": (b) => { savePrefs({ referralHoldDays: Number(b.days) }); return { holdDays: getPrefs().referralHoldDays }; },
+  // Companies they'd love to work for: their own job boards, read on every search.
+  "POST /api/watch/add": async (b) => {
+    const input = String(b.input || "").trim();
+    if (!input) return bad("Type a company's name, or paste a link to its jobs page.");
+    const w = getPrefs().watch || [];
+    if (w.length >= 30) return bad("That's 30 companies already: remove one first.");
+    let found;
+    try { found = await findBoard(input); } catch (e) { return bad(e.message); }
+    if (!found) return bad(`Couldn't find ${/^https?:/i.test(input) ? "a job board on that page" : `${input}'s job board`}. The app reads boards on Greenhouse, Lever and Ashby: paste a link to one of its job postings, or to its careers page.`);
+    if (!w.some((x) => x.ats === found.ats && x.token === found.token)) savePrefs({ watch: [...w, { name: found.name, ats: found.ats, token: found.token }] });
+    log(null, `watching ${found.name}'s job board (${found.ats}, ${found.jobs} open jobs)`);
+    forceSearch();
+    return { watch: getPrefs().watch, found };
+  },
+  "POST /api/watch/remove": (b) => {
+    savePrefs({ watch: (getPrefs().watch || []).filter((x) => !(x.ats === b.ats && x.token === b.token)) });
+    return { watch: getPrefs().watch };
+  },
+  // Kinds of work left out before the AI reads a posting: the person's and the app's. {hide} leaves one out,
+  // {show} brings one back (and keeps the app from learning to leave it out again).
+  "GET /api/kinds": () => hiddenKinds(getPrefs()),
+  "POST /api/kinds": (b) => {
+    const p = getPrefs(), code = String(b.hide || b.show || "").trim().slice(0, 40);
+    if (!/^[a-z_]+$/.test(code)) return bad("Which kind of work?");
+    const mine = new Set(p.notForMeKinds || []), kept = new Set(p.keepKinds || []);
+    if (b.hide) { mine.add(code); kept.delete(code); } else { mine.delete(code); kept.add(code); }
+    savePrefs({ notForMeKinds: [...mine], keepKinds: [...kept] });
+    log(null, `${b.hide ? "left out" : "brought back"}: ${kindName(code)} jobs`);
+    return hiddenKinds(getPrefs());
   },
   // Replies from employers, newest first, with the job each answers; "check" reads the mailbox now.
   "GET /api/replies": () => getDb().prepare(`SELECT r.id, r.slug, r.at, r.sender, r.subject, r.kind, r.snippet, r.seen, j.company, j.title FROM replies r JOIN jobs j ON j.slug = r.slug
@@ -633,6 +729,15 @@ async function jobRoute(slug, b) {
   const j = getJob(slug);
   if (!j) return bad("not found", 404);
   if (b && b.action === "resume") { try { const e = await resumeFor(j); if (e) return e; } catch (e) { return bad(e.message); } }
+  // Interview prep: for the person only, from the posting and their own approved lines.
+  else if (b && b.action === "prep") {
+    if (!aiSettings().apiKey) return bad("Connect an AI first (Settings > AI).");
+    try {
+      const prep = await prepFor(j, getProfile());
+      setJob(slug, { details: { ...JSON.parse(j.details || "{}"), prep } });
+      log(slug, "made interview prep notes");
+    } catch (e) { return bad(e.message); }
+  }
   else if (b && b.action) {
     if (b.action === "retry") {
       if (j.status === "applied" || j.status === "submitting") return bad("Already applied; it will not be sent twice.", 409);
@@ -644,6 +749,66 @@ async function jobRoute(slug, b) {
       setJob(slug, { status: "skipped", reason: "you skipped it" });
       log(slug, "you skipped it");
     }
+    // "Not this kind of work": this kind is left out from now on, and the jobs of that kind waiting in the queue are
+    // skipped too. The answer lists them, for Undo.
+    if (b.action === "notkind") {
+      const cat = (JSON.parse(j.details || "{}") || {}).category;
+      if (!cat) return bad("The app doesn't know what kind of work this one is. Use Skip instead.", 409);
+      const p = getPrefs();
+      savePrefs({ notForMeKinds: [...new Set([...(p.notForMeKinds || []), cat])], keepKinds: (p.keepKinds || []).filter((x) => x !== cat) });
+      const reason = `not the kind of work you're looking for (${kindName(cat)})`;
+      const rows = getDb().prepare("SELECT slug, status, reason, details FROM jobs WHERE status IN ('queued', 'manual', 'failed', 'filled')").all()
+        .filter((r) => r.slug === slug || (() => { try { return JSON.parse(r.details).category === cat; } catch { return false; } })());
+      for (const x of rows) setJob(x.slug, { status: "skipped", reason });
+      log(slug, `you left out ${kindName(cat)} jobs (${rows.length} skipped)`);
+      kick();
+      return { ...(await jobRoute(slug, null)), leftOut: { code: cat, name: kindName(cat), jobs: rows.map(({ slug: s1, status, reason: why }) => ({ slug: s1, status, reason: why })) } };
+    }
+    if (b.action === "notkind-undo") {
+      const code = String(b.code || "");
+      const p = getPrefs();
+      savePrefs({ notForMeKinds: (p.notForMeKinds || []).filter((x) => x !== code) });
+      for (const x of Array.isArray(b.jobs) ? b.jobs.slice(0, 500) : []) {
+        const cur = getJob(String(x.slug || ""));
+        if (cur && cur.status === "skipped" && ["queued", "manual", "failed", "filled"].includes(x.status)) setJob(cur.slug, { status: x.status, reason: String(x.reason || "").slice(0, 2000) });
+      }
+      log(slug, `you brought back ${kindName(code)} jobs`);
+    }
+    // Where an application stands, as the person says; and its follow-up, sent or not wanted.
+    if (b.action === "stage") {
+      if (!["applied", "submitting"].includes(j.status)) return bad("Only an application that was sent has a stage.", 409);
+      const stage = b.stage === "auto" ? null : String(b.stage || "");
+      if (stage && !STAGES[stage]) return bad("Which stage?");
+      setJob(slug, { stage });
+      log(slug, stage ? `you marked it: ${STAGES[stage].toLowerCase()}` : "stage set back to what the replies say");
+    }
+    if (b.action === "followed" || b.action === "nofollow") {
+      setJob(slug, { followed_up_at: b.action === "followed" ? sqlTime() : "no" });
+      if (b.action === "followed") log(slug, "you followed up");
+    }
+    // Finish with me: the app fills it in a window in front of the person, then it's their turn (see worker.js).
+    if (b.action === "finish") {
+      const why = requestFinish(slug);
+      if (why) return bad(why, 409);
+      log(slug, "you asked to finish this one with the app");
+    }
+    if (b.action === "finish-stop" || b.action === "finish-sent") {
+      if (!state.finish || state.finish.slug !== slug) return bad("It isn't being finished right now.", 409);
+      if (!finishControl(b.action === "finish-stop" ? "stop" : "sent")) return bad("It isn't your turn yet: the app is still filling it in.", 409);
+      if (b.action === "finish-sent") log(slug, "you said you sent it");
+    }
+    // After finishing it: the answers they typed into the questions the app couldn't answer, kept for every application
+    // (the ones they ticked), or not.
+    if (b.action === "keep-typed") {
+      const d = JSON.parse(j.details || "{}");
+      const want = new Set(Array.isArray(b.labels) ? b.labels.map(String) : []);
+      const keep = (d.finishTyped || []).filter((x) => want.has(x.label));
+      if (keep.length) saveYourAnswers(j, keep.map((x) => ({ label: x.label, value: x.value, remember: true })));
+      setJob(slug, { details: { ...d, finishKept: true } });
+      if (keep.length) log(slug, `you kept ${keep.length} answer${keep.length === 1 ? "" : "s"} for every application`);
+    }
+    // Held for a referral: apply now instead.
+    if (b.action === "apply-now") { setJob(slug, { hold_until: null }); log(slug, "you chose not to wait for a referral"); }
     // Undo a skip: back where it was.
     if (b.action === "unskip") {
       if (j.status !== "skipped") return bad("It isn't skipped anymore.", 409);
@@ -665,6 +830,15 @@ async function jobRoute(slug, b) {
       setJob(slug, { status: "queued", attempts: 0, reason: `you answered ${n} question${n === 1 ? "" : "s"}; trying again with your answer${n === 1 ? "" : "s"}` });
       log(slug, `you answered ${n} question${n === 1 ? "" : "s"}; queued again`);
     }
+    // One practice run, sent for real: filled in again and submitted, even while practicing.
+    if (b.action === "send") {
+      if (j.status !== "filled") return bad("Only a practice run can be sent this way.", 409);
+      const closed = await closedOnes([j]);
+      if (closed.size) { setJob(slug, { status: "skipped", reason: "posting closed before it could be sent" }); return bad("That posting has closed, so it can't be sent. It's moved to Skipped.", 409); }
+      setJob(slug, { status: "queued", attempts: 0, real: 1, reviewed: 1, reason: "you asked to send it for real" });
+      if (!getSettings().reviewedDryRun) saveSettings({ reviewedDryRun: true });
+      log(slug, "you asked to send this practice run for real");
+    }
     if (b.action === "reviewed") {
       if (j.status !== "filled") return bad("Only a practice application (filled in, not sent) can be checked.", 409);
       setJob(slug, { reviewed: 1 });
@@ -680,5 +854,13 @@ async function jobRoute(slug, b) {
   const replies = getDb().prepare("SELECT id, at, sender, subject, kind, snippet, seen FROM replies WHERE slug = ? ORDER BY at DESC").all(slug);
   // Opened: its replies have been seen.
   if (!b && replies.some((r) => !r.seen)) getDb().prepare("UPDATE replies SET seen = 1 WHERE slug = ?").run(slug);
-  return { ...out, details: d, asks, replies };
+  const a = getAnswers();
+  const people = peopleAt(out.company).slice(0, 8).map((p) => ({ ...p, note: referralNote(p, out, a) }));
+  const held = out.status === "queued" && out.hold_until && out.hold_until > sqlTime() ? out.hold_until : null;
+  const sent = ["applied", "submitting"].includes(out.status);
+  // The answers they typed while finishing it, to keep for every application: never legal questions (About you has
+  // its own settings for those).
+  const typed = out.status === "applied" && !d.finishKept ? (d.finishTyped || []).filter((x) => !LEGAL_RX.test(x.label)) : [];
+  return { ...out, details: d, asks, replies, people, held, finishable: finishable(out), typed,
+    ...(sent ? { standing: stageOf(out, replies), stages: STAGES } : {}) };
 }

@@ -116,3 +116,25 @@ test("years of experience come from the resume's job dates when the person hasn'
   assert.ok(a.totalYears >= 3);
   assert.strictEqual(a.years[0].type, "Software Engineer");
 });
+
+test("near misses on years: the rule is there only when the person chose it, and forms still get their real numbers", () => {
+  const rules = (stretchYears) => autopilotRules(exampleAnswers(), approvedExample(Profile), { ...examplePrefs(), stretchYears });
+  assert.match(rules(1), /at most 1 year short of is NOT a hard fail.*Their answers to "how many years" stay their real numbers/s);
+  assert.match(rules(2), /at most 2 years short of/);
+  assert.doesNotMatch(rules(0), /short of is NOT a hard fail/);
+  assert.doesNotMatch(rules(7), /short of is NOT a hard fail/, "only 1 or 2");
+});
+
+test("Finish with me: the form moved on when its address changes or most of its questions do, seen twice in a row", async () => {
+  const { movedOn } = await import("../core/apply.js");
+  const page1 = ["First name *", "Last name *", "Shirt size *"];
+  const same = movedOn("https://jobs.example/apply#top", page1);
+  assert.strictEqual(same("https://jobs.example/apply#more", [...page1, "Shirt color"]), false, "one more question is the same page");
+  assert.strictEqual(same("https://jobs.example/apply/", page1), false);
+  const next = movedOn("https://jobs.example/apply", page1);
+  assert.strictEqual(next({ url: () => "https://jobs.example/apply" }, ["Phone *", "Days available *"]), false, "once could be a page still loading");
+  assert.strictEqual(next({ url: () => "https://jobs.example/apply" }, ["Phone *", "Days available *"]), true);
+  const moved = movedOn("https://jobs.example/apply/1", page1);
+  moved("https://jobs.example/apply/2", page1);
+  assert.strictEqual(moved("https://jobs.example/apply/2", page1), true, "another address");
+});

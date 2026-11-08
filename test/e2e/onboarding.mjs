@@ -463,6 +463,12 @@ try {
   await win.waitForSelector('.modal h2:has-text("Start sending applications for real?")');
   await win.click('.modal button:has-text("Start sending")');
   await win.waitForSelector('#mode-txt:has-text("Sending")');
+  // Right after, the app offers to send the practice runs too ("Not now" here, so nothing is queued).
+  await win.waitForSelector('.modal h2:has-text("Send your 1 practice application too?")');
+  await shot("14b-send-practice");
+  await win.click('.modal button:has-text("Not now")');
+  await win.waitForSelector(".modal", { state: "detached" });
+  assert.strictEqual(new DatabaseSync(path.join(data, "autopilot.db")).prepare("SELECT status FROM jobs WHERE slug = 'globex-practice'").get().status, "filled", "not sent unless asked");
   await win.click("#pause");
   const live = JSON.parse(fs.readFileSync(path.join(data, "settings.json"), "utf8"));
   assert.deepStrictEqual([live.dryRun, live.reviewedDryRun, live.paused], [false, true, true]);

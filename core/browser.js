@@ -228,9 +228,18 @@ export const browserOpen = () => !!shared;
 export async function showBrowser(show) {
   if (!shared || shared.mode) return false;
   const pages = shared.ctx.pages();
-  const page = pages[pages.length - 1];
+  // The tab the person is finishing an application in, when there is one; else the newest.
+  const page = pages.find((p) => p === broughtUp && !p.isClosed()) || pages[pages.length - 1];
   if (!page) return false;
   if (!show) return keepFocus("minimized", () => tuck(page));
+  await bringUp(page);
+  return true;
+}
+
+// One tab in front of the person, its window restored and on screen ("Finish with me").
+let broughtUp = null;
+export async function bringUp(page) {
+  broughtUp = page;
   await setWindowState(page, "normal");
   if (process.platform === "darwin") {
     try {
@@ -238,9 +247,8 @@ export async function showBrowser(show) {
       await s.send("Browser.setWindowBounds", { windowId, bounds: { left: 80, top: 80, width: 1280, height: 800 } });
       await s.detach().catch(() => {});
     } catch { /* still brought to front below */ }
-    const app = { chrome: "Google Chrome", msedge: "Microsoft Edge" }[shared.channel] || (chromiumPath() || "").replace(/(\.app)\/.*$/, "$1");
+    const app = { chrome: "Google Chrome", msedge: "Microsoft Edge" }[shared && shared.channel] || (chromiumPath() || "").replace(/(\.app)\/.*$/, "$1");
     if (app) execFile("/usr/bin/open", ["-a", app], { timeout: 5000 }, () => {});
   }
   await page.bringToFront().catch(() => {});
-  return true;
 }

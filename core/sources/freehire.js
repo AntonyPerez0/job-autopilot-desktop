@@ -36,6 +36,7 @@ export function normalize(j, similarTo = "") {
     url: j.official_job_url || j.url, apply_url: null, ats: j.source, kind: "auto", board: "freehire",
     posted_at: j.posted_at || "", salary: j.salary_min ? `${j.salary_currency || "USD"} ${j.salary_min.toLocaleString()}${j.salary_max ? "-" + j.salary_max.toLocaleString() : ""}/${j.salary_period || "year"}` : null,
     level: j.seniority || "", minYears: null, sponsorship: j.visa_sponsorship ?? null, description: "", ...(similarTo ? { similarTo } : {}),
+    category: j.category || "", company_slug: j.company_slug || "",
     // the full posting is read only for jobs that pass the filters
     details: async () => {
       const d = await call("get_job", { slug: j.slug });

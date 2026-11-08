@@ -5,7 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { CONTENT_JS, loadProfile, plan, build } from "./engine.js";
 import { log } from "./db.js";
-import { acquireBrowser, closeAppPage, closeBrowser, newAppPage } from "./browser.js";
+import { acquireBrowser, bringUp, closeAppPage, closeBrowser, newAppPage } from "./browser.js";
 import { dataDir, getAnswers, getPrefs, getSettings } from "./store.js";
 import { mailDomainsFor, waitForCode, waitForLink } from "./mail.js";
 import { isWorkday, siteAccounts, workdayAccount, workdayApplyManually } from "./accounts.js";
@@ -13,7 +13,7 @@ import { withinRadius } from "./geo.js";
 import { US_ABBR as US_STATES } from "./facts.js";
 import { HEARD_RX, heardOption } from "./truth.js";
 import { hostOf, isApplicationSystem, isGovUrl } from "./ats.js";
-import { applyYourAnswers, promoteYourAnswers, yourAnswersFor } from "./asked.js";
+import { applyYourAnswers, labelKey, promoteYourAnswers, yourAnswersFor } from "./asked.js";
 import { LOGIN_WALL_JS } from "./ats.js";
 
 // The steps of one application, in order, as the dashboard shows them.
@@ -905,14 +905,153 @@ const BOT_CHECK_RX = /verification required|verify (that )?you are (a )?human|ar
 const CLOSED_RX = /no longer (accepting|available|open)|position (has been )?filled|job (is )?closed|page not found|job not found|job you requested was not found|posting (is )?(closed|expired)|this job (has )?expired/i;
 const MAX_PAGES = 8;
 
-// hooks: progress(stepKey), onFilled(page), status(text), opts: { dryRun, settings, answers, prefs, mailbox, browser }
+// ---------- "Finish with me": the person's turn, in the same window ----------
+// The note at the bottom of the page while it's their turn. Display only: nothing in it can be pressed, it never takes a
+// click (pointer-events: none), and its words sit in a closed shadow root, out of the page's text.
+const bannerJs = (text) => `(() => {
+  let host = document.getElementById("job-autopilot-turn");
+  if (!host || !host.__t) {
+    if (host) host.remove();
+    host = document.createElement("div");
+    host.id = "job-autopilot-turn";
+    host.style.cssText = "all:initial;position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:2147483647;pointer-events:none;width:max-content;max-width:min(760px,92vw)";
+    const box = document.createElement("div");
+    box.style.cssText = "font:15px/1.45 system-ui,-apple-system,'Segoe UI',sans-serif;background:#1f2430;color:#fff;padding:12px 16px;border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.35)";
+    const b = document.createElement("b");
+    b.style.cssText = "color:#c7d2fe";
+    b.textContent = "Job Autopilot: your turn. ";
+    host.__t = document.createElement("span");
+    box.append(b, host.__t);
+    host.attachShadow({ mode: "closed" }).append(box);
+    (document.body || document.documentElement).append(host);
+  }
+  if (host.__t.textContent !== ${JSON.stringify(text)}) host.__t.textContent = ${JSON.stringify(text)};
+  return true;
+})()`;
+const BANNER_OFF = `(() => { const h = document.getElementById("job-autopilot-turn"); if (h) h.remove(); })()`;
+// A press on a button that sends the application (Submit, Apply, Send...), seen in the frame's own world.
+const PRESSED_JS = `(() => {
+  if (!window.__jaPress) {
+    window.__jaPress = true;
+    window.__jaPressed = false;
+    document.addEventListener("click", (e) => {
+      const b = e.target && e.target.closest && e.target.closest("button, input[type=submit], [role=button], a");
+      const t = b ? (b.innerText || b.value || b.getAttribute("aria-label") || "").replace(/\\s+/g, " ").trim() : "";
+      if (/^(submit|apply|send|finish|complete)\\b|\\b(submit|send) (my |your )?application\\b/i.test(t)) window.__jaPressed = true;
+    }, true);
+  }
+  return window.__jaPressed;
+})()`;
+// Never kept from what the person types: secrets, and statements they sign.
+const PRIVATE_RX = /password|passcode|social security|\bssn\b|date of birth|birth ?date|\bdob\b|\bbank\b|routing|account (number|no)|credit card|card number|\bcvv\b|passport|tax (id|number)|\bitin\b|licen[cs]e number|signature|sign here|initials|verification code|security code|one-time/i;
+const keepable = (v) => v.type !== "checkbox" && v.type !== "file" && !PRIVATE_RX.test(v.label) && v.value.length <= 4000;
+
+// A question or a button as the person reads it on the page: "Phone extension", "Next".
+const clipLabel = (x) => { const t = String(x || "").replace(/\s+/g, " ").replace(/[\s*:\u2731]+$/, "").trim().replace(/^./, (c) => c.toUpperCase()); return t.length > 60 ? t.slice(0, 57) + "..." : t; };
+const names = (list) => { const l = [...new Set(list.map(clipLabel))].filter(Boolean); return !l.length ? "the empty fields" : l.length === 1 ? `"${l[0]}"` : l.slice(0, -1).map((x) => `"${x}"`).join(", ") + ` and "${l[l.length - 1]}"`; };
+
+const SUCCESS_ALL = new RegExp(SUCCESS.source, "gi");
+const confirmations = (t) => [...String(t || "").slice(0, 60000).matchAll(SUCCESS_ALL)].map((m) => m[0].toLowerCase().replace(/\s+/g, " "));
+const bareUrl0 = (u) => { try { const x = new URL(u); return x.origin + x.pathname.replace(/\/+$/, ""); } catch { return String(u || ""); } };
+
+// Every field the form shows now, with what's in it: [{ label, type, value, gone }]. null: the page itself couldn't be
+// read just now (it's loading), which says nothing about where the form is.
+async function fieldValues(page) {
+  const out = [];
+  for (const f of formFrames(page)) {
+    try { const r = await inWorld(page, f, 'window.__apSend({ type: "values" })'); if (Array.isArray(r)) out.push(...r); else if (f === page.mainFrame()) return null; }
+    catch { if (f === page.mainFrame()) return null; /* a frame inside it went away */ }
+  }
+  return out;
+}
+async function formSize(page) {
+  let n = 0;
+  for (const f of formFrames(page)) { const r = await inWorld(page, f, FORM_SHAPE_JS).catch(() => null); if (r) n = Math.max(n, r.fields || 0); }
+  return n;
+}
+async function pressedSend(page) {
+  let any = false;
+  for (const f of formFrames(page)) if (await inWorld(page, f, PRESSED_JS).catch(() => false)) any = true;
+  return any;
+}
+
+// The form moved on from where the person's turn began: another page address, or mostly other questions (a question
+// or two showing up as they answer is still the same page). Seen on two looks in a row, so a page still loading
+// doesn't count.
+export function movedOn(url0, labels0) {
+  const before = new Set(labels0.map(labelKey).filter(Boolean));
+  let streak = 0;
+  return (pg, labels) => {
+    const url = typeof pg === "string" ? pg : pg.url();
+    const after = new Set(labels.map(labelKey).filter(Boolean));
+    const same = [...after].filter((k) => before.has(k)).length;
+    const moved = bareUrl0(url) !== bareUrl0(url0) || (before.size ? same / before.size < 0.5 : after.size >= 3);
+    streak = moved ? streak + 1 : 0;
+    return streak >= 2;
+  };
+}
+
+// The person's turn: the window comes up in front of them, with a note on the page saying what's left, and the app
+// looks every couple of seconds, for up to 30 minutes:
+//   "applied": the employer's page says the application is in (a confirmation it didn't show before);
+//   "sent": the person pressed "I sent it" in the app;
+//   "advanced": `advanced(page, labels)` says the page moved on (the next page of the form, the form after a sign-in),
+//     so the app fills in again from there;
+//   "stopped", "closed", "timeout": they pressed Stop, closed the tab, or the time ran out.
+// Meanwhile it keeps what they type into the questions in `watch` (the ones the app couldn't answer) in `typed`, and
+// notes in `seen` whether they pressed a button that sends the application, or the page went somewhere else.
+// -> { outcome, page } (page: the tab they ended in, when the form opened another)
+export async function handOver(page, why, finish, { watch = [], advanced = null, cut = () => {}, typed = new Map(), seen = {} } = {}) {
+  const keys = new Set(watch.map(labelKey).filter(Boolean));
+  const said = new Set(confirmations(await pageText(page)));
+  const url0 = page.url();
+  const every = finish.every || 2000, until = Date.now() + (finish.minutes || 30) * 60000;
+  const popups = [];
+  const onPopup = (p) => popups.push(p);
+  page.on("popup", onPopup);
+  let cur = page;
+  const done = (outcome) => ({ outcome, page: cur });
+  try {
+    if (finish.turn) finish.turn(why);
+    await bringUp(page);
+    while (Date.now() < until) {
+      cut();
+      if (finish.stopped && finish.stopped()) return done("stopped");
+      if (finish.sent && finish.sent()) return done("sent");
+      // A tab the form opened (its next step, or the employer's confirmation) is where the person is now.
+      const open = popups.filter((p) => !p.isClosed());
+      if (open.length && open[open.length - 1] !== cur) { cur = open[open.length - 1]; JOB_LINK.set(cur, JOB_LINK.get(page)); }
+      if (cur.isClosed()) { if (cur === page || !open.length) return done("closed"); cur = open[open.length - 1]; }
+      await cur.evaluate(bannerJs(why)).catch(() => {});
+      const all = await fieldValues(cur), now = (all || []).filter((v) => !v.gone);
+      for (const v of all || []) { const k = labelKey(v.label); if (v.value && keys.has(k) && keepable(v)) typed.set(k, { label: String(v.label).slice(0, 300), value: v.value }); }
+      if (await pressedSend(cur)) seen.pressed = true;
+      if (bareUrl0(cur.url()) !== bareUrl0(url0)) seen.moved = true;
+      const t = await pageText(cur);
+      if (confirmations(t).some((x) => !said.has(x)) || (cur.url() !== url0 && /confirmation|thank|success|submitted/i.test(cur.url()))) return done("applied");
+      if (advanced && all && await Promise.resolve(advanced(cur, now.map((v) => v.label))).catch(() => false)) return done("advanced");
+      await sleep(every);
+    }
+    return done("timeout");
+  } finally {
+    page.off("popup", onPopup);
+    for (const p of [page, cur]) if (!p.isClosed()) await p.evaluate(BANNER_OFF).catch(() => {});
+  }
+}
+
+// hooks: progress(stepKey), onFilled(page), status(text), opts: { dryRun, settings, answers, prefs, mailbox, browser, finish }
+// finish ("Finish with me"): { turn(why), stopped(), sent(), every, minutes }. The window is in front of the person, and
+// where the app would stop (a question it can't answer, a sign-in, a page the site refuses, a CAPTCHA) it's their turn
+// instead; the app never presses Submit: they do. Returns status "applied", or "finish-stopped" with { outcome,
+// maybeSent }, or what a run without them would (a closed posting is still skipped).
 export async function applyTo(job, hooks = {}, opts = {}) {
   const settings = opts.settings || getSettings();
   // Answers kept from earlier stops (a ZIP code typed for one form) become About you answers, for every form.
   if (!opts.answers) promoteYourAnswers();
   const a = opts.answers || getAnswers();
   const prefs = opts.prefs || getPrefs();
-  const dryRun = opts.dryRun ?? settings.dryRun;
+  const finish = opts.finish || null;
+  const dryRun = finish ? false : (opts.dryRun ?? settings.dryRun);
   // "Back to dry run" or Pause pressed while this application runs stops it before anything is sent: the
   // settings are read again right before Submit, the emailed code and the confirmation wait.
   const at0 = getSettings();
@@ -931,8 +1070,19 @@ export async function applyTo(job, hooks = {}, opts = {}) {
   let page, bh = null, pagesBefore = null;
   const result = { details };
   const manual = (reason) => ({ ...result, status: "manual", reason: "Apply yourself: " + reason });
+  // Finish with me: what the person typed into the questions the app couldn't answer, those questions, and whether
+  // they pressed a button that sends the application (or the form went to another page) during a turn after the fill.
+  const typed = new Map(), asked = [], seen = { pressed: false, moved: false };
+  let turn = null;
+  const finished = async (outcome) => {
+    const sent = outcome === "applied" || outcome === "sent";
+    result.screenshot = (await shot(page, job.slug, sent ? "after" : "stopped")) || result.screenshot || null;
+    const d = { ...result.details, finishTyped: [...typed.values()] };
+    if (sent) return { ...result, details: d, status: "applied", reason: outcome === "applied" ? "you finished it, and the employer's page confirmed it" : "you finished it and sent it" };
+    return { ...result, details: d, status: "finish-stopped", outcome, maybeSent: seen.pressed || seen.moved };
+  };
   try {
-    const mode = windowModeOf(settings);
+    const mode = finish ? "visible" : windowModeOf(settings);
     bh = opts.browser ? { ctx: opts.browser } : await acquireBrowser({ windowMode: mode, choice: settings.browser, onStatus: (t) => hooks.status && hooks.status(t) });
     pagesBefore = new Set(bh.ctx.pages());
     page = await newAppPage(bh, mode);
@@ -940,6 +1090,12 @@ export async function applyTo(job, hooks = {}, opts = {}) {
     JOB_LINK.set(page, link);
     pages.push(page);
     page.setDefaultTimeout(30000);
+    // The person's turn. after: the app has filled the form, so a press on Submit from here may send it.
+    if (finish) turn = async (why, { advanced = null, after = true } = {}) => {
+      const h = await handOver(page, why, finish, { watch: asked, advanced, cut, typed, seen: after ? seen : {} });
+      if (h.page !== page && !h.page.isClosed()) { if (!pages.includes(h.page)) pages.push(h.page); page = h.page; page.setDefaultTimeout(30000); JOB_LINK.set(page, link); }
+      return h.outcome;
+    };
     if (process.env.AP_DEBUG) {
       page.on("response", (r) => { if (r.request().method() !== "GET") console.log("NET", r.status(), r.request().method(), r.url().slice(0, 160)); });
       page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") console.log("CONSOLE", m.type(), m.text().slice(0, 200)); });
@@ -973,7 +1129,14 @@ export async function applyTo(job, hooks = {}, opts = {}) {
     if ((CLOSED_RX.test(text.slice(0, 3000)) || EXPIRED_RX.test(text)) && fields.length < 5) return { ...result, status: "skipped", reason: "posting is closed" };
     const jobId = (String(link).match(/\d{6,}/) || [])[0];
     if (fields.length < 3 && jobId && !page.url().includes(jobId) && JOB_LIST_RX.test(text)) return { ...result, status: "skipped", reason: "posting is closed (the site showed its list of jobs instead)" };
-    if (fields.length < 3 && BOT_CHECK_RX.test(text.slice(0, 2000))) return { ...manual(`${hostOf(page.url()).replace(/^www\./, "")} showed a bot check ("prove you're a person") instead of the form, so the app can't fill it. Open it and apply yourself`), screenshot: await shot(page, job.slug, "botcheck") };
+    if (fields.length < 3 && BOT_CHECK_RX.test(text.slice(0, 2000))) {
+      if (!turn) return { ...manual(`${hostOf(page.url()).replace(/^www\./, "")} showed a bot check ("prove you're a person") instead of the form, so the app can't fill it. Open it and apply yourself`), screenshot: await shot(page, job.slug, "botcheck") };
+      const o = await turn("the site wants to check you're a person. Do what it asks, then open the application form: the app fills it in from there.",
+        { after: false, advanced: async (pg) => !BOT_CHECK_RX.test((await pageText(pg)).slice(0, 2000)) && (await formSize(pg)) >= 3 });
+      if (o !== "advanced") return await finished(o);
+      if (unsafePage()) return unsafePage();
+      ({ text, fields } = await scrapeAll(page));
+    }
     if (isWorkday(page.url()) && await workdayApplyManually(page)) ({ text, fields } = await scrapeAll(page));
     // A Workday site, and the user let the app make accounts: sign up (or sign in) with their email and password.
     const creds = siteAccounts(settings);
@@ -986,14 +1149,34 @@ export async function applyTo(job, hooks = {}, opts = {}) {
       // the confirmation link is opened right after: not for a run that has timed out
       const waitLink = async (since, host) => { cut(); const l = await getLink(since, host); cut(); return l; };
       const r = await workdayAccount(page, creds, { waitLink, log: (m) => log(job.slug, m), allowArbitration });
-      if (!r.ok) return { ...result, status: "failed", reason: r.reason, screenshot: await shot(page, job.slug, "account") };
-      signedIn = true;
-      accountNotes.push(...r.notes);
-      for (const x of r.notes) log(job.slug, x);
+      if (!r.ok && !turn) return { ...result, status: "failed", reason: r.reason, screenshot: await shot(page, job.slug, "account") };
+      if (!r.ok) {
+        const o = await turn("the app couldn't sign in here. Sign in or make your account, then open the application form: the app fills it in from there.",
+          { after: false, advanced: async (pg) => !(await loginWall(pg)) && (await formSize(pg)) >= 3 });
+        if (o !== "advanced") return await finished(o);
+        if (unsafePage()) return unsafePage();
+      } else {
+        signedIn = true;
+        accountNotes.push(...r.notes);
+        for (const x of r.notes) log(job.slug, x);
+      }
       await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
       ({ text, fields } = await scrapeAll(page));
     }
-    if (await loginWall(page)) return { ...manual(`${new URL(page.url()).hostname} asks you to sign in or create an account first`), screenshot: await shot(page, job.slug, "signin") };
+    if (await loginWall(page)) {
+      if (!turn) return { ...manual(`${new URL(page.url()).hostname} asks you to sign in or create an account first`), screenshot: await shot(page, job.slug, "signin") };
+      const o = await turn(`sign in to ${hostOf(page.url()).replace(/^www\./, "")}, or make an account there, then open the application form: the app fills it in from there.`,
+        { after: false, advanced: async (pg) => !(await loginWall(pg)) && (await formSize(pg)) >= 3 });
+      if (o !== "advanced") return await finished(o);
+      if (unsafePage()) return unsafePage();
+      ({ text, fields } = await scrapeAll(page));
+    }
+    if (fields.length < 3 && turn) {
+      const o = await turn("open the application form on this page: the app fills it in from there.", { after: false, advanced: async (pg) => (await formSize(pg)) >= 3 });
+      if (o !== "advanced") return await finished(o);
+      if (unsafePage()) return unsafePage();
+      ({ text, fields } = await scrapeAll(page));
+    }
     if (fields.length < 3) return { ...manual("the app found no form it can fill on this page (it may be a chat, or a site the app does not know)"), screenshot: await shot(page, job.slug, "noform") };
 
     const postingText = [text, details.description ? "\n\nFROM THE JOB LISTING:\n" + details.description : ""].join("").slice(0, 30000);
@@ -1011,7 +1194,7 @@ export async function applyTo(job, hooks = {}, opts = {}) {
         const hardFails = ((p.fit || {}).hardFails || []).filter((f) => f && f.requirement && !metAnyway(f));
         result.details = { ...details, plan: { employer: p.employer, jobTitle: p.jobTitle, base: p.base, summary: p.summary, notClaimed: p.notClaimed || [] }, hardFails };
         // A job the user added by hand is theirs to judge: the must-haves are noted, not a reason to skip.
-        if (hardFails.length && !details.addedByUser) {
+        if (hardFails.length && !details.addedByUser && !finish) {
           return { ...result, status: "skipped", reason: "fails a must-have: " + hardFails.map((f) => `${f.requirement}${f.why ? " (" + f.why + ")" : ""}`).join("; ").slice(0, 600) };
         }
       }
@@ -1065,7 +1248,18 @@ export async function applyTo(job, hooks = {}, opts = {}) {
           if (opts.length > 1) askOptions[nk(label)] = opts;
         }
         result.details.askOptions = askOptions;
-        return { ...result, status: "failed", reason: `could not fill every required field${n > 1 ? ` (page ${n})` : ""}: ` + filled.blocking.slice(0, 6).join("; ") };
+        if (!turn) return { ...result, status: "failed", reason: `could not fill every required field${n > 1 ? ` (page ${n})` : ""}: ` + filled.blocking.slice(0, 6).join("; ") };
+        const left = filled.blocking.slice(0, 6).map((x) => x.replace(/^(required, no answer|needs you|still empty): /, "").replace(/ \(.*\)$/, "").trim()).filter(Boolean);
+        asked.push(...left);
+        let more = null;
+        for (const f of formFrames(page)) { more = await f.evaluate(NEXT_JS).catch(() => null); if (more) break; }
+        const o = await turn(`fill in ${names(left)}, then press ${more ? `"${clipLabel(more)}"` : "Submit"}. The app sees when it's sent.`,
+          { advanced: more ? movedOn(page.url(), fields.map((f) => f.label)) : null });
+        if (o !== "advanced") return await finished(o);
+        if (unsafePage()) return unsafePage();
+        ({ fields } = await scrapeAll(page));
+        if (!fields.length) break;
+        continue;
       }
 
       // A form on several pages: "Next" until the page with the real Submit button.
@@ -1076,7 +1270,10 @@ export async function applyTo(job, hooks = {}, opts = {}) {
       // On a site where the app signed in, pages are saved to the user's own account as a draft and nothing is
       // sent before Submit, so a dry run fills every page and stops there.
       if (dryRun && !signedIn) return { ...result, status: "filled", reason: `practice run: page 1 of a form with several pages filled and checked; the later pages are filled once you send for real` };
-      if (n >= MAX_PAGES) return { ...result, status: "failed", reason: `the form kept asking for more after ${MAX_PAGES} pages` };
+      if (n >= MAX_PAGES) {
+        if (!turn) return { ...result, status: "failed", reason: `the form kept asking for more after ${MAX_PAGES} pages` };
+        return await finished(await turn("the form keeps going. Fill in the rest and press Submit yourself. The app sees when it's sent."));
+      }
       const before = page.url(), beforeLabels = fields.map((f) => f.label).join("|");
       log(job.slug, `pressing "${nextLabel}"`);
       cut();
@@ -1084,17 +1281,35 @@ export async function applyTo(job, hooks = {}, opts = {}) {
       await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
       await sleep(3000);
       if (unsafePage()) return unsafePage();
-      if (await loginWall(page)) return manual(`after page ${n}, ${new URL(page.url()).hostname} asks you to sign in or create an account`);
+      if (await loginWall(page)) {
+        if (!turn) return manual(`after page ${n}, ${new URL(page.url()).hostname} asks you to sign in or create an account`);
+        const o = await turn(`sign in to ${hostOf(page.url()).replace(/^www\./, "")}, or make an account there. The app fills in the next page after that.`,
+          { advanced: async (pg) => !(await loginWall(pg)) && (await formSize(pg)) >= 1 });
+        if (o !== "advanced") return await finished(o);
+        if (unsafePage()) return unsafePage();
+        ({ fields } = await scrapeAll(page));
+        if (!fields.length) break;
+        continue;
+      }
       ({ fields } = await scrapeAll(page));
       // Still on the same page: the site refused it (an error the app could not see before).
       if (page.url() === before && fields.map((f) => f.label).join("|") === beforeLabels) {
         const errs = await pageErrors(page);
-        return { ...result, status: "failed", reason: `page ${n} was not accepted${errs.length ? ": " + errs.join("; ").slice(0, 400) : ""}`, screenshot: await shot(page, job.slug, `stuck-p${n}`) };
+        if (!turn) return { ...result, status: "failed", reason: `page ${n} was not accepted${errs.length ? ": " + errs.join("; ").slice(0, 400) : ""}`, screenshot: await shot(page, job.slug, `stuck-p${n}`) };
+        const o = await turn(`the site didn't take this page${errs.length ? ` (it says: ${errs.slice(0, 2).join("; ").slice(0, 160)})` : ""}. Fix it, then press "${clipLabel(nextLabel)}".`,
+          { advanced: movedOn(page.url(), fields.map((f) => f.label)) });
+        if (o !== "advanced") return await finished(o);
+        if (unsafePage()) return unsafePage();
+        ({ fields } = await scrapeAll(page));
+        if (!fields.length) break;
+        continue;
       }
       // A review page with only a Submit button left.
       if (!fields.length) break;
     }
     if (dryRun) return { ...result, status: "filled", reason: signedIn ? `practice run: signed in, filled all ${result.details.pages || 1} pages and stopped before Submit` : "practice run: filled and checked, not sent" };
+    // Finish with me: the person checks it and presses Submit themselves.
+    if (turn) return await finished(await turn("everything the app could fill in is in. Check it, then press Submit yourself. The app sees when it's sent."));
 
     // Submit.
     step("submit");

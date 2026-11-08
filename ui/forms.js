@@ -1028,7 +1028,8 @@
           ${fld("Clean driving record?", radios("drivingRecord", a.drivingRecord, [["clean", "Yes"], ["no", "No"], ["", "Don't say"]]))}
           ${fld("Are you 21 or older?", radios("over21", a.over21, [["yes", "Yes"], ["no", "No"], ["", "Don't say"]]), "Some driving jobs require it.")}</div>
         <div class="form-row">${fld("Notice to give your current job", inp("noticePeriod", a.noticePeriod, 'placeholder="2 weeks, None..."'))}
-          ${fld("Desired pay (optional)", inp("salary", a.salary, 'placeholder="e.g. $18 an hour"'), "Empty: the posted range, or \"open to discussing\".")}</div>
+          ${fld("Desired pay (optional)", `${inp("salary", a.salary, 'placeholder="e.g. $18 an hour"')}<div><button type="button" class="btn sm ghost" data-pay-suggest>${icon("bolt")}What do jobs like mine pay?</button></div><div data-pay-msg></div>`,
+            "Forms that ask get it in the way they ask (a year, a month or an hour). Empty: the posted range, or \"open to discussing\".")}</div>
         <div class="form-row">${fld("Willing to move for a job?", radios("relocation", a.relocation, [["no", "No"], ["radius", "Only nearby"], ["anywhere", "Yes, anywhere"]]))}
           ${fld("Willing to travel for work?", radios("travel", a.travel, [["some", "Sometimes"], ["yes", "Yes"], ["no", "No"]]))}</div>`, hourly)}
       ${more("Work and school", "Experience, schooling, current job", `
@@ -1058,6 +1059,28 @@
     el.addEventListener("input", (e) => { const f = e.target.closest(".fld.invalid"); if (f) { f.classList.remove("invalid"); f.querySelectorAll("[aria-invalid]").forEach((x) => x.removeAttribute("aria-invalid")); } });
     const later = el.querySelector("[data-later-show]");
     if (later) later.onclick = () => { el.querySelector("[data-later]").hidden = false; later.remove(); };
+    // What open postings for their kind of work pay, from freehire: the middle, with the usual range.
+    const payBtn = el.querySelector("[data-pay-suggest]"), payMsg = el.querySelector("[data-pay-msg]");
+    payBtn.onclick = async () => {
+      payBtn.disabled = true;
+      msg(payMsg, "info", "Looking at what employers post...");
+      const r = await api("/api/pay/suggest");
+      payBtn.disabled = false;
+      if (r.error) return msg(payMsg, "err", r.error);
+      const where = r.country === "US" ? "the US" : r.country;
+      const who = `${esc(r.kind)}${r.level ? ` jobs at ${({ junior: "entry", middle: "mid", senior: "senior", lead: "lead" })[r.level] || esc(r.level)} level` : " jobs"} in ${esc(where)}`;
+      if (!r.n) return msg(payMsg, "info", `Too few ${who} state their pay to say. Check what the postings you're interested in offer.`);
+      const money = (n) => (r.currency === "USD" ? "$" : r.currency + " ") + Math.round(n).toLocaleString("en-US");
+      const per = { hour: "an hour", year: "a year", month: "a month" }[r.period] || "a " + r.period;
+      payMsg.innerHTML = `<div class="msg ok">${who} pay <b>${money(r.low)} to ${money(r.high)} ${per}</b> (the middle half of ${r.n} postings that say), and <b>${money(r.mid)}</b> in the middle.
+        Pay is often higher in big cities. <button type="button" class="btn sm" data-pay-use>Use ${money(r.mid)} ${per}</button></div>`;
+      payMsg.querySelector("[data-pay-use]").onclick = () => {
+        const box = el.querySelector("[name=salary]");
+        box.value = `${money(r.mid)} ${per}`;
+        box.dispatchEvent(new Event("input", { bubbles: true }));
+        msg(payMsg, "ok", setup ? "Put in." : "Put in. Press Save changes to keep it.");
+      };
+    };
     const cannot = tagInput(el.querySelector("[data-cannot]"), a.cannotClaim, office ? "e.g. Java, Kubernetes, security clearance" : "e.g. forklift license, CDL, bilingual Spanish");
     const arbList = tagInput(el.querySelector("[data-arb-list]"), a.arbitrationCompanies, "Company names");
     el.querySelectorAll("[name=arbitration]").forEach((r) => r.onchange = () => { el.querySelector("[data-arb-list]").style.display = val(el, "arbitration") === "list" ? "" : "none"; });
@@ -1135,7 +1158,18 @@
       <div class="form-row">${fld("Lowest pay you'd take (optional)", `<div class="row-actions" style="flex-wrap:nowrap"><input class="inp" name="minPay" type="number" min="0" step="0.5" value="${esc(p.minPay || "")}" placeholder="e.g. 25" style="max-width:9rem">
           ${sel("minPayPer", p.minPayPer || "hour", [["hour", "an hour"], ["year", "a year"]])}</div>`, "Jobs that post a lower top rate are skipped. Jobs that don't post pay are kept.")}</div>
 `;
+    const pick = (name, label, value, opts) => `<select name="${name}" aria-label="${esc(label)}">${opts.map(([v, l]) => `<option value="${v}" ${String(v) === String(value) ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
     const lower = `      ${fld("What level?", `<div class="radio-row">${LEVELS.map(([v, l]) => `<label><input type="checkbox" name="lvl" value="${v}" ${(v === "intern" ? p.internships : (p.seniority || []).includes(v)) ? "checked" : ""}>${l}</label>`).join("")}</div>`)}
+      <div class="form-row">${fld("When a job asks for a bit more experience than you have", pick("stretchYears", "When a job asks for a bit more experience than you have", p.stretchYears ?? 1,
+          [[0, "Skip it"], [1, "Apply if I'm up to 1 year short"], [2, "Apply if I'm up to 2 years short"]]), "Many employers treat years as a guide. Forms still get your real numbers.")}
+        ${fld("Applications to one company", pick("perCompanyMonth", "Applications to one company", p.perCompanyMonth ?? 2,
+          [[1, "At most 1 a month"], [2, "At most 2 a month"], [3, "At most 3 a month"], [0, "No limit"]]), "Where several jobs fit at one company, the best match goes first.")}</div>
+      <div data-kinds></div>
+      <div class="fld"><span>Companies you'd love to work for (optional)</span>
+        <div class="row-actions"><input class="inp" data-watch-in aria-label="A company's name, or a link to one of its job postings" placeholder="A company's name, or a link to one of its job postings" style="flex:1 1 280px;min-width:220px">
+          <button type="button" class="btn sm" data-watch-add>${icon("plus")}Add</button></div>
+        <div data-watch-list class="tags" style="margin-top:6px" hidden></div><div data-watch-msg></div>
+        <small>The app reads their own job pages every couple of hours and applies to new jobs there that fit you before any others. It works for companies whose jobs are on Greenhouse, Lever or Ashby (most tech companies).</small></div>
       <div class="section-t">Where to look</div>
       <div class="board-list">${BOARDS.map(([id, name, desc]) => `<label class="board ${boards[id] ? "on" : ""}"><input type="checkbox" name="board" value="${id}" ${boards[id] ? "checked" : ""}>
         <div><b>${name}</b><small>${desc}</small>${id === "google" ? `<div data-google></div>` : ""}${id === "usajobs" ? `<div data-usajobs></div>` : ""}</div></label>`).join("")}</div>
@@ -1148,7 +1182,8 @@
         ${fld("What you want the work to involve (optional)", `<div data-keywords></div>`, "The AI favors jobs like these, e.g. healthcare, React, working outdoors.")}
         ${fld("Words that rule a job title out (optional)", `<div data-titleex></div>`)}
         ${fld("Companies to never apply to", `<div data-exclude></div>`, "Your current employer, and anywhere you would not go.")}
-        <label class="check"><input type="checkbox" name="excludeAgencies" ${p.excludeAgencies ? "checked" : ""}>Skip recruiting agencies and repost sites</label>
+        <label class="check"><input type="checkbox" name="excludeAgencies" ${p.excludeAgencies ? "checked" : ""}>Skip recruiters, staffing companies, repost sites and postings that look like scams</label>
+        <small class="hint" style="margin-top:-6px">Scam signs: a fee to pay, interviews over WhatsApp or text chat, resumes to a personal email, the same opening in many cities from a company with almost no jobs.</small>
         <div class="form-row">${fld("Most years of experience a job may require", inp("maxYearsRequired", p.maxYearsRequired, 'type="number" min="0" max="30"'))}
           ${fld("Only jobs posted in the last", sel("postedWithinDays", p.postedWithinDays, [[3, "3 days"], [7, "7 days"], [14, "14 days"], [30, "30 days"], [60, "60 days"]]))}
           ${fld("Distance in", sel("radiusUnit", p.radiusUnit, [["mi", "miles"], ["km", "kilometers"]]))}
@@ -1250,6 +1285,44 @@
         b.disabled = true; b.innerHTML = `${icon("check")}Added`;
       });
     };
+    // Kinds of work left out before the AI reads a posting: the person's own choices and what the app learned.
+    const drawKinds = (list) => {
+      const host = el.querySelector("[data-kinds]");
+      if (!host) return;
+      host.innerHTML = list.length ? `${fld("Kinds of work left out", `<div class="tags">${list.map((k) => `<span class="tag" title="${k.by === "you" ? "You said it isn't for you" : `The AI found ${k.count} of these to be a different kind of work than yours`}">${esc(k.name)}${k.by === "app" ? ' <small class="muted">(learned)</small>' : ""}<button type="button" data-kind-show="${esc(k.code)}" aria-label="Show ${esc(k.name)} jobs again">&times;</button></span>`).join("")}</div>`,
+        "Jobs of these kinds are skipped before the AI reads them. Press &times; to bring a kind back. To leave one out, open a job of that kind and press <b>Not this kind of work</b>.")}` : "";
+      host.querySelectorAll("[data-kind-show]").forEach((b) => b.onclick = async () => drawKinds(await api("/api/kinds", { show: b.dataset.kindShow })));
+    };
+    api("/api/kinds").then((list) => drawKinds(Array.isArray(list) ? list : []));
+    // Companies they chose: found by name or link, read directly from their own job boards.
+    const ATS = { greenhouse: "Greenhouse", lever: "Lever", ashby: "Ashby" };
+    const drawWatch = (list) => {
+      const host = el.querySelector("[data-watch-list]");
+      host.hidden = !list.length;
+      host.innerHTML = list.length ? list.map((w) => `<span class="tag" title="Its jobs on ${ATS[w.ats]}">${esc(w.name)}<button type="button" data-watch-rm="${esc(w.ats)}|${esc(w.token)}" aria-label="Stop watching ${esc(w.name)}">&times;</button></span>`).join("") : "";
+      host.querySelectorAll("[data-watch-rm]").forEach((b) => b.onclick = async () => {
+        const [ats, token] = b.dataset.watchRm.split("|");
+        const res = await api("/api/watch/remove", { ats, token });
+        cfg.prefs = { ...cfg.prefs, watch: res.watch || [] };
+        drawWatch(cfg.prefs.watch);
+      });
+    };
+    drawWatch(p.watch || []);
+    const watchIn = el.querySelector("[data-watch-in]"), watchAdd = el.querySelector("[data-watch-add]");
+    const addWatch = async () => {
+      if (!watchIn.value.trim()) return;
+      watchAdd.disabled = true;
+      msg(el.querySelector("[data-watch-msg]"), "info", "Looking for its job board...");
+      const res = await api("/api/watch/add", { input: watchIn.value });
+      watchAdd.disabled = false;
+      if (res.error) return msg(el.querySelector("[data-watch-msg]"), "err", res.error);
+      cfg.prefs = { ...cfg.prefs, watch: res.watch };
+      drawWatch(res.watch);
+      watchIn.value = "";
+      msg(el.querySelector("[data-watch-msg]"), "ok", `Added ${res.found.name}: ${res.found.jobs} open job${res.found.jobs === 1 ? "" : "s"} on its board. The ones that fit you are checked on the next search, which starts now.`);
+    };
+    watchAdd.onclick = addWatch;
+    watchIn.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); addWatch(); } };
     const keywords = tagInput(el.querySelector("[data-keywords]"), p.keywords, "e.g. healthcare");
     const titleEx = tagInput(el.querySelector("[data-titleex]"), p.titleExclude, "e.g. night shift, sales");
     const exclude = tagInput(el.querySelector("[data-exclude]"), p.excludeCompanies, "Company name");
@@ -1313,6 +1386,7 @@
           maxYearsRequired: Number(val(el, "maxYearsRequired")) || 0, postedWithinDays: Number(val(el, "postedWithinDays")) || 14,
           excludeAgencies: val(el, "excludeAgencies"), alreadyApplied: val(el, "alreadyApplied"), boards,
           minPay: Number(val(el, "minPay")) || 0, minPayPer: val(el, "minPayPer") || "hour",
+          stretchYears: Number(val(el, "stretchYears")), perCompanyMonth: Number(val(el, "perCompanyMonth")),
         };
         if (!out.titles.length) return "Add at least one job title (type it and press Enter, or click a suggestion).";
         if (out.minPayPer === "hour" && out.minPay > 300) return `Lowest pay: $${out.minPay.toLocaleString()} an hour looks like a yearly salary. Choose "a year" next to it, or fix the number.`;
@@ -1485,6 +1559,41 @@
     draw();
     return { save: async () => null };
   }
+  // ---------- People you know: LinkedIn's Connections.csv, for referrals ----------
+  function people(el) {
+    const draw = async () => {
+      const c = await api("/api/connections");
+      el.innerHTML = `<div class="form">
+        <p class="hint" style="margin:0">A referral from someone who works there gets far more replies than applying cold. Give the app your LinkedIn connections: when a job is at a company where you know someone, it shows you who, writes a short message asking for a referral, and waits a few days before applying so you can send it. The list stays on this computer.</p>
+        ${c.count ? `<div class="msg ok">${c.count.toLocaleString()} connections imported ${c.at ? new Date(c.at).toLocaleDateString() : ""}. <button type="button" class="btn sm ghost" data-ppl-clear>Remove them</button></div>` : ""}
+        ${more("How to get the file from LinkedIn", "About 10 minutes, mostly waiting for an email", `<ol class="bul" style="margin:0">
+          <li>On linkedin.com, open <b>Me</b> > <b>Settings &amp; Privacy</b> > <b>Data privacy</b> > <b>Get a copy of your data</b>.</li>
+          <li>Choose <b>Want something in particular?</b>, tick <b>Connections</b>, and press <b>Request archive</b>.</li>
+          <li>LinkedIn emails you a link, usually within 10 minutes. Download the file and open it (double-click): inside is <b>Connections.csv</b>.</li>
+          <li>Press the button below and choose <b>Connections.csv</b>.</li></ol>
+          <div class="row-actions" style="margin-top:8px"><button type="button" class="btn sm ghost" data-ppl-li>${icon("ext")}Open LinkedIn's data page</button></div>`)}
+        <div class="row-actions"><button type="button" class="btn sm primary" data-ppl-pick>${icon("upload")}${c.count ? "Import a newer Connections.csv" : "Choose Connections.csv"}</button>
+          <input type="file" accept=".csv,text/csv" hidden></div>
+        ${fld("When you know someone at the company", `<select data-ppl-hold aria-label="When you know someone at the company">${[[3, "Wait 3 days so I can ask for a referral"], [5, "Wait 5 days"], [2, "Wait 2 days"], [0, "Don't wait: just show me who I know"]].map(([v, l]) => `<option value="${v}" ${Number(c.holdDays) === v ? "selected" : ""}>${l}</option>`).join("")}</select>`)}
+        <div data-ppl-msg></div></div>`;
+      const m = el.querySelector("[data-ppl-msg]"), input = el.querySelector("input[type=file]");
+      el.querySelector("[data-ppl-pick]").onclick = () => input.click();
+      el.querySelector("[data-ppl-li]").onclick = () => openUrl("https://www.linkedin.com/mypreferences/d/download-my-data");
+      el.querySelector("[data-ppl-hold]").onchange = async (e) => { await api("/api/connections/hold", { days: Number(e.target.value) }); msg(m, "ok", "Saved."); };
+      const clear = el.querySelector("[data-ppl-clear]");
+      if (clear) clear.onclick = async () => { await api("/api/connections/clear", {}); await draw(); };
+      input.onchange = async () => {
+        const f = input.files[0]; if (!f) return;
+        const r = await api("/api/connections/import", { csv: await f.text() });
+        input.value = "";
+        if (r.error) return msg(m, "err", r.error);
+        await draw();
+        msg(el.querySelector("[data-ppl-msg]"), "ok", `Imported ${r.count.toLocaleString()} connections at ${r.companies.toLocaleString()} companies.${r.held ? ` ${r.held} job${r.held === 1 ? "" : "s"} in your queue ${r.held === 1 ? "is" : "are"} at a company where you know someone: ${r.held === 1 ? "it waits" : "they wait"} so you can ask first.` : ""}`);
+      };
+    };
+    draw();
+  }
+
   const importedText = (r) => `Imported ${r.total} application${r.total === 1 ? "" : "s"}: ${r.added} added, ${r.updated} marked as applied, ${r.already} already here. None of them will be applied to again.`;
 
   // Names for screen readers, applied to whatever was just drawn: a field gets the question above it
@@ -1521,5 +1630,5 @@
   new MutationObserver(() => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; nameControls(); }); })
     .observe(document.documentElement, { childList: true, subtree: true });
 
-  window.Forms = { ai, resumes, creator, github, accounts, studio, review, fillPage, questions, prefs, mailbox, running, background, history, importedText, esc, icon, msg, nameControls };
+  window.Forms = { ai, resumes, creator, github, accounts, studio, review, fillPage, questions, prefs, mailbox, running, background, history, people, importedText, esc, icon, msg, nameControls };
 })();

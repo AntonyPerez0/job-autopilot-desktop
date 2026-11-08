@@ -6,6 +6,7 @@ import * as hiringcafe from "./hiringcafe.js";
 import * as simplify from "./simplify.js";
 import * as google from "./google.js";
 import * as usajobs from "./usajobs.js";
+import * as watchlist from "./watchlist.js";
 
 export const SOURCES = {
   freehire: { id: "freehire", name: "freehire", search: freehire.search },
@@ -13,10 +14,12 @@ export const SOURCES = {
   simplify: { id: "simplify", name: "Simplify lists", search: simplify.search },
   google: { id: "google", name: "Google Jobs", search: google.search },
   usajobs: { id: "usajobs", name: "USAJOBS", search: usajobs.search },
+  watchlist: { id: "watchlist", name: "Companies you chose", search: watchlist.search },
 };
 
 // prefs.boards: { freehire: true, hiringcafe: true, simplify: false, google: false, usajobs: false }
 export function enabledSources(prefs) {
   const b = prefs.boards || {};
-  return Object.values(SOURCES).filter((s) => b[s.id]);
+  // The companies they chose are read whenever there are some.
+  return Object.values(SOURCES).filter((s) => b[s.id] || (s.id === "watchlist" && (prefs.watch || []).length));
 }

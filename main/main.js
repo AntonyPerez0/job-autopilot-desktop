@@ -1,7 +1,7 @@
 // The desktop app: one window with the dashboard (or the first-run setup),
 // the autopilot loop running in this process, and everything stored in the
 // OS app-data folder. The window talks to the engine over IPC only.
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme, net, protocol, session, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, net, protocol, session, shell } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -170,6 +170,8 @@ app.whenReady().then(async () => {
     return r.canceled ? null : r.filePaths[0];
   });
   // Only the history backup (or a file in its folder or the app's data folder); never a network (UNC) path.
+  // A note the person sends themselves (a referral ask, a follow-up): text only, at most 20,000 characters.
+  handle("copy-text", (_e, t) => { clipboard.writeText(String(t || "").slice(0, 20000)); return true; });
   handle("show-file", (_e, f) => {
     const p = String(f || "");
     if (!p || /^(\\\\|\/\/)/.test(p)) return;

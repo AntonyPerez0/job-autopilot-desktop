@@ -2,7 +2,7 @@
 // lists, Google Jobs), keep the ones that match their preferences, screen each
 // for fit with the model, and sort them: the app applies to the ones whose form
 // needs no account, and lists the rest under "Apply yourself".
-import { getDb, log } from "./db.js";
+import { getDb, log, setJob, sqlTime } from "./db.js";
 import { loadProfile, screen } from "./engine.js";
 import { plainAiError } from "./llm.js";
 import { km, remoteOk, toKm, withinRadius } from "./geo.js";
@@ -15,6 +15,10 @@ import { siteAccounts } from "./accounts.js";
 import { SOURCES, enabledSources } from "./sources/index.js";
 import { boardsFor, searchesFor } from "./sources/freehire.js";
 import { checkRequirements } from "./requirements.js";
+import { hiddenKinds, kindName } from "./kinds.js";
+import { companyInfo, schemeReason } from "./quality.js";
+import { call } from "./freehire.js";
+import { loadConnections, peopleAt } from "./referrals.js";
 
 // Recruiting agencies and repost aggregators: the application never reaches the employer.
 export const AGENCIES = ["jobgether", "synergisticit", "jobot", "cybercoders", "revature", "dice", "true talent", "crossover", "lensa", "jobright"];
@@ -63,6 +67,7 @@ const levelOk = (j, prefs) => !j.level || (prefs.seniority || []).includes(j.lev
 
 async function greenhouseUrl(u) {
   const url = new URL(u);
+  if (/\/embed\/job_app/.test(url.pathname) && url.searchParams.get("for") && url.searchParams.get("token")) return u;
   if (/(^|\.)greenhouse\.io$/.test(url.hostname) && /\/jobs\/\d+/.test(url.pathname)) {
     const m = url.pathname.match(/^\/([^/]+)\/jobs\/(\d+)/);
     if (m) return `https://job-boards.greenhouse.io/embed/job_app?for=${m[1]}&token=${m[2]}`;
@@ -196,7 +201,10 @@ export async function discover(progress = () => {}, ctx = {}) {
   }
   const sources = enabledSources(prefs);
   const found = new Map();
+  // Someone waiting to finish an application with the app (ctx.yieldTo): the search stops, and runs again after.
+  const yieldNow = () => { if (!ctx.yieldTo || !ctx.yieldTo()) return false; ctx.stoppedEarly = true; return true; };
   for (const [si, src] of sources.entries()) {
+    if (yieldNow()) break;
     const warnings = [];
     try {
       const list = await src.search(prefs, {
@@ -209,6 +217,7 @@ export async function discover(progress = () => {}, ctx = {}) {
       if (!list.length && warnings.some((w) => /failed/i.test(w))) lastSearch.problems.push({ source: src.name, message: warnings.find((w) => /failed/i.test(w)).split("\n")[0].slice(0, 200) });
     } catch (e) { log(null, `${src.name} search failed: ${e.message}`, "warn"); lastSearch.problems.push({ source: src.name, message: String(e.message).split("\n")[0].slice(0, 200) }); }
   }
+  if (ctx.stoppedEarly) { log(null, "search stopped so you can finish an application; it runs again after"); lastSearch.done = true; return 0; }
   lastSearch.sources = sources.map((s) => s.name);
   const maxAge = (Number(prefs.postedWithinDays) || 14) * 86400000;
   // The lowest pay the person would take, as an hourly figure (a yearly one counts 2,080 hours).
@@ -220,25 +229,42 @@ export async function discover(progress = () => {}, ctx = {}) {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(j.slug, key, j.title, j.company, j.location || "", j.work_mode || "",
       j.ats || "", j.url, apply, j.salary || null, j.posted_at || j.posted_text || "", status, reason,
       JSON.stringify({ description: j.description || "", requirements: j.requirements || [], board: j.board, kind: j.kind, freehire: j.freehire,
+        ...(j.category ? { category: j.category } : {}), ...(j.company_slug ? { companySlug: j.company_slug } : {}),
         ...(check && check.items.length ? { check: { met: check.met, checked: check.checked, items: check.items.map(({ text, priority, status, why }) => ({ text, priority, status, why })) } } : {}),
         ...(j.real ? { real: j.real } : {}), ...(j.similarTo ? { similarTo: j.similarTo } : {}) }));
   const list = [...found.values()];
+  // Kinds of work left out (by the person, or learned from earlier screenings): skipped before the AI reads them.
+  const hidden = new Set(hiddenKinds(prefs, db).map((k) => k.code));
+  // People they know, for jobs worth asking a referral for first.
+  const people = Number(prefs.referralHoldDays) > 0 ? loadConnections().people || [] : [];
+  const leftOut = new Map();
   for (let j of list) {
+    if (yieldNow()) { log(null, `search stopped after ${ji} of ${list.length} new postings so you can finish an application; the rest are read on the next search`); break; }
     progress({ phase: "review", i: ji++, n: list.length, label: `${j.title} at ${j.company}`, added });
     if (!titleOk(j.title, prefs) || !levelOk(j, prefs) || excludedCompany(j.company, prefs) || !locationOk(j, prefs)) continue;
-    if (Number.isFinite(posted(j)) && Date.now() - posted(j) > maxAge) continue;
+    // An opening at a company they chose counts however long it's been up.
+    if (j.board !== "watchlist" && Number.isFinite(posted(j)) && Date.now() - posted(j) > maxAge) continue;
     if (j.minYears !== null && j.minYears !== undefined && Number.isFinite(Number(prefs.maxYearsRequired)) && j.minYears > Number(prefs.maxYearsRequired)) continue;
     if (j.sponsorship === false && a.needsSponsorship === "yes") continue;
     const key = jobKey(j.company, j.title);
     if (inSet(keys, j.url, key) || inSet(roles, j.url, roleKey(j.company, j.title)) || (j.url && urls.has(cleanUrl(j.url)))) continue;
+    if (j.category && hidden.has(j.category)) {
+      insertJob(j, key, "skipped", `not the kind of work you're looking for (${kindName(j.category)})`, null);
+      addTo(keys, j.url, key);
+      leftOut.set(j.category, (leftOut.get(j.category) || 0) + 1);
+      continue;
+    }
     if (j.details) {
       try { j = { ...j, ...(await j.details()) }; } catch (e) { log(j.slug, "reading the posting failed: " + e.message, "warn"); continue; }
     }
     const fam = familyKey(j.company, j.title);
     // What the posting asks for, against the approved resume and the About-you answers: no AI.
     const check = checkRequirements(j, profile, a);
+    // Recruiters, staffing companies and the signs of a scam, with the agencies setting.
+    const scheme = prefs.excludeAgencies ? schemeReason(j, j.company_slug ? await companyInfo(j.company_slug, ctx.call || call) : null) : "";
     let status = "queued", reason = null;
     if (excludedCompany(j.company, prefs)) { status = "skipped"; reason = "excluded company, recruiter or repost aggregator"; }
+    else if (scheme) { status = "skipped"; reason = `not an employer hiring: ${scheme}`; }
     else if (j.ghost) { status = "skipped"; reason = `freehire says this posting is likely not being filled${j.real && j.real.criteria.length ? ` (${(j.real.notes.find((n) => /^Likely/.test(n)) || "").replace(/^Likely not being filled: /, "").replace(/\.$/, "")})` : ""}`; }
     else if (inAppliedList(manual, { ...j, apply_url: j.apply_url || j.url })) { status = "skipped"; reason = "already applied (your history or your already-applied list)"; }
     else if (!j.url) { status = "skipped"; reason = "no link to the employer's application"; }
@@ -267,6 +293,11 @@ export async function discover(progress = () => {}, ctx = {}) {
     }
     const apply = status === "skipped" ? null : await applyUrl(j.ats, j.apply_url || j.url);
     insertJob(j, key, status, reason, apply, check);
+    const known = status === "queued" && people.length ? peopleAt(j.company, people) : [];
+    if (known.length) {
+      setJob(j.slug, { hold_until: sqlTime(Date.now() + Number(prefs.referralHoldDays) * 86400000) });
+      log(j.slug, `you know ${known.length} ${known.length === 1 ? "person" : "people"} at ${j.company}: waiting ${prefs.referralHoldDays} days so you can ask for a referral first`);
+    }
     addTo(keys, j.url, key);
     addTo(roles, j.url, roleKey(j.company, j.title));
     if (j.url) urls.add(cleanUrl(j.url));
@@ -275,6 +306,7 @@ export async function discover(progress = () => {}, ctx = {}) {
     if (status === "manual") toYou++;
     log(j.slug, `${status}: ${j.title} at ${j.company} (${j.location}) via ${j.board}${reason ? " - " + reason : ""}`);
   }
+  if (leftOut.size) log(null, `left out without the AI, as kinds of work you don't want: ${[...leftOut].map(([c, n]) => `${n} ${kindName(c)}`).join(", ")}`);
   if (failed.length && !screenedOk) log(null, `every screening in this search failed (${failed.length}): the AI seems unavailable, so none of them counts as a try`, "warn");
   else for (const { j, key, error } of failed) {
     const n = countScreenFailure(j.slug);

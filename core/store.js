@@ -72,6 +72,12 @@ export const PREFS_DEFAULTS = {
   seniority: ["junior", "middle"], // freehire levels the user accepts
   internships: false,
   maxYearsRequired: 3,
+  stretchYears: 1,           // apply when a job asks for at most this many more years than they have (0: never)
+  perCompanyMonth: 2,        // at most this many applications to one employer in 30 days (0: no limit)
+  notForMeKinds: [],         // kinds of work (freehire categories) they said aren't for them
+  keepKinds: [],             // kinds of work they want kept, even when the app would learn to leave them out
+  watch: [],                 // companies they'd love to work for: [{ name, ats, token }], their job boards read directly
+  referralHoldDays: 3,       // when they know someone there, wait this many days so they can ask for a referral (0: don't wait)
   excludeCompanies: [],
   excludeAgencies: true,
   postedWithinDays: 14,
@@ -150,6 +156,14 @@ export function clampPrefs(patch = {}) {
   if ("jobKind" in p && !["office", "hourly", "both"].includes(p.jobKind)) delete p.jobKind;
   if ("moveToward" in p) p.moveToward = String(p.moveToward || "").slice(0, 300);
   if ("alreadyApplied" in p) p.alreadyApplied = String(p.alreadyApplied || "").slice(0, 50000);
+  const pick = (k, ok, fallback) => { if (k in p && !ok.includes(Number(p[k]))) p[k] = fallback; else if (k in p) p[k] = Number(p[k]); };
+  pick("stretchYears", [0, 1, 2], 1);
+  pick("perCompanyMonth", [0, 1, 2, 3], 2);
+  pick("referralHoldDays", [0, 2, 3, 5], 3);
+  if ("notForMeKinds" in p) p.notForMeKinds = strs(p.notForMeKinds, 60, 40);
+  if ("keepKinds" in p) p.keepKinds = strs(p.keepKinds, 60, 40);
+  if ("watch" in p) p.watch = (Array.isArray(p.watch) ? p.watch : []).filter((w) => w && typeof w === "object" && ["greenhouse", "lever", "ashby"].includes(w.ats) && /^[A-Za-z0-9._-]{1,80}$/.test(String(w.token || "")))
+    .map((w) => ({ name: String(w.name || w.token).slice(0, 80), ats: w.ats, token: String(w.token) })).slice(0, 30);
   return p;
 }
 export const savePrefs = (patch) => writeJSON("prefs.json", merge(getPrefs(), clampPrefs(patch)));

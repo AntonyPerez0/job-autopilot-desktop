@@ -425,6 +425,45 @@
     return "";
   }
 
+  // What each field holds now, as the person sees it, for "Finish with me": [{ label, type, value }], "" when empty.
+  // Never a file or a password (collect leaves those out).
+  function currentValue(f) {
+    const el = f.el;
+    switch (f.type) {
+      case "radio": case "checkboxes": return f.inputs.filter(isChecked).map((o) => (f.aria ? radioLabel(o) : optionLabel(o))).join(", ");
+      case "checkbox": return el.checked ? "Yes" : "";
+      case "file": return "";
+      case "select": case "listbox": return isEmpty(f) ? "" : f.type === "select" ? clean(el.options[el.selectedIndex].text) : txt(el);
+      case "combo": {
+        for (let n = el.parentElement, i = 0; n && i < 4; n = n.parentElement, i++) {
+          const v = [...n.querySelectorAll("[class*=single-value], [class*=singleValue], [class*=multi-value__label], [class*=multiValue] [class*=label]")].map(txt).filter(Boolean);
+          if (v.length) return /^(select|choose|please)\b/i.test(v[0]) ? "" : v.join(", ");
+          if (n.matches("label, fieldset, [class*=control]")) break;
+        }
+        return clean(el.value);
+      }
+      default: return String(el.value || "").trim();
+    }
+  }
+  // What the person typed is kept from the first look on, as they type, so an answer survives the form moving on to its
+  // next part before the app looks again. The ones no longer on the page come back marked gone.
+  const typedSoFar = new Map();
+  let recording = false, recordTimer = null;
+  const fieldsNow = () => collect().map((f) => ({ label: f.type === "checkbox" && f.question && f.question !== f.label ? `${f.question}: ${f.label}` : f.label, type: f.type,
+    value: String(currentValue(f) || "").trim().slice(0, 4000) })).filter((x) => x.label);
+  const record = (list = fieldsNow()) => { for (const v of list) if (v.value) typedSoFar.set(v.label, v); return list; };
+  function values() {
+    if (!recording) {
+      recording = true;
+      document.addEventListener("input", () => { clearTimeout(recordTimer); recordTimer = setTimeout(() => record(), 250); }, true);
+      // a change comes before the click that moves the form on (the field loses focus first)
+      document.addEventListener("change", () => { clearTimeout(recordTimer); record(); }, true);
+    }
+    const now = record();
+    const shown = new Set(now.map((v) => v.label));
+    return [...now, ...[...typedSoFar.values()].filter((v) => !shown.has(v.label)).map((v) => ({ ...v, gone: true }))];
+  }
+
   async function scrape() {
     const found = collect();
     // Dropdowns that only render their options when opened: peek at them for the model.
@@ -1200,6 +1239,7 @@
   browser.runtime.onMessage.addListener((msg) => {
     switch (msg.type) {
       case "scrape": return scrape();
+      case "values": return Promise.resolve(values());
       case "debug": return Promise.resolve(debugInfo());
       case "fill": return fill(msg.kit, msg.resume);
       case "status": showStatus(msg.status); return;

@@ -311,6 +311,22 @@ tbody tr:hover { background: var(--color-paper-2); }
 .toast button { background: none; border: 0; color: inherit; font: inherit; font-weight: 600; text-decoration: underline; margin-left: var(--space-sm); padding: 2px 4px; cursor: pointer; }
 .toast button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 .row-skip { margin-top: 6px; }
+.people { margin: var(--space-sm) 0; }
+.keep-typed { margin: var(--space-sm) 0; display: grid; gap: 6px; }
+.standing { margin: var(--space-sm) 0; }
+.story { padding: var(--space-xs) 0 var(--space-sm); border-bottom: 1px solid var(--color-rule); }
+.story dl { margin: 6px 0; display: grid; grid-template-columns: max-content 1fr; gap: 4px 10px; }
+.story dt { font-weight: 600; }
+.story dd { margin: 0; }
+.fu-list { display: grid; gap: var(--space-sm); max-height: 60vh; overflow: auto; }
+.fu { display: grid; gap: 6px; padding-bottom: var(--space-sm); border-bottom: 1px solid var(--color-rule); }
+.insights { display: grid; gap: var(--space-sm); }
+.insights table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+.insights caption { text-align: left; font-weight: 600; padding: 4px 0; }
+.insights th, .insights td { text-align: left; padding: 4px 6px; border-top: 1px solid var(--color-rule); }
+.insights td { font-variant-numeric: tabular-nums; }
+.person { display: flex; gap: var(--space-sm); align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 8px 0; border-top: 1px solid var(--color-rule); }
+.list-note { display: flex; gap: var(--space-sm); align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--color-rule); }
 .mobile-bar { display: none; }
 
 /* ---------- the application in progress: one sheet of stock ---------- */

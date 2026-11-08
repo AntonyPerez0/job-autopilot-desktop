@@ -18,6 +18,8 @@ export function startBackground({ core, here, show, open, visible }) {
   };
   const doing = (st) => {
     const s = st.settings, w = st.state;
+    if (w.finish && w.finish.phase === "yours") return `Your turn: ${w.finish.company}`;
+    if (w.finish && w.finish.phase === "filling") return `Filling in ${w.finish.company} for you to finish`;
     if (s.paused) return "Paused";
     if (w.job) return `Applying to ${w.job.company}`;
     if (w.now === "searching") return "Looking for new jobs";
@@ -42,6 +44,9 @@ export function startBackground({ core, here, show, open, visible }) {
     const a = st.toAnswer || {};
     if (a.count && a.first) out.push({ key: `ask:${a.first.slug}`, title: "An application needs your answer", body: `${a.first.title} at ${a.first.company}: a question only you can answer.`, target: { job: a.first.slug } });
     if (st.settings.dryRun && !st.settings.reviewedDryRun && st.firstFilled) out.push({ key: `practice:${st.firstFilled.slug}`, title: "Your practice application is ready", body: `Check what it would send to ${st.firstFilled.company}, then start sending for real.`, target: { job: st.firstFilled.slug } });
+    // Finish with me: the browser window is waiting for them.
+    const f = st.state && st.state.finish;
+    if (f && f.phase === "yours") out.push({ key: `finish:${f.slug}:${f.since}`, title: `Your turn: ${f.company}`, body: String(f.why || "").replace(/^./, (c) => c.toUpperCase()), target: { job: f.slug } });
     const ai = st.search && st.search.aiProblem;
     if (ai) out.push({ key: `ai:${ai}`, title: "The AI stopped working", body: ai, target: { view: "settings" } });
     return out;

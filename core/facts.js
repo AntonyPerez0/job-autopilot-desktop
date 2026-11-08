@@ -193,6 +193,8 @@ export function autopilotRules(a, profile, prefs) {
   }
   if (!f.wantsInternships) lines.push("- Internships and co-ops are hard fails.");
   if (Number.isFinite(f.maxYearsRequired)) lines.push(`- Roles that require more than ${f.maxYearsRequired} years of experience as a must-have are hard fails.`);
+  const stretch = prefs && [1, 2].includes(Number(prefs.stretchYears)) ? Number(prefs.stretchYears) : 0;
+  if (stretch) lines.push(`- A must-have number of years of experience that the candidate is at most ${stretch} year${stretch === 1 ? "" : "s"} short of is NOT a hard fail: they chose to apply to near misses. Every other must-have still is. Their answers to "how many years" stay their real numbers.`);
   lines.push(
     "- A security clearance the candidate does not hold, a license or degree the facts do not show, when the posting makes it a must-have: hard fail.",
     "- TRUTH RULES (no exceptions):",
@@ -204,6 +206,7 @@ export function autopilotRules(a, profile, prefs) {
     `  * How they heard about the job: "${a.heardAbout || "Job board"}" (found through a job board). With options pick that one, or "Job board", "Job site", "Online", "Internet" or "Other", in that order. Never a referral, an employee, a recruiter, an event or a search engine.`,
     `  * Where they live: ${f.home || "(not given)"}. ${relocationRule(a, prefs)}`,
     `  * Start date / availability: "${a.startAvailability || "decide"}". Notice period: "${a.noticePeriod || "decide"}". Never a different date or number of weeks.`,
+    payRule(a),
     "  * Demographic, veteran, disability and orientation questions: the candidate's standard answer; when it is to decline, the option that declines to answer.",
     "  * Arbitration agreements, jury or class-action waivers, non-competes, releases of claims, background check or drug test consents: always \"decide\".",
     "  * Written answers: a fact from a project marked builtWithAiAgents must say AI coding agents built it IN THE SAME SENTENCE, and must never be phrased as \"I built\", \"I wrote\" or \"I shipped\" that project. No numbers, tools or claims that are not in the catalog.",
@@ -212,6 +215,13 @@ export function autopilotRules(a, profile, prefs) {
     "- Drafted free-text answers must be specific to this employer and posting and stay strictly within the facts.",
   );
   return lines.join("\n");
+}
+
+// Desired pay, in the period and form the question asks: a year is 12 months, 52 weeks or 2,080 working hours.
+function payRule(a) {
+  const pay = String(a.salary || "").trim().slice(0, 120);
+  if (!pay) return "  * Desired pay: not given. The middle of a pay range the posting states; else \"Open to discussing the posted range\" where words are allowed, and \"decide\" for a field that takes only a number.";
+  return `  * Desired pay: ${JSON.stringify(pay)}, the candidate's own figure. A question asking it by another period gets it converted: a year is 12 months, 52 weeks or 2,080 working hours (40 a week). A field that takes only a number gets the number alone (no "$", commas or words); a range gets it as both ends. When the posting states a range that starts above it, the low end of the posted range instead. Never any other amount.`;
 }
 
 function relocationRule(a, prefs) {

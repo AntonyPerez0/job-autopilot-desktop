@@ -38,8 +38,19 @@ CREATE TABLE IF NOT EXISTS events (
   slug TEXT, level TEXT, message TEXT
 );
 `);
+  // Columns added since, for databases made before them:
+  //   real: the person asked to send this one for real, even in practice mode
+  //   hold_until: they know someone there; the app waits (SQLite time) so they can ask for a referral first
+  //   stage: where an application stands, set by the person (interviewing | offer | rejected | withdrew)
+  //   followed_up_at: when they followed up on it ("no": they chose not to)
+  for (const [col, type] of [["real", "INTEGER DEFAULT 0"], ["hold_until", "TEXT"], ["stage", "TEXT"], ["followed_up_at", "TEXT"]]) {
+    if (!db.prepare("SELECT 1 FROM pragma_table_info('jobs') WHERE name = ?").get(col)) db.exec(`ALTER TABLE jobs ADD COLUMN ${col} ${type}`);
+  }
   return db;
 }
+
+// A time as SQLite writes its own (datetime('now')): "2026-11-08 14:05:00", so the two compare as text.
+export const sqlTime = (d = new Date()) => new Date(d).toISOString().replace("T", " ").slice(0, 19);
 export const getDb = () => db || openDb();
 
 export function log(slug, message, level = "info") {

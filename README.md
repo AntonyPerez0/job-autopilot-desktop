@@ -133,6 +133,42 @@ Read only; you answer from your own email.
 
 </td>
 </tr>
+<tr>
+<td valign="top">
+
+**Finish it with me**<br>
+When an application stops on something only you can do (a question, a sign-in,
+a CAPTCHA), the app fills in everything else in a window in front of you. You
+do the rest and press Submit; it sees when it's sent and keeps your answers.
+
+</td>
+<td valign="top">
+
+**Companies you'd love to work for, and people you know**<br>
+Name a company and the app reads its own job board on every search, applying to
+new fits there first. With your LinkedIn connections, it shows who you know at a
+company and waits a few days so you can ask them for a referral.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**Leaves out what isn't for you, for free**<br>
+Recruiters, staffing companies and scam signs (a fee to pay, interviews over
+WhatsApp) are skipped without the AI, and so is a kind of work you turned down
+once. At most 2 applications a month to one company, the best match first.
+
+</td>
+<td valign="top">
+
+**After you apply**<br>
+A short follow-up note for applications with no answer after 10 days, where
+each one stands, what's working (which sources, titles and resume versions get
+answers), and interview prep notes built on your own resume lines.
+
+</td>
+</tr>
 </table>
 
 <table>
@@ -288,6 +324,15 @@ left off. You can change all of it later under **Settings** and **Resume**.
    something else (your shifts, a driver's license, references), the app stops
    and asks you once, then remembers. **Answer more now** shows the rest, and
    it's always under **Settings** > About you.
+
+   Not sure what pay to ask for? Next to **Desired pay**, **What do jobs like
+   mine pay?** shows the pay listed in open postings for your kind of work, at
+   your level, in your country (freehire's figures: the range of the middle half
+   of those postings, and the middle one), and **Use** puts the middle in. Forms get your desired pay in
+   the way they ask: a year is 12 months, 52 weeks or 2,080 working hours, a box
+   that takes only a number gets just the number, and when the posting's own
+   range starts higher, its low end. Pay is often higher in big cities than the
+   country's figures.
 6. **Jobs to look for.** Type job titles or click suggestions, pick your city
    from the list, drag the slider for how far you'd travel, and tick remote
    jobs if you want them. **More choices** has the rest: the lowest pay you'd
@@ -570,6 +615,7 @@ promise any employer will like it.
 | **Simplify lists** | New-graduate jobs and internships, mostly tech | Read from Simplify's free lists on GitHub. Simplify's own website forbids automated use, so the app never visits it. |
 | **Google Jobs** | What Google's job search shows, from many sites | Google has no public jobs API and blocks automated searches, so this goes through [SerpApi](https://serpapi.com) with your own key. Its free plan has 250 searches a month; the app stays under 200 and spreads them over the month. |
 | **USAJOBS** | Federal government jobs near you and remote | Through the official USAJOBS listings, with your own free key: press **Get a free key** under USAJOBS, fill in the short form, and paste the key that arrives by email. Applying on USAJOBS needs a Login.gov account and the agency's own questions, so these jobs go to **Apply yourself** with the closing date and a **Make my resume for this job** button. |
+| **Companies you chose** | Every job on the job boards of companies you'd love to work for | Their own boards on Greenhouse, Lever or Ashby, read directly on every search (see [Companies you'd love to work for](#companies-youd-love-to-work-for)). |
 | **Add a job** | Anything you find yourself | Copy a job's link from Google, Simplify, HiringCafe, Indeed or a company's site, and paste it into **Add a job** on the Overview. The app applies to it next. |
 
 ### Government jobs
@@ -595,6 +641,62 @@ to. Then the app reads what the posting asks for against your approved resume
 and your About-you answers, without the AI (see [What the posting asks
 for](#what-the-posting-asks-for)). Then the AI reads it against your facts.
 Only good fits go on.
+
+Some postings are left out before the AI reads them, so they cost nothing:
+
+- **Not an employer hiring.** With **Skip recruiters, staffing companies, repost
+  sites and postings that look like scams** on (it is, at first): a posting that
+  asks you to pay (a training fee, equipment, a check to deposit), interviews
+  over WhatsApp, Telegram or text chat, wants resumes at a Gmail or Yahoo
+  address, or comes from a recruiter for an employer it doesn't name, a
+  staffing company, or a company with almost no jobs that posts the same opening
+  in many cities. Each is skipped with the reason.
+- **A kind of work you don't want.** Open a job and press **Not this kind of
+  work**: jobs of that kind (healthcare, hardware testing...) are left out from
+  then on, and the ones waiting in your lists are skipped too, with **Undo**. The
+  app also learns: when the AI has found four or more postings of one kind to be
+  different work than yours, and none of that kind fit, it leaves that kind out.
+  Settings > Jobs to look for lists every kind left out, marked **(learned)**
+  when the app chose it; press &times; to bring one back for good.
+- **A near miss on years.** Many employers treat "3 years of experience" as a
+  guide. **When a job asks for a bit more experience than you have** (under
+  Jobs to look for) applies when you're up to 1 year short (at first), up to 2,
+  or never. Every other must-have still has to be met, and forms always get your
+  real numbers.
+- **One company, over and over.** **Applications to one company** sends at most
+  2 a month to one employer (at first; 1, 3 or no limit). Where several of its
+  jobs fit, the best match with your resume goes first.
+
+### Companies you'd love to work for
+
+Under Settings > Jobs to look for, type a company's name (or paste a link to one
+of its job postings, or to its careers page) into **Companies you'd love to work
+for** and press **Add**. The app finds the company's own job board on Greenhouse,
+Lever or Ashby, where most tech companies post, and says how many jobs are open
+there. From then on it reads that board on every search: new jobs there that fit
+you go to the front of the queue, however long they've been up. Up to 30
+companies; press &times; on one to stop. A company whose jobs are somewhere else
+(Workday, its own site) can't be added this way; use **Add a job** for those.
+
+### People you know (referrals)
+
+A referral from someone who works there gets far more replies than applying
+cold. Settings > **People you know** reads the list of your LinkedIn
+connections:
+
+1. On linkedin.com, open **Me** > **Settings & Privacy** > **Data privacy** >
+   **Get a copy of your data**.
+2. Choose **Want something in particular?**, tick **Connections** and press
+   **Request archive**. LinkedIn emails a link, usually within 10 minutes.
+3. Download and open the file; inside is **Connections.csv**. Press **Choose
+   Connections.csv** in the app and pick it.
+
+When a job is at a company where you know someone, its panel shows who, with a
+link to their LinkedIn page and **Copy a message asking for a referral**: a
+short, friendly note in your name for you to change and send yourself. The app
+waits 3 days (or 2 or 5; or not at all) before applying, so you can ask first,
+and **Apply now instead** ends the wait. The To do list says when there's
+someone to ask. The list stays on this computer; **Remove them** deletes it.
 
 ### What the posting asks for
 
@@ -725,6 +827,12 @@ works; only how much it shows.
   press **It looks right: start sending for real**, then **Start sending**. If
   something's wrong, press **Something's wrong**: the app asks what (an answer,
   a line on your resume, the kind of job) and takes you to where you fix it.
+- **Practice runs you liked can go out too.** The **Practice runs** list has
+  **Send them for real** (and each one, **Send this one for real**). Each is
+  filled in again and sent, at your daily pace and before the rest of the queue;
+  ones whose postings have closed are left out. A practice run is never sent as
+  it was filled, since forms and postings change. Right after **Start sending**,
+  the app offers to send them.
 - From then on it sends applications: 10 a day by default, 6 minutes apart,
   and the daily count resets at 9 AM your time. **Pause** at the bottom left
   stops it any time; the **Send for real** switch takes it back to practice
@@ -737,8 +845,9 @@ works; only how much it shows.
   off). Settings > **While it works** turns each of these off, and can start
   the app (without a window) when your computer starts.
 - **Notifications** tell you when something needs you: an employer wrote back,
-  a question only you can answer, your practice application is ready, or the AI
-  stopped working. Click one to go straight to it.
+  a question only you can answer, your practice application is ready, it's your
+  turn in an application you're finishing with the app, or the AI stopped
+  working. Click one to go straight to it.
 - The **Overview** starts with one line about your week and a **To do** list:
   everything that needs you, most important first, each with one button. When
   it's empty, the app is busy on its own. **Help** at the bottom of the menu
@@ -788,6 +897,57 @@ keep one for that job only (long, written answers and questions that name the
 company start that way). Settings > **Your answers to form questions** lists
 them all, and you can remove any.
 
+### Finish it with me
+
+Some applications stop on something only you can do on the site itself: a
+sign-in, a CAPTCHA, a page the site refuses, or a question you'd rather answer
+on the form. Open one and press **Finish it with me** (it's there for stopped
+applications, practice runs and Apply yourself jobs the app may open):
+
+1. A browser window comes up in front of you, and the app fills in the
+   application with everything it knows.
+2. Where it can't go on, it's your turn: a note at the bottom of the page says
+   what's left ("Fill in Shirt size, then press Next"), and a banner in the app
+   says the same. Sign in, answer, fix what the site shows. When you press
+   **Next** on a form with several pages, the app fills in the next page for you.
+3. When everything the app can do is in, check it and press **Submit**
+   yourself. The app never presses Submit in this mode.
+4. The app sees the employer's confirmation and marks the application sent. If
+   the page doesn't say, press **I sent it** in the app.
+
+**Stop** ends it at any time: the application goes back where it was, and
+what you typed into the questions it couldn't answer is kept for its next try.
+If you pressed Submit before stopping, the app marks it as possibly sent and
+never sends it again on its own. After a finish, the app offers to keep your
+answers for every application that asks the same (legal questions excepted:
+those have their own settings under About you). It waits up to 30 minutes for
+you, starts as soon as what the app is doing now is done (a search under way
+stops early for it), and works while the autopilot is paused too.
+
+### After you apply
+
+- **Where it stands.** Each sent application's panel has **Where it stands**:
+  waiting to hear, interviewing, offer, not moving forward, or you withdrew.
+  With your mailbox connected it's set from the employer's emails; change it
+  when you hear back some other way. The Applied list shows it.
+- **Follow-ups.** Applications sent 10 to 60 days ago with no answer show up in
+  the To do list. **Show them** lists each with a short, polite note in your
+  name to copy and send to the recruiter or hiring manager (on LinkedIn, or as a
+  reply to an email from the company). Press **I followed up** or **Not this
+  one**, and it goes away. The app never sends anything for you.
+- **What's working.** Once 5 applications have gone out, the Overview shows how
+  many got an answer and how many led to an interview: by where the job was
+  found, by job title, by resume version, by how well it fit your resume, and by
+  whether you knew someone there. It counts the last six months.
+- **Interview prep.** When an employer asks to talk (or you set **Interviewing**),
+  the To do list says **Get ready**. The job's **Interview prep** tab makes notes
+  in about a minute: what the work is day to day, the questions they'll likely
+  ask (from the posting) with the resume lines that answer each, 3 to 5 stories
+  to tell (situation, task, action, result), each built on one of your own
+  approved lines, and good questions to ask them. A story never adds anything its
+  line doesn't say: where it needs more (a number, what happened next), it says
+  what to add from memory. The notes are only for you; nothing is sent.
+
 ## What it won't do
 
 - **Submit an incomplete application.** If a required question has no
@@ -831,7 +991,11 @@ them all, and you can remove any.
     pressed again automatically. It waits for you.
 - **Solve CAPTCHAs, or make accounts without your go-ahead.** Accounts are made
   only on Workday, and only once you turn on Job site accounts. Jobs that need
-  anything else are skipped or left for you.
+  anything else are skipped or left for you (and **Finish it with me** lets you
+  do that part in the app's own window).
+- **Flood one employer.** At most 2 applications a month go to one company at
+  first (Settings > Jobs to look for > **Applications to one company**), the best
+  match first.
 
 ### Mailbox
 
@@ -1148,8 +1312,12 @@ JA_API_KEY=... node scripts/live-hourly.mjs     # HiringCafe search + screen + o
 How the code is laid out:
 
 - `core/`: the engine.
-  - discovery (`discover.js`, `geo.js`)
-  - applying (`apply.js`, `browser.js`)
+  - discovery (`discover.js`, `geo.js`), and what's left out without the AI:
+    scams and recruiters (`quality.js`), kinds of work (`kinds.js`)
+  - companies you chose (`sources/watchlist.js`) and people you know (`referrals.js`)
+  - applying (`apply.js`, `browser.js`), including Finish it with me (`handOver` in `apply.js`)
+  - after applying: where it stands, follow-ups, what's working (`tracking.js`),
+    interview prep (`prep.js`), and pay from postings (`pay.js`)
   - the user's facts, truth rules and fact-check (`facts.js`, `truth.js`,
     `engine.js`)
   - mail (`mail.js`)

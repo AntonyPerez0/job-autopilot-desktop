@@ -48,6 +48,19 @@ const PAGES = {
   "/leftover": `<h1>Old posting</h1><script>let n = 0; const t = setInterval(() => { window.open("/stray?" + (++n), "_blank"); if (n >= 20) clearInterval(t); }, 300);</script>`,
   "/stray": `<h1>Sign in</h1><label for="u">Email</label><input id="u"><label for="pw">Password</label><input id="pw" type="password">`,
   "/signin": `<h1>Careers</h1><p>Sign in or create an account to apply.</p><label>Email<input></label><label>Password<input type="password"></label><button>Sign in</button>`,
+  // Finish with me: a question the app can't answer on page 1 of 2, and a sign-in in front of a form.
+  "/finish-2": `<p>Thank you for your interest in Globex!</p><form id="f" onsubmit="return false">
+    <div id="p1"><label for="fn">First name *</label><input id="fn" required><label for="ln">Last name *</label><input id="ln" required><label for="sz">Shirt size *</label><input id="sz" required>
+      <button type="button" onclick="if(!sz.value)return;p1.style.display='none';p2.style.display='block'">Next</button></div>
+    <div id="p2" style="display:none"><label for="ph">Phone *</label><input id="ph" required>
+      <label for="ad">Are you 18 or older? *</label><select id="ad" required><option value="">Select...</option><option>Yes</option><option>No</option></select>
+      <label for="da">Days available *</label><input id="da" required>
+      <button type="submit" onclick="window.SUBMITTED=JSON.stringify([fn.value,sz.value,ph.value]);document.body.innerHTML='<h2>Thank you for applying!</h2>'">Submit application</button></div></form>`,
+  "/finish-signin": `<h1>Careers</h1><p>Sign in to apply.</p><label>Email<input id="u"></label><label>Password<input id="pw" type="password"></label>
+    <button id="go" onclick="document.body.innerHTML=document.getElementById('form').innerHTML">Sign in</button>
+    <template id="form"><form onsubmit="return false"><label for="fn">First name *</label><input id="fn" required><label for="ln">Last name *</label><input id="ln" required>
+      <label for="em">Email *</label><input id="em" type="email" required>
+      <button type="submit" onclick="document.body.innerHTML='<h2>Your application has been received.</h2>'">Submit application</button></form></template>`,
 };
 let submitted = null, sends = 0;
 const site = http.createServer((req, res) => {
@@ -179,6 +192,68 @@ test("http:// is never opened: an http link is opened as https, or left to the p
   assert.strictEqual(gov.status, "manual", gov.reason);
   assert.match(gov.reason, /government job site/);
   await ctx.unroute("http://plain.example/**"); await ctx.unroute("https://www.governmentjobs.com/**");
+});
+
+// ---------- Finish with me ----------
+// The person, played by the test: on each of their turns, what they do on the page (the newest tab).
+function person(steps) {
+  const turns = [];
+  const f = { every: 150, minutes: 1, stop: false, said: false, turns,
+    turn: (why) => {
+      turns.push(why);
+      const act = steps[turns.length - 1];
+      if (act) setTimeout(() => act(ctx.pages()[ctx.pages().length - 1]).catch((e) => { f.error = e; f.stop = true; }), 400);
+    },
+    stopped: () => f.stop, sent: () => f.said };
+  return f;
+}
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+
+test("finish with me: the person answers what the app can't and presses Next; the app fills the next page; they press Submit", async () => {
+  const fin = person([
+    async (pg) => { await pg.fill("#sz", "Medium"); await pause(700); await pg.click("text=Next"); },
+    async (pg) => { assert.strictEqual(await pg.inputValue("#ph"), "+1 (512) 555-0142", "the app filled page 2"); await pg.click("text=Submit application"); },
+  ]);
+  const r = await applyTo(job("/finish-2", "t-fin-2"), {}, { browser: ctx, finish: fin });
+  assert.ifError(fin.error);
+  assert.strictEqual(r.status, "applied", r.reason);
+  assert.match(r.reason, /employer's page confirmed it/);
+  assert.match(fin.turns[0], /fill in "Shirt size", then press "Next"/);
+  assert.match(fin.turns[1], /Check it, then press Submit yourself/);
+  assert.deepStrictEqual(r.details.finishTyped, [{ label: "Shirt size *", value: "Medium" }], "kept even though the form moved on");
+  assert.ok(r.details.kit.some((k) => k.page === 2 && k.value === "+1 (512) 555-0142"));
+});
+
+test("finish with me: a sign-in first, then the app fills the form; 'I sent it' when the page doesn't say", async () => {
+  const fin = person([
+    async (pg) => { await pg.fill("#u", "jordan.lee@example.com"); await pg.fill("#pw", "not-a-real-one"); await pg.click("#go"); },
+    async () => { await pause(300); fin.said = true; },
+  ]);
+  const r = await applyTo(job("/finish-signin", "t-fin-signin"), {}, { browser: ctx, finish: fin });
+  assert.ifError(fin.error);
+  assert.match(fin.turns[0], /sign in to 127\.0\.0\.1, or make an account there/);
+  assert.strictEqual(r.status, "applied", r.reason);
+  assert.strictEqual(r.reason, "you finished it and sent it");
+  assert.ok(r.details.kit.some((k) => k.value === "Jordan"), "filled after the sign-in");
+  assert.deepStrictEqual(r.details.finishTyped, [], "a password is never kept");
+});
+
+test("finish with me: Stop keeps what they typed and nothing was sent; Submit pressed with no answer may have gone through", async () => {
+  store.saveAnswers({ yourAnswers: [] }); // the answers an earlier test gave to these questions
+  const fin = person([async (pg) => { await pg.fill("#yr", "3"); await pause(500); fin.stop = true; }]);
+  const r = await applyTo(job("/ask", "t-fin-stop"), {}, { browser: ctx, finish: fin });
+  assert.ifError(fin.error);
+  assert.strictEqual(r.status, "finish-stopped");
+  assert.strictEqual(r.outcome, "stopped");
+  assert.strictEqual(r.maybeSent, false);
+  assert.ok(r.details.finishTyped.some((x) => /How many years/.test(x.label) && x.value === "3"));
+  const before = sends;
+  const fin2 = person([async (pg) => { await pg.click("text=Submit application"); await pause(800); fin2.stop = true; }]);
+  const s2 = await applyTo(job("/form-silent", "t-fin-silent"), {}, { browser: ctx, finish: fin2 });
+  assert.ifError(fin2.error);
+  assert.strictEqual(sends, before + 1, "the person's Submit, not the app's");
+  assert.strictEqual(s2.status, "finish-stopped");
+  assert.strictEqual(s2.maybeSent, true);
 });
 
 // The whole loop, in the app's own browser (Playwright's Chromium): skipped where it isn't installed.

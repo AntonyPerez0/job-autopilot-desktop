@@ -3,10 +3,10 @@
 import fs from "node:fs";
 import { getDb, log, setJob, getJob, appliedToday, nextDayStart } from "./db.js";
 import { discover } from "./discover.js";
-import { sameRoleAs, sameUrlAs } from "./dedupe.js";
+import { companyKey, sameRoleAs, sameUrlAs } from "./dedupe.js";
 import { abortCurrent, applyTo, httpsOk, STEPS, toHttps } from "./apply.js";
 import { hostOf, isGovUrl } from "./ats.js";
-import { acquireBrowser, closeAppPage, closeBrowser, newAppPage } from "./browser.js";
+import { acquireBrowser, closeAppPage, closeBrowser, newAppPage, showBrowser } from "./browser.js";
 import { windowModeOf } from "./apply.js";
 
 // Sources that are read in a browser (HiringCafe) get a tab in the same out-of-the-way window.
@@ -21,7 +21,8 @@ const searchBrowser = {
 import { isLocal, plainAiError } from "./llm.js";
 import { call } from "./freehire.js";
 import { classifyReply, findConfirmation, mailSince, maybeEmployer, replyJob, replySnippet } from "./mail.js";
-import { dataDir, getSecret, getSettings, saveSettings } from "./store.js";
+import { dataDir, getPrefs, getSecret, getSettings, saveSettings } from "./store.js";
+import { saveYourAnswers } from "./asked.js";
 
 const CONFIG = new Proxy({}, { get: (_, k) => getSettings()[k] });
 const db = new Proxy({}, { get: (_, k) => { const d = getDb(); return typeof d[k] === "function" ? d[k].bind(d) : d[k]; } });
@@ -49,6 +50,7 @@ function learn(key, seconds) {
 }
 
 function applyProgress(job) {
+  if (!timing) loadTimings();
   const p = { kind: "apply", startedAt: Date.now(), step: null, stepAt: Date.now(), done: [],
     steps: STEPS.map(([key, label]) => ({ key, label, typical: timing[key] })) };
   state.progress = p;
@@ -67,10 +69,60 @@ export { searchBrowser };
 
 const TRANSIENT = /timeout|timed out|net::|ECONN|socket|Target (page|closed)|browser has been closed|Model API 5|Model API 429|fetch failed|download failed|No browser could be started|aborted/i;
 
-function nextJob() {
-  return db.prepare(`SELECT * FROM jobs WHERE status = 'queued' AND attempts < ?
-    ORDER BY (reason LIKE 'you answered %') DESC, (details LIKE '%"addedByUser":true%') DESC, (work_mode = 'remote') ASC, posted_at DESC LIMIT 1`).get(CONFIG.maxAttempts);
+// What goes next: the ones the person asked for first (sent for real from a practice run, answered, added by link),
+// then new jobs at companies they want to work for, then the rest, newest first. Jobs held for a referral wait.
+const QUEUE_SQL = `SELECT * FROM jobs WHERE status = 'queued' AND attempts < ? AND (hold_until IS NULL OR hold_until <= datetime('now'))
+  ORDER BY real DESC, (reason LIKE 'you answered %') DESC, (details LIKE '%"addedByUser":true%') DESC, (details LIKE '%"board":"watchlist"%') DESC,
+  (work_mode = 'remote') ASC, posted_at DESC LIMIT 500`;
+const parse = (s) => { try { return JSON.parse(s || "{}") || {}; } catch { return {}; } };
+const theirs = (j) => !!j.real || /^you answered /.test(j.reason || "") || !!parse(j.details).addedByUser;
+// How well the posting's requirements are covered by the resume (checked without the AI), 0 to 1.
+const fit = (j) => { const c = parse(j.details).check; return c && c.checked ? c.met / c.checked : 0.5; };
+
+// Applications sent to one employer in the last 30 days (a practice run sends nothing, so it doesn't count).
+function sentTo(key) {
+  const rows = db.prepare(`SELECT company FROM jobs WHERE (status IN ('applied', 'submitting') OR (status = 'failed' AND reason LIKE '%may have gone through%')) AND applied_at > datetime('now', '-30 days')`).all();
+  return rows.filter((r) => companyKey(r.company) === key).length;
 }
+
+// The next job: at an employer with several in the queue, the best match first; at one that already has as many
+// applications this month as the person allows, none (those wait no longer: they're skipped, with the reason).
+export function pickNext() {
+  const limit = Number(getPrefs().perCompanyMonth) || 0;
+  for (let round = 0; round < 50; round++) {
+    const rows = db.prepare(QUEUE_SQL).all(CONFIG.maxAttempts);
+    if (!rows.length) return null;
+    const first = rows[0];
+    if (theirs(first)) return first;
+    const key = companyKey(first.company);
+    const same = rows.filter((r) => !theirs(r) && companyKey(r.company) === key);
+    if (limit && sentTo(key) >= limit) {
+      for (const r of same) setJob(r.slug, { status: "skipped", reason: `already ${limit === 1 ? "an application" : limit + " applications"} to ${first.company} in the last 30 days, your limit for one company` });
+      log(first.slug, `left out ${same.length} job${same.length === 1 ? "" : "s"} at ${first.company}: your limit of ${limit} a month for one company`);
+      continue;
+    }
+    return same.reduce((best, r) => (fit(r) > fit(best) + 1e-9 ? r : best), first);
+  }
+  return null;
+}
+const nextJob = pickNext;
+export const peekNext = () => db.prepare(QUEUE_SQL.replace("LIMIT 500", "LIMIT 1")).get(CONFIG.maxAttempts) || null;
+
+// Which of these jobs freehire says have closed (freehire's own postings only; up to 50 slugs a call). -> Set of slugs
+export async function closedOnes(jobs, ask = call) {
+  const mine = jobs.filter(isFreehireJob).map((j) => j.slug);
+  const out = new Set();
+  for (let i = 0; i < mine.length; i += 50) {
+    try {
+      const r = await ask("check_jobs_open", { slugs: mine.slice(i, i + 50).map((x) => encodeURIComponent(String(x))) });
+      for (const j of r.jobs || []) if (j.status === "closed") out.add(decodeURIComponent(j.slug));
+    } catch { /* unknown: treated as open, and checked again just before it's sent */ }
+  }
+  return out;
+}
+
+// Practice mode sends nothing, except the jobs the person asked to send for real.
+export const practiceFor = (job) => !!CONFIG.dryRun && !job.real;
 
 // Applied, mid-submit, or possibly sent (an interrupted submit, here or on another computer).
 const APPLIED_SQL = "SELECT slug, company, title, url, apply_url, applied_at, status FROM jobs WHERE status IN ('applied', 'submitting') OR (status = 'failed' AND reason LIKE '%may have gone through%')";
@@ -175,8 +227,8 @@ async function applyOneInner(job) {
     log(job.slug, "closed before we got to it");
     return false;
   }
-  const dryRun = !!CONFIG.dryRun;
-  log(job.slug, `applying: ${job.title} at ${job.company}${dryRun ? " (practice run)" : ""}`);
+  const dryRun = practiceFor(job);
+  log(job.slug, `applying: ${job.title} at ${job.company}${dryRun ? " (practice run)" : CONFIG.dryRun ? " (for real: you asked to send this one)" : ""}`);
   const track = applyProgress(job);
   // pressedAt: when Submit was really pressed (the step after it began). From then on the job counts as
   // possibly sent, toward the daily cap and for never applying twice, whatever the page shows next.
@@ -219,6 +271,106 @@ async function applyOneInner(job) {
   }
 }
 
+// ---------- "Finish with me" ----------
+// The person finishes one application themselves, in a window in front of them, once the app has filled in what it
+// can. It starts as soon as the worker is free (a search under way stops early for it), paused or not and whatever
+// today's count: the person is the one who presses Submit.
+const fin = { want: null, stop: false, sent: false };
+export const FINISH = { every: 2000, minutes: 30 };
+// What can be finished this way: an application that stopped (not one that may have gone through), a practice run,
+// and one left to the person that the app may open (never a government job site, nothing without https).
+export function finishable(j) {
+  if (!j) return false;
+  const link = j.apply_url || j.url;
+  if (!httpsOk(toHttps(link)) || isGovUrl(link)) return false;
+  if (j.status === "failed") return !/may have gone through/.test(j.reason || "");
+  return j.status === "filled" || j.status === "manual";
+}
+export function requestFinish(slug) {
+  const j = getJob(slug);
+  if (!finishable(j)) return "That application can't be finished this way.";
+  if (state.finish && state.finish.slug !== slug) return `You're finishing ${state.finish.company} first. Stop that one, or finish it, then try again.`;
+  if (state.finish) return null;
+  Object.assign(fin, { want: slug, stop: false, sent: false });
+  state.finish = { slug, title: j.title, company: j.company, phase: "waiting", at: Date.now() };
+  kick();
+  return null;
+}
+// "stop": the person stops (before it starts: it doesn't); "sent": they say they sent it themselves.
+export function finishControl(what) {
+  if (!state.finish) return false;
+  if (what === "stop" && fin.want) { fin.want = null; state.finish = null; return true; }
+  if (what === "sent" && state.finish.phase !== "yours") return false;
+  if (what === "stop") fin.stop = true;
+  if (what === "sent") fin.sent = true;
+  kick();
+  return true;
+}
+
+// apply: applyTo, or a stand-in in tests.
+export async function runFinish(apply = applyTo) {
+  const slug = fin.want;
+  fin.want = null;
+  const job = getJob(slug);
+  if (!finishable(job)) { state.finish = null; return; }
+  const before = { status: job.status, reason: job.reason };
+  state.now = "finishing an application with you";
+  state.job = { slug, title: job.title, company: job.company };
+  state.finish = { ...state.finish, phase: "filling", at: Date.now() };
+  setJob(slug, { status: "working" });
+  log(slug, `finish with me: filling in ${job.title} at ${job.company}, then it's your turn`);
+  const finish = {
+    ...FINISH,
+    stopped: () => fin.stop, sent: () => fin.sent,
+    // From the person's first turn, Submit may be pressed: after a crash it counts as possibly sent, never sent again.
+    turn: (why) => {
+      state.finish = { ...state.finish, phase: "yours", why, since: Date.now() };
+      state.now = "your turn";
+      if ((getJob(slug) || {}).status !== "submitting") setJob(slug, { status: "submitting" });
+      log(slug, `your turn: ${why}`);
+    },
+  };
+  const track = applyProgress(job);
+  let outcome = "error", error = "";
+  try {
+    const limit = (isLocal(getSettings().ai) ? 90 : 60) * 60000;
+    const r = await withTimeout((s) => apply({ ...job, apply_url: job.apply_url || job.url }, { progress: (k) => { if (!s.aborted) track(k); }, status: (t) => { if (!s.aborted) state.now = t; } },
+      { dryRun: false, finish, mailbox: mailbox(), signal: s }), limit);
+    outcome = r.outcome || r.status;
+    const keep = { details: r.details || null, resume_file: r.resume_file || null, screenshot: r.screenshot || null };
+    if (r.status === "applied") {
+      setJob(slug, { ...keep, status: "applied", reason: r.reason, applied_at: new Date().toISOString(), reviewed: 1 });
+      log(slug, `applied: ${r.reason}`);
+    } else if (r.status === "finish-stopped") {
+      const maybe = !!r.maybeSent;
+      setJob(slug, { ...keep, status: maybe ? "failed" : before.status,
+        reason: maybe ? "a button that sends it (Submit, or Next on a form with several pages) was pressed while you finished it, and no confirmation came: it may have gone through. Check your email before using Try again." : before.reason });
+      log(slug, `finish with me ${r.outcome === "timeout" ? "ran out of time" : "stopped"}${maybe ? ": Submit was pressed, so it may have gone through" : ""}`, maybe ? "warn" : "info");
+      // What they typed into the questions the app couldn't answer: kept for this job, for its next try.
+      const typed = (r.details && r.details.finishTyped) || [];
+      if (typed.length) saveYourAnswers(getJob(slug), typed.map((x) => ({ ...x, remember: false })));
+    } else {
+      setJob(slug, { ...keep, status: r.status, reason: r.reason });
+      log(slug, `${r.status}: ${r.reason}`);
+    }
+  } catch (e) {
+    await abortCurrent();
+    const maybe = (getJob(slug) || {}).status === "submitting";
+    setJob(slug, maybe ? { status: "failed", reason: `finishing it stopped (${plainAiError(e.message).slice(0, 160)}) after your turn began: it may have gone through. Check your email before using Try again.` }
+      : { status: before.status, reason: before.reason });
+    log(slug, `finish with me stopped: ${e.message}`, "warn");
+    error = plainAiError(e.message).slice(0, 200);
+  } finally {
+    const now = getJob(slug) || {};
+    state.finishDone = { slug, title: job.title, company: job.company, status: now.status, outcome, at: Date.now(),
+      maybe: now.status === "failed" && /may have gone through/.test(now.reason || ""), ...(error ? { error } : {}) };
+    state.finish = null; state.job = null; state.progress = null;
+    Object.assign(fin, { stop: false, sent: false });
+    // Out of the way again, if that's where the person keeps the window.
+    if (windowModeOf(getSettings()) === "minimized") await showBrowser(false).catch(() => {});
+  }
+}
+
 let running = false, stopping = false, held = false;
 // An update waiting to install: finish the application in progress, start no new one.
 export const hold = (on) => { held = !!on; kick(); };
@@ -246,14 +398,18 @@ export async function run() {
     try {
       // Replies are read while paused too: the person still wants to hear back.
       try { await checkReplies(); } catch (e) { log(null, "reading replies failed: " + e.message, "warn"); }
+      if (fin.want && !held) { await runFinish(); continue; }
       // The browser stays open between applications, and closes whenever there is a long wait.
       if (CONFIG.paused) { state.now = "paused"; state.progress = null; await closeBrowser(); await sleep(30000); continue; }
       const due = !state.lastSearch || Date.now() - state.lastSearch > CONFIG.searchEveryMinutes * 60000;
       if (due) {
         state.now = "searching";
         state.progress = { kind: "search", startedAt: Date.now(), phase: "search", i: 0, n: 0 };
-        try { await discover((u) => Object.assign(state.progress, u), { browser: searchBrowser }); } catch (e) { log(null, "discovery failed: " + e.message, "error"); }
+        // Someone waiting to finish an application: the search stops early, and runs again once they're done.
+        const ctx = { browser: searchBrowser, yieldTo: () => !!fin.want && !held };
+        try { await discover((u) => Object.assign(state.progress, u), ctx); } catch (e) { log(null, "discovery failed: " + e.message, "error"); }
         state.progress = null;
+        if (ctx.stoppedEarly) continue;
         state.lastSearch = Date.now();
         state.nextSearch = state.lastSearch + CONFIG.searchEveryMinutes * 60000;
       }
