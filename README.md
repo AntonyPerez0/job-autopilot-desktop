@@ -24,7 +24,7 @@ For hourly and everyday jobs as well as office and tech work. Desktop app for ma
 
 <br><br>
 
-**The 60-second tour**: every step from the first setup screen to going live.
+**The 60-second tour**: every step from the first setup screen to sending for real.
 
 https://github.com/user-attachments/assets/18073345-3718-43e3-89f1-352ddd10d98b
 
@@ -34,7 +34,7 @@ https://github.com/user-attachments/assets/18073345-3718-43e3-89f1-352ddd10d98b
 
 > [!IMPORTANT]
 > **It starts in practice mode.** It fills in an application but doesn't send
-> it, until you've checked one yourself and pressed **Start sending for real**.
+> it, until you've checked one yourself and pressed **Start sending**.
 > It never states anything you didn't tell it, never guesses a legal agreement,
 > and never applies to the same job twice.
 
@@ -165,7 +165,8 @@ once. At most 2 applications a month to one company, the best match first.
 **After you apply**<br>
 A short follow-up note for applications with no answer after 10 days, where
 each one stands, what's working (which sources, titles and resume versions get
-answers), and interview prep notes built on your own resume lines.
+answers), interview prep notes built on your own resume lines, and a dated list
+of every application for unemployment claims.
 
 </td>
 </tr>
@@ -303,7 +304,8 @@ left off. You can change all of it later under **Settings** and **Resume**.
    **I already have a key**. Under **Other ways to connect an AI** you can use
    another service, or a free model on your own computer (see
    [Using a local model](#using-a-local-model)).
-3. **Your resume.** Drop in one or more resumes (PDF or Word `.docx`). No
+3. **Your resume.** Drop in one or more resumes (PDF or Word `.docx`); the app
+   reads them straight away. No
    resume? Open **I don't have a resume** and tell the app about your work in
    your own words, in a chat (or answer a short form); the app writes one with
    you (see [Making and improving your resume](#making-and-improving-your-resume)).
@@ -375,8 +377,9 @@ left off. You can change all of it later under **Settings** and **Resume**.
 The last screen asks how the app should behave while it works: keep working
 when you close the window (on), start with your computer (off), and show a
 notification when something needs you (on). Then press **Start practicing**.
-A short tour shows the three things to know. The mailbox isn't part of the
-setup: the app suggests it later, when it would help (see [Mailbox](#mailbox)).
+On the Overview, a short tip says what the **To do** list is for. The mailbox
+isn't part of the setup: the app suggests it later, when it would help (see
+[Mailbox](#mailbox)).
 
 ## Making and improving your resume
 
@@ -450,8 +453,10 @@ what it came from ("You said yes to: ..."). Most people find several things they
 forgot.
 
 The app writes two to four lines per job and a short summary. Your skills,
-languages and certifications are listed exactly as you typed them. It can
-start a new resume or add to the one you have.
+languages and certifications are listed exactly as you typed them. It adds them
+to the resume you have (**Add to my current resume** is ticked at first). Untick
+it to start a new one; the app asks once more before it replaces lines you
+approved.
 
 Jobs already on your resume get the same thing on the **Check & improve**
 part, under **Remember more**: answer the questions, then **Add what I said
@@ -460,9 +465,10 @@ yes to**. The new lines wait for your approval.
 **Projects from GitHub** is described [below](#projects-from-github).
 
 **All your resume pieces** shows every line, where it came from ("From your
-answer: ..."), and whether it's approved. **Add another resume** uploads
-another file. **Download my resume (PDF)** saves the general version, for jobs
-you apply to yourself.
+answer: ..."), and whether it's approved. **Add another resume** reads another
+file as soon as you drop it in and adds its pieces to yours, unapproved.
+**Download my resume (PDF)** saves the general version, for jobs you apply to
+yourself.
 
 **The recruiter's pass.** After the creator writes your lines, the app goes over
 them the way a recruiter would (the rules, and the research behind them, are in
@@ -658,11 +664,15 @@ Some postings are left out before the AI reads them, so they cost nothing:
   different work than yours, and none of that kind fit, it leaves that kind out.
   Settings > Jobs to look for lists every kind left out, marked **(learned)**
   when the app chose it; press &times; to bring one back for good.
-- **A near miss on years.** Many employers treat "3 years of experience" as a
-  guide. **When a job asks for a bit more experience than you have** (under
-  Jobs to look for) applies when you're up to 1 year short (at first), up to 2,
-  or never. Every other must-have still has to be met, and forms always get your
-  real numbers.
+- **More years than you have.** Under Jobs to look for, **Years you've done this
+  kind of work** goes by your resume's dates and your answers until you type
+  your own number. Many employers treat "3 years of experience" as a guide, so
+  **When a job asks for a little more** applies when you're up to 1 year short
+  (at first), up to 2, or never. A line under them says what follows ("So the
+  app applies to jobs that ask for up to 4 years of experience, and leaves out
+  the ones that ask for more"). A job that asks for more is listed under **Not
+  applied** with its reason, and **Apply anyway** sends it. Every other
+  must-have still has to be met, and forms always get your real numbers.
 - **One company, over and over.** **Applications to one company** sends at most
   2 a month to one employer (at first; 1, 3 or no limit), never two within 3 days.
   Where several of its jobs fit, the best match with your resume goes first.
@@ -674,7 +684,7 @@ of its job postings, or to its careers page) into **Companies you'd love to work
 for** and press **Add**. The app finds the company's own job board on Greenhouse,
 Lever or Ashby, where most tech companies post, and says how many jobs are open
 there. From then on it reads that board on every search: new jobs there that fit
-you go to the front of the queue, however long they've been up. Up to 30
+you go first, however long they've been up. Up to 30
 companies; press &times; on one to stop. A company whose jobs are somewhere else
 (Workday, its own site) can't be added this way; use **Add a job** for those.
 
@@ -755,7 +765,7 @@ Then for each Workday job the app chooses **Apply manually**, makes the account
 (or signs in, if it made one there before), confirms it from your email, and
 fills every page. In practice mode it stops before **Submit**: the filled pages are
 saved as a draft in your account on that site, which you can open and check.
-Workday jobs already waiting in Apply yourself move to the queue when you turn it
+Workday jobs already waiting in Apply yourself move to **Up next** when you turn it
 on. Settings lists every account the app made.
 
 Things to know:
@@ -765,7 +775,8 @@ Things to know:
   password, the app can't sign in there; the job stops and says so.
 - A site that shows a CAPTCHA at sign-up still waits for you.
 - Workday's own forms vary by company. This has been tested on a practice copy
-  of a Workday site, not on real ones yet, so check the first few practice runs.
+  of a Workday site, not on real ones yet, so check the first few practice
+  applications.
 
 The app applies by itself on sites that need no account. That includes
 Greenhouse, Lever, Ashby, SmartRecruiters, Workable, CareerPlug, Paycom,
@@ -792,6 +803,16 @@ half of good matches to be ones the app can do by itself.
   **Skip to the page**.
 - **Screen readers:** every button, box and choice has a name, a job opens as
   a dialog, and messages are read out.
+- **One word for each thing, with an icon and a colour:** green for sent,
+  blue for what the app is doing or will do, violet for practice, gray for what
+  was left out or paused, amber only for what waits on you, and red only for
+  what wasn't sent. The word and the icon say it too, so colour is never the
+  only sign.
+- **Settings keep what you type:** a section you change says **Changes here
+  aren't saved yet**, with **Save changes** in view at the bottom of the window,
+  and leaving with changes not saved asks first. Links at the top go to each
+  section, and a button elsewhere in the app that names a setting opens Settings
+  at that setting.
 - **Checked automatically:** every change is tested against the WCAG 2.2 AA
   accessibility rules (with axe-core) on every page, in light and dark, at a
   small and a large window size, along with the colour contrast of every text
@@ -799,21 +820,24 @@ half of good matches to be ones the app can do by itself.
 
 ### Simple or Advanced
 
-The app starts in **Simple**: the sidebar shows only the pages most people use
-(Overview, the application lists, Resume, Settings), the Overview shows what
-needs you and what's next, and extra tools stay out of the way. Switch to
-**Advanced** at the bottom of the sidebar (or Settings > Appearance) to see
-everything: statistics and activity, Skipped and All jobs, the recruiter's
-score, a version of your resume for each kind of job, job site accounts, pace
-and browser settings, and your data folder. Nothing changes in how the app
-works; only how much it shows.
+The app starts in **Simple**: the Overview shows what needs you and what's
+next, and statistics stay out of the way. Every page and setting the app points
+you to is there in Simple too: the lists (Applied, Up next, Needs you, Apply
+yourself, Practice, Not applied), Resume, Settings with job site accounts and
+your data, and the daily limit at the bottom left. Switch to **Advanced** at the
+bottom of the sidebar (or Settings > Appearance) to see everything: statistics
+and activity, All jobs, where each job was found, the recruiter's score, a
+version of your resume for each kind of job, pace and browser settings, and
+your application history. Nothing changes in how the app works; only how much
+it shows.
 
 ## What happens next
 
 - Every two hours it searches the sources you picked for your titles and
-  places, and checks each new job for fit. Jobs it can apply to go in the
-  **Queue**. Good matches on account-only sites go to **Apply yourself**.
-- For each queued job, a browser window opens and the app:
+  places, and checks each new job for fit. Jobs it can apply to go in **Up
+  next**. Good matches on account-only sites go to **Apply yourself**. The ones
+  it leaves out go to **Not applied**, each with its reason.
+- For each job up next, a browser window opens and the app:
   - reads the form
   - builds your resume for that job
   - fills in every answer
@@ -822,22 +846,32 @@ works; only how much it shows.
 - **In practice mode** it stops before Submit, and on forms with several pages
   it stops before the first **Next** (some sites save an application as soon as
   you press Next). The first practice application shows up at the top of the
-  Overview's **To do** list. Open it to see every answer (and where each one
-  came from), the resume PDF, the screenshots and the posting. If it's right,
-  press **It looks right: start sending for real**, then **Start sending**. If
-  something's wrong, press **Something's wrong**: the app asks what (an answer,
-  a line on your resume, the kind of job) and takes you to where you fix it.
-- **Practice runs you liked can go out too.** The **Practice runs** list has
-  **Send them for real** (and each one, **Send this one for real**). Each is
-  filled in again and sent, at your daily pace and before the rest of the queue;
-  ones whose postings have closed are left out, and at any one company they go
-  a few days apart, within your monthly limit. A practice run is never sent as
-  it was filled, since forms and postings change. Right after **Start sending**,
-  the app offers to send them.
+  Overview's **To do** list. Open it: **Check it before anything is sent** points
+  to its answers (and where each one came from), the resume and the screenshots.
+  If it's right, press **Looks right: start sending**. If something's wrong,
+  press **Something's wrong**: change an answer right there (press **Change**
+  next to it, and the app fills in a new practice application with your
+  answer), or go to the line on your resume or to the kinds of jobs it looks
+  for.
+- **Practice mode has an end.** After the first practice application, the app
+  waits until you open it. After that it fills in at most 3 more until you
+  open one again, and practice applications count toward your daily limit,
+  so practicing goes at the pace sending would. The To do list says how many
+  are waiting, with **Start sending**.
+- **Practice applications you liked can go out too.** **Start sending** asks
+  once, with **Also send the practice applications** ticked. Each is filled in
+  again and sent, at your daily pace and before the rest; ones whose postings
+  have closed are left out, and at any one company they go a few days apart,
+  within your monthly limit. A practice application is never sent as it was
+  filled, since forms and postings change. Later, the **Practice** list has
+  **Send them for real**, and each one has **More** > **Send only this one for
+  real**.
 - From then on it sends applications: 10 a day by default, 6 minutes apart,
-  and the daily count resets at 9 AM your time. **Pause** at the bottom left
-  stops it any time; the **Send for real** switch takes it back to practice
-  mode.
+  and the daily count resets at 9 AM your time. The box at the bottom left
+  always says which mode the app is in, with the button to press: **Practice
+  mode** (nothing is sent) with **Start sending**, **Sending** with **Pause**
+  and **Back to practice**, or **Paused** with **Continue**. Under it, **Up to
+  10 a day** changes the daily limit.
 - **Closing the window doesn't stop it.** It keeps looking for jobs and
   applying in the background. Open it again from its icon in the menu bar at
   the top of the screen (Mac) or in the system tray next to the clock
@@ -846,13 +880,22 @@ works; only how much it shows.
   off). Settings > **While it works** turns each of these off, and can start
   the app (without a window) when your computer starts.
 - **Notifications** tell you when something needs you: an employer wrote back,
-  a question only you can answer, your practice application is ready, it's your
-  turn in an application you're finishing with the app, or the AI stopped
-  working. Click one to go straight to it.
-- The **Overview** starts with one line about your week and a **To do** list:
-  everything that needs you, most important first, each with one button. When
-  it's empty, the app is busy on its own. **Help** at the bottom of the menu
-  has short answers to common questions, and the tour again.
+  a question only you can answer, your practice application is ready, practice
+  applications are waiting for you to look, it's your turn in an application
+  you're finishing with the app, or the AI stopped working. Click one to go
+  straight to it.
+- The **Overview** starts with one line about the last day ("Since yesterday:
+  2 applications sent, 1 thing needs you, 14 jobs not applied to") and a **To
+  do** list: everything that needs you, most important first, each with one
+  button. When it's empty, the app is busy on its own. The other pages show one
+  line saying how many things need you. **Help** at the bottom of the menu has
+  short answers to common questions, starting with "Why isn't anything being
+  sent?" and "Why were so many jobs not applied to?"
+- **Each job's panel** shows where it is and the one or two things to do now,
+  with the rest under **More**. **What happened** lists, in order, when it was
+  found, filled in, sent or stopped, and any reply. Its tabs have the answers,
+  the fit, the resume, the screenshots and the posting, each with a link to open
+  it on its own. In a narrow window the panel opens as a page, with **Back**.
 
 The browser is your installed Google Chrome, or Microsoft Edge if you don't
 have Chrome. With neither, the app downloads its own Chromium (about 150 MB,
@@ -903,7 +946,7 @@ them all, and you can remove any.
 Some applications stop on something only you can do on the site itself: a
 sign-in, a CAPTCHA, a page the site refuses, or a question you'd rather answer
 on the form. Open one and press **Finish it with me** (it's there for stopped
-applications, practice runs and Apply yourself jobs the app may open):
+applications, practice applications and Apply yourself jobs the app may open):
 
 1. A browser window comes up in front of you, and the app fills in the
    application with everything it knows.
@@ -928,9 +971,15 @@ stops early for it), and works while the autopilot is paused too.
 ### After you apply
 
 - **Where it stands.** Each sent application's panel has **Where it stands**:
-  waiting to hear, interviewing, offer, not moving forward, or you withdrew.
+  waiting to hear, interviewing, offer, not selected, or you withdrew.
   With your mailbox connected it's set from the employer's emails; change it
-  when you hear back some other way. The Applied list shows it.
+  when you hear back some other way. The Applied list shows it, and **No reply
+  yet** for one that's had no answer in three weeks.
+- **A list of your applications.** On the Applied page, **Save a list of them**
+  saves a spreadsheet (CSV) with the date, employer, job title, place, how you
+  applied and the link of every application sent, oldest first: what an
+  unemployment office asks for when you file a weekly claim. One that may have
+  gone through is in it too, marked so.
 - **Follow-ups.** Applications sent 10 to 60 days ago with no answer show up in
   the To do list. **Show them** lists each with a short, polite note in your
   name to copy and send to the recruiter or hiring manager (on LinkedIn, or as a
@@ -953,7 +1002,7 @@ stops early for it), and works while the autopilot is paused too.
 
 - **Submit an incomplete application.** If a required question has no
   answer, or no answer it can back up with your facts, the job goes to
-  **Needs attention** with the reason. Nothing goes out. You answer the
+  **Needs you** with the reason. Nothing goes out. You answer the
   question in the app and it carries on (see below).
 - **Make things up.**
   - Every fact comes from your approved resume pieces and your answers.
@@ -1005,10 +1054,10 @@ like spam. The app sends yours the way a careful person would:
 
 - **One company at a time.** Never two applications to the same company within
   3 days, and no more than your monthly limit (2 at first). A job at a company
-  you just applied to waits its turn; others go meanwhile. Practice runs sent
-  all at once follow these rules too. A job you pick yourself (one practice run
-  sent for real, a job added by its link, one you answered questions for) goes
-  when its turn comes.
+  you just applied to waits its turn; others go meanwhile. Practice applications
+  sent all at once follow these rules too. A job you pick yourself (one practice
+  application sent for real, a job added by its link, one you answered questions
+  for, one you chose to **Apply anyway**) goes when its turn comes.
 - **A person's pace.** Your daily limit, with a gap of your chosen minutes plus a
   little more each time, so they don't go out like clockwork. At least 40 to 70
   seconds on each form before Submit (filling usually takes longer anyway): forms
@@ -1032,7 +1081,7 @@ signs spam filters look for.
 Greenhouse sometimes emails a security code that has to be typed into the
 form before it accepts an application. With your mailbox connected, the app
 reads the code and finishes the application. Without it, those jobs wait in
-Needs attention, and the To do list offers **Connect my mailbox**. The app also
+Needs you, and the To do list offers **Connect my mailbox**. The app also
 uses the mailbox to spot employers' "thank you for applying" emails. Connect it
 any time under Settings > Mailbox.
 
@@ -1041,8 +1090,8 @@ the employers you applied to in the last 120 days, and puts each one with its
 application, sorted by what it says:
 
 - **Wants to talk** (an interview or a call), **Test or task** (an assessment),
-  **Needs something from you** (references, a form), **Offer**, or **Not moving
-  forward**.
+  **Needs something from you** (references, a form), **Offer**, or **Not
+  selected**.
 
 They show on the Overview (**Replies from employers**, with **Check now**), in
 the Applied list, and on the job. A banner tells you when one wants something
@@ -1091,7 +1140,7 @@ grows, and the previous copy is kept next to it as `.bak`.
 Once imported, the app never applies to those jobs again: not the same
 posting, not the same address, and not the same role at the same employer on
 another job board. Jobs that might have gone through (the app was interrupted
-while submitting) come in as Needs attention, never as something to retry.
+while submitting) come in as Needs you, never as something to retry.
 
 ## Privacy
 
@@ -1179,7 +1228,7 @@ OpenAI-compatible API" with their `http://localhost:.../v1` address and no key.
   responsible for every application sent in your name. That's why the app
   starts in practice mode, keeps a steady pace and records everything.
 - **Sites change.** Application sites change their forms from time to time. When a form can't be filled correctly, the app stops and puts the job
-  in Needs attention instead of sending something half-done.
+  in Needs you instead of sending something half-done.
 - **Some sites guess things.** A few application sites pre-fill your location
   from your internet connection. The app replaces a guessed city with yours,
   and notes it in that job's record.
@@ -1226,17 +1275,24 @@ passwords are never in it. Send the file to whoever helps you with the app.
   Settings > Jobs to look for.
 - **Only two of a chain's jobs show up.** When one employer posts the same job
   for many stores ("Delivery Driver" at twenty locations), the app keeps two,
-  so the queue isn't twenty copies of one job.
-- **Nothing gets queued.** The Overview says when the next search is and the
-  main reasons jobs were left out ("8 need a Class A CDL"); **See why** opens
-  **Skipped** with each job's reason.
-  Add more job titles (or click the suggestions), drag the distance slider
-  further, tick more levels, turn on more places to look, or raise the maximum
-  years required under More options.
+  so Up next isn't twenty copies of one job.
+- **Nothing is being sent.** Look at the box at the bottom left. **Practice
+  mode**: open a practice application from the To do list, and press **Start
+  sending** when it looks right. **Paused**: press **Continue**. **Sending**:
+  the daily limit may be reached (it starts again the next day), the next jobs
+  may be at companies you just applied to (they wait a few days), or nothing is
+  up next.
+- **Nothing is up next.** The Overview says when the next search is and the
+  main reasons jobs were left out ("8 needed a Class A CDL"); **See why** opens
+  **Not applied**. It groups the reasons, each with the setting behind it
+  (**Change my years**, **Change the distance**...), and lists each job with its
+  reason and **Apply anyway**. Add more job titles (or click the suggestions),
+  drag the distance slider further, tick more levels, turn on more places to
+  look, or check **Years you've done this kind of work** under Jobs to look for.
 - **Most matches are in Apply yourself.** That's normal for everyday jobs:
   many big employers use sites that need an account. Those take a few minutes
   each by hand.
-- **Lots of jobs in Needs attention with "Missing info."** Open one and
+- **Lots of jobs in Needs you with "Needs your answer."** Open one and
   answer the questions under **Answer to continue**; see
   [When it stops on a question](#when-it-stops-on-a-question). For facts that
   many forms ask (a street address, years of experience), filling them in
