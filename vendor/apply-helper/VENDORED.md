@@ -54,4 +54,8 @@ Local changes, kept as small as possible:
 12. `content.js` (`values`): a `values` message reports what each field holds now, as the person sees it, so
     "Finish with me" can keep the answers a person types into the questions the app couldn't answer.
 
-To update: copy the new files over these, reapply the twelve edits, run `npm test`.
+13. `content.js` (`trap`, `collect`): boxes made to catch bots ("honeypots": off the page, see-through, a
+    pixel wide, named as one, or saying "if you are human, leave this field blank") are never read or filled,
+    so an employer's spam filter doesn't throw the application away.
+
+To update: copy the new files over these, reapply the thirteen edits, run `npm test`.

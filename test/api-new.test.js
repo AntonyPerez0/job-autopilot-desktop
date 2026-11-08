@@ -31,7 +31,7 @@ test("practice runs sent for real: each queued again as real, first in line, and
   assert.strictEqual(one.real, 1);
   const all = await handle("/api/practice/send", { slugs: ["p1", "p2"] });
   assert.deepStrictEqual(all, { queued: 2, closed: 0 });
-  for (const s of ["p1", "p2"]) assert.deepStrictEqual([getJob(s).status, getJob(s).real, getJob(s).attempts], ["queued", 1, 0]);
+  for (const s of ["p1", "p2"]) assert.deepStrictEqual([getJob(s).status, getJob(s).real, getJob(s).attempts], ["queued", 2, 0], "sent with the others: the company rules apply");
   assert.strictEqual(store.getSettings().reviewedDryRun, true);
   assert.strictEqual(W.practiceFor(getJob("p1")), false, "sent for real even in practice mode");
   const no = await handle("/api/job/p1", { action: "send" });
@@ -71,7 +71,7 @@ test("LinkedIn connections: imported, queued jobs where they know someone wait, 
   assert.strictEqual(getJob("stranger").hold_until, null);
   const j = await handle("/api/job/known");
   assert.deepStrictEqual(j.people.map((p) => p.first), ["Kim"]);
-  assert.match(j.people[0].note, /^Hi Kim, .*Cashier role at Initech, Inc\./);
+  assert.match(j.people[0].note, /^(Hi|Hello) Kim[,!] .*Cashier (role|opening) at Initech, Inc\./);
   assert.ok(j.held);
   const st = await handle("/api/status");
   assert.deepStrictEqual([st.referrals.count, st.referrals.first.slug], [1, "known"]);

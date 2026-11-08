@@ -39,8 +39,10 @@ test("follow-ups: sent 10 to 60 days ago, nothing back, not followed up, still w
   sent("practice", 30, { status: "filled" });
   assert.deepStrictEqual(T.followUps().map((j) => j.slug), ["received-only", "old-quiet"]);
   const note = T.followUpNote({ title: "Support Engineer", company: "Globex", applied_at: "2026-10-20T15:00:00.000Z" }, { firstName: "Jordan", lastName: "Lee" });
-  assert.match(note, /applied for the Support Engineer role at Globex on October 20/);
+  assert.match(note, /application for the Support Engineer (role|position) at Globex(, sent)? on October 20|applied for the Support Engineer role at Globex on October 20/);
   assert.match(note, /Jordan Lee$/);
+  const openings = new Set(["Globex", "Initech", "Hooli", "Acme", "Umbrella", "Stark"].map((c) => T.followUpNote({ title: "Support Engineer", company: c }, {}).split(" ").slice(0, 3).join(" ")));
+  assert.ok(openings.size >= 2, "not word for word the same for every employer");
 });
 
 test("what's working: answers and interviews by where jobs were found and how well they fit, once there are 5", () => {

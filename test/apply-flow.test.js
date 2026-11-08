@@ -18,7 +18,7 @@ const { openDb } = await import("../core/db.js");
 openDb();
 
 const ANSWERS = { "first name": "Jordan", "last name": "Lee", email: "jordan.lee@example.com", phone: "+1 (512) 555-0142",
-  "are you 18 or older": "Yes", "days available": "Weekends" };
+  "are you 18 or older": "Yes", "days available": "Weekends", website: "https://jordanlee.example.com", comments: "Hello", "your url": "https://jordanlee.example.com" };
 const PAGES = {
   "/posting": `<h1>Cashier</h1><p>Ring up customers.</p><a href="/form" target="_blank">Apply now</a>`,
   "/form": `<form id="f" onsubmit="return false">
@@ -48,6 +48,16 @@ const PAGES = {
   "/leftover": `<h1>Old posting</h1><script>let n = 0; const t = setInterval(() => { window.open("/stray?" + (++n), "_blank"); if (n >= 20) clearInterval(t); }, 300);</script>`,
   "/stray": `<h1>Sign in</h1><label for="u">Email</label><input id="u"><label for="pw">Password</label><input id="pw" type="password">`,
   "/signin": `<h1>Careers</h1><p>Sign in or create an account to apply.</p><label>Email<input></label><label>Password<input type="password"></label><button>Sign in</button>`,
+  // Traps for bots ("honeypots") around a real form: off the page, see-through with "if you are human", named as a
+  // honeypot, clipped in a 1-pixel box. A real field that says to leave it blank only sometimes is not one.
+  "/traps": `<form onsubmit="return false"><label for="fn">First name *</label><input id="fn" required><label for="ln">Last name *</label><input id="ln" required>
+    <label for="em">Email *</label><input id="em" type="email" required><label for="ph">Phone</label><input id="ph">
+    <label for="mid">Middle name (leave this field blank if you have none)</label><input id="mid">
+    <div style="position:absolute;left:-9999px;top:0"><label for="t1">Website</label><input id="t1" name="url_field"></div>
+    <p style="position:absolute;opacity:0"><label for="t2">If you are human, leave this field blank.</label><input id="t2" name="item_meta[9]"></p>
+    <div><label for="t3">Comments</label><input id="t3" name="honeypot"></div>
+    <span style="display:inline-block;width:1px;height:1px;overflow:hidden"><label for="t4">Your URL</label><input id="t4" name="contact_url"></span>
+    <button type="submit">Submit application</button></form>`,
   // Finish with me: a question the app can't answer on page 1 of 2, and a sign-in in front of a form.
   "/finish-2": `<p>Thank you for your interest in Globex!</p><form id="f" onsubmit="return false">
     <div id="p1"><label for="fn">First name *</label><input id="fn" required><label for="ln">Last name *</label><input id="ln" required><label for="sz">Shirt size *</label><input id="sz" required>
@@ -108,6 +118,16 @@ test("live: fills both pages, submits, sees the confirmation", async () => {
   assert.strictEqual(r.details.pages, 2);
   assert.ok(r.details.kit.some((k) => k.page === 2 && k.value === "Weekends"), "page 2 answers recorded");
   assert.ok(ctx.pages().length <= pagesBefore + 1, "the job's tabs were closed");
+});
+
+test("traps for bots are never read or filled, so the employer's spam filter has nothing to catch", async () => {
+  let values = null;
+  const r = await applyTo(job("/traps", "t-traps"), { onFilled: async (pg) => { values = await pg.$$eval("input", (els) => Object.fromEntries(els.map((e) => [e.id, e.value]))); } }, { dryRun: true, browser: ctx });
+  assert.strictEqual(r.status, "filled", r.reason);
+  const labels = r.details.fields.map((f) => f.label.replace(/\s*\*$/, ""));
+  assert.deepStrictEqual(labels, ["First name", "Last name", "Email", "Phone", "Middle name (leave this field blank if you have none)"]);
+  assert.deepStrictEqual([values.fn, values.em, values.ph], ["Jordan", "jordan.lee@example.com", "+1 (512) 555-0142"], "the real fields are filled");
+  assert.deepStrictEqual([values.t1, values.t2, values.t3, values.t4], ["", "", "", ""], "no trap is touched");
 });
 
 test("a sign-in wall goes to Apply yourself", async () => {

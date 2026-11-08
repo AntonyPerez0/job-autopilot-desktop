@@ -8,6 +8,8 @@ export function tempDataDir() {
   process.env.JA_DATA_DIR = d;
   // The mock AIs answer the same question differently on purpose; remembered answers would hide that.
   process.env.JA_NO_AI_CACHE = "1";
+  // Real runs spend at least 40 seconds on a form before Submit (spam filters); tests don't wait.
+  process.env.JA_FAST_FORMS = "1";
   return d;
 }
 

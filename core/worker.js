@@ -69,44 +69,67 @@ export { searchBrowser };
 
 const TRANSIENT = /timeout|timed out|net::|ECONN|socket|Target (page|closed)|browser has been closed|Model API 5|Model API 429|fetch failed|download failed|No browser could be started|aborted/i;
 
-// What goes next: the ones the person asked for first (sent for real from a practice run, answered, added by link),
-// then new jobs at companies they want to work for, then the rest, newest first. Jobs held for a referral wait.
+// What goes next: the ones the person picked first (one practice run sent for real, questions answered, a job added by
+// its link), then practice runs sent for real all together, new jobs at companies they want to work for, and the rest:
+// near ones before remote ones, newest first. Jobs held for a referral wait.
+//   real: 1, the person chose to send this practice run; 2, it went with all the others.
 const QUEUE_SQL = `SELECT * FROM jobs WHERE status = 'queued' AND attempts < ? AND (hold_until IS NULL OR hold_until <= datetime('now'))
-  ORDER BY real DESC, (reason LIKE 'you answered %') DESC, (details LIKE '%"addedByUser":true%') DESC, (details LIKE '%"board":"watchlist"%') DESC,
+  ORDER BY (real = 1) DESC, (reason LIKE 'you answered %') DESC, (details LIKE '%"addedByUser":true%') DESC, (real = 2) DESC, (details LIKE '%"board":"watchlist"%') DESC,
   (work_mode = 'remote') ASC, posted_at DESC LIMIT 500`;
 const parse = (s) => { try { return JSON.parse(s || "{}") || {}; } catch { return {}; } };
-const theirs = (j) => !!j.real || /^you answered /.test(j.reason || "") || !!parse(j.details).addedByUser;
+const theirs = (j) => j.real === 1 || /^you answered /.test(j.reason || "") || !!parse(j.details).addedByUser;
 // How well the posting's requirements are covered by the resume (checked without the AI), 0 to 1.
 const fit = (j) => { const c = parse(j.details).check; return c && c.checked ? c.met / c.checked : 0.5; };
 
-// Applications sent to one employer in the last 30 days (a practice run sends nothing, so it doesn't count).
-function sentTo(key) {
-  const rows = db.prepare(`SELECT company FROM jobs WHERE (status IN ('applied', 'submitting') OR (status = 'failed' AND reason LIKE '%may have gone through%')) AND applied_at > datetime('now', '-30 days')`).all();
-  return rows.filter((r) => companyKey(r.company) === key).length;
+// Many applications to one employer close together read as spam to its recruiters and its application system: never
+// two to the same company within SPACING_DAYS (the later one waits its turn), and at most the person's monthly limit.
+export const SPACING_DAYS = 3;
+// Applications sent in the last 30 days, by employer (a practice run sends nothing, so it doesn't count).
+function sentByCompany() {
+  const out = new Map();
+  for (const r of db.prepare(`SELECT company, applied_at FROM jobs WHERE (status IN ('applied', 'submitting') OR (status = 'failed' AND reason LIKE '%may have gone through%'))
+    AND applied_at > datetime('now', '-30 days')`).all()) {
+    const k = companyKey(r.company), at = Date.parse(r.applied_at) || 0;
+    const x = out.get(k) || { n: 0, last: 0 };
+    out.set(k, { n: x.n + 1, last: Math.max(x.last, at) });
+  }
+  return out;
 }
 
-// The next job: at an employer with several in the queue, the best match first; at one that already has as many
-// applications this month as the person allows, none (those wait no longer: they're skipped, with the reason).
-export function pickNext() {
+// The next job. At an employer with several in the queue, the best match first. One applied to in the last few days
+// waits; one that already has as many applications this month as the person allows gets no more (those are skipped,
+// with the reason). What the person picked themselves goes as soon as its turn comes. look: just see what's next.
+function choose(look) {
   const limit = Number(getPrefs().perCompanyMonth) || 0;
-  for (let round = 0; round < 50; round++) {
-    const rows = db.prepare(QUEUE_SQL).all(CONFIG.maxAttempts);
-    if (!rows.length) return null;
-    const first = rows[0];
-    if (theirs(first)) return first;
+  const rows = db.prepare(QUEUE_SQL).all(CONFIG.maxAttempts);
+  const sent = sentByCompany(), done = new Set();
+  let waiting = 0;
+  for (const first of rows) {
+    if (theirs(first)) return { job: first, waiting };
     const key = companyKey(first.company);
+    if (done.has(key)) continue;
+    done.add(key);
     const same = rows.filter((r) => !theirs(r) && companyKey(r.company) === key);
-    if (limit && sentTo(key) >= limit) {
-      for (const r of same) setJob(r.slug, { status: "skipped", reason: `already ${limit === 1 ? "an application" : limit + " applications"} to ${first.company} in the last 30 days, your limit for one company` });
-      log(first.slug, `left out ${same.length} job${same.length === 1 ? "" : "s"} at ${first.company}: your limit of ${limit} a month for one company`);
+    const s = sent.get(key) || { n: 0, last: 0 };
+    if (limit && s.n >= limit) {
+      if (!look) {
+        for (const r of same) setJob(r.slug, { status: "skipped", reason: `already ${limit === 1 ? "an application" : limit + " applications"} to ${first.company} in the last 30 days, your limit for one company` });
+        log(first.slug, `left out ${same.length} job${same.length === 1 ? "" : "s"} at ${first.company}: your limit of ${limit} a month for one company`);
+      }
       continue;
     }
-    return same.reduce((best, r) => (fit(r) > fit(best) + 1e-9 ? r : best), first);
+    if (Date.now() - s.last < SPACING_DAYS * 86400000) { waiting += same.length; continue; }
+    return { job: same.reduce((best, r) => (fit(r) > fit(best) + 1e-9 ? r : best), first), waiting };
   }
-  return null;
+  return { job: null, waiting };
+}
+export function pickNext() {
+  const c = choose(false);
+  pickNext.waiting = c.waiting;
+  return c.job;
 }
 const nextJob = pickNext;
-export const peekNext = () => db.prepare(QUEUE_SQL.replace("LIMIT 500", "LIMIT 1")).get(CONFIG.maxAttempts) || null;
+export const peekNext = () => choose(true).job;
 
 // Which of these jobs freehire says have closed (freehire's own postings only; up to 50 slugs a call). -> Set of slugs
 export async function closedOnes(jobs, ask = call) {
@@ -429,19 +452,26 @@ export async function run() {
         continue;
       }
       state.resumesAt = null;
-      const wait = state.lastApply + CONFIG.minutesBetweenApplies * 60000 - Date.now();
+      const gap = CONFIG.minutesBetweenApplies * 60000 * (state.gapFactor || 1);
+      const wait = state.lastApply + gap - Date.now();
       if (wait > 0) {
         state.now = "waiting between applications";
-        state.progress = { kind: "wait", from: state.lastApply, until: state.lastApply + CONFIG.minutesBetweenApplies * 60000 };
+        state.progress = { kind: "wait", from: state.lastApply, until: state.lastApply + gap };
         await sleep(Math.min(wait, 60000));
         state.progress = null;
         continue;
       }
       if (held) { state.now = "updating: no new applications until the update is installed"; await sleep(5000); continue; }
       const job = nextJob();
-      if (!job) { await closeBrowser(); state.now = "queue empty, waiting for the next search"; await sleep(Math.min(5 * 60000, Math.max(30000, state.nextSearch - Date.now()))); continue; }
+      if (!job) {
+        await closeBrowser();
+        state.now = pickNext.waiting ? "the next jobs are at companies you applied to in the last few days: they wait" : "queue empty, waiting for the next search";
+        await sleep(Math.min(5 * 60000, Math.max(30000, state.nextSearch - Date.now())));
+        continue;
+      }
       const used = await applyOne(job);
-      if (used) state.lastApply = Date.now();
+      // The next gap is the person's setting plus up to half again, so applications don't go out like clockwork.
+      if (used) { state.lastApply = Date.now(); state.gapFactor = 1 + Math.random() * 0.5; }
     } catch (e) {
       log(null, "loop error: " + e.message, "error");
       await sleep(60000);

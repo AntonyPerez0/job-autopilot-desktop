@@ -1163,7 +1163,7 @@
       <div class="form-row">${fld("When a job asks for a bit more experience than you have", pick("stretchYears", "When a job asks for a bit more experience than you have", p.stretchYears ?? 1,
           [[0, "Skip it"], [1, "Apply if I'm up to 1 year short"], [2, "Apply if I'm up to 2 years short"]]), "Many employers treat years as a guide. Forms still get your real numbers.")}
         ${fld("Applications to one company", pick("perCompanyMonth", "Applications to one company", p.perCompanyMonth ?? 2,
-          [[1, "At most 1 a month"], [2, "At most 2 a month"], [3, "At most 3 a month"], [0, "No limit"]]), "Where several jobs fit at one company, the best match goes first.")}</div>
+          [[1, "At most 1 a month"], [2, "At most 2 a month"], [3, "At most 3 a month"], [0, "No limit"]]), "Never two within 3 days, so it doesn't look like spam. Where several jobs fit, the best match goes first.")}</div>
       <div data-kinds></div>
       <div class="fld"><span>Companies you'd love to work for (optional)</span>
         <div class="row-actions"><input class="inp" data-watch-in aria-label="A company's name, or a link to one of its job postings" placeholder="A company's name, or a link to one of its job postings" style="flex:1 1 280px;min-width:220px">

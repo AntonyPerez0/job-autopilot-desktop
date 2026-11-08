@@ -2,7 +2,7 @@
 // are worth a follow-up, and what's working: which places, job titles and resume versions get answers.
 import { getDb } from "./db.js";
 import { titleOk } from "./discover.js";
-import { loadConnections, peopleAt } from "./referrals.js";
+import { loadConnections, peopleAt, wording } from "./referrals.js";
 
 export const STAGES = { waiting: "Waiting to hear", interviewing: "Interviewing", offer: "Offer", rejected: "Not moving forward", withdrew: "You withdrew" };
 const parse = (s) => { try { return JSON.parse(s || "{}") || {}; } catch { return {}; } };
@@ -25,9 +25,16 @@ export function followUps(db = getDb()) {
 
 const day = (t) => { const d = new Date(String(t).replace(" ", "T") + (/Z|[+-]\d\d:?\d\d$/.test(t) ? "" : "Z")); return Number.isNaN(+d) ? "" : d.toLocaleDateString("en-US", { month: "long", day: "numeric" }); };
 // A short follow-up, in the person's name, for them to change and send themselves.
+// One of a few wordings for each application (see wording in referrals.js).
+const NOTES = [
+  (j, on) => `Hello, I applied for the ${j.title} role at ${j.company}${on} and wanted to say I'm still very interested. I'd be glad to answer any questions or share more about my experience. Thank you for your time!`,
+  (j, on) => `Hello, I'm following up on my application for the ${j.title} position at ${j.company}${on ? `, sent${on}` : ""}. I'm still very interested in the role and happy to provide anything else you need. Thank you!`,
+  (j, on) => `Hi, I wanted to check in on my application for the ${j.title} role at ${j.company}${on}. I remain excited about the opportunity and would welcome the chance to talk. Thanks for your consideration!`,
+];
 export function followUpNote(job, me = {}) {
   const name = [me.firstName, me.lastName].filter(Boolean).join(" ");
-  return `Hello, I applied for the ${job.title} role at ${job.company}${job.applied_at ? ` on ${day(job.applied_at)}` : ""} and wanted to say I'm still very interested. I'd be glad to answer any questions or share more about my experience. Thank you for your time!${name ? `\n${name}` : ""}`;
+  const on = job.applied_at && day(job.applied_at) ? ` on ${day(job.applied_at)}` : "";
+  return `${wording(NOTES, job.company, job.title)(job, on)}${name ? `\n${name}` : ""}`;
 }
 
 // What's working: for each way of slicing the applications sent in the last 180 days, how many were sent, how many

@@ -178,14 +178,15 @@ const ROUTES = {
   },
   "GET /api/events": () => getDb().prepare("SELECT * FROM events ORDER BY id DESC LIMIT 300").all(),
   // Practice runs sent for real: each is filled in again and submitted (a practice run is never sent as it is),
-  // at the daily pace. The ones whose postings have closed are left out.
+  // at the daily pace and, sent all together, a few days apart at any one company (real 2: see worker.js). The ones
+  // whose postings have closed are left out.
   "POST /api/practice/send": async (b) => {
     const db = getDb();
     const rows = db.prepare("SELECT * FROM jobs WHERE status = 'filled'").all().filter((j) => !Array.isArray(b.slugs) || b.slugs.includes(j.slug));
     const closed = await closedOnes(rows);
     for (const j of rows) {
       if (closed.has(j.slug)) setJob(j.slug, { status: "skipped", reason: "posting closed before it could be sent" });
-      else setJob(j.slug, { status: "queued", attempts: 0, real: 1, reviewed: 1, reason: "a practice run you chose to send for real" });
+      else setJob(j.slug, { status: "queued", attempts: 0, real: Array.isArray(b.slugs) && b.slugs.length === 1 ? 1 : 2, reviewed: 1, reason: "a practice run you chose to send for real" });
     }
     if (rows.length > closed.size && !getSettings().reviewedDryRun) saveSettings({ reviewedDryRun: true });
     log(null, `practice runs sent for real: ${rows.length - closed.size} queued${closed.size ? `, ${closed.size} closed` : ""}`);

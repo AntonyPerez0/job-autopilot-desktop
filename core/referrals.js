@@ -59,8 +59,22 @@ export function peopleAt(company, list = loadConnections().people) {
   return (list || []).filter((p) => sameEmployer(p.company, company)).slice(0, 20);
 }
 
+// One of a few wordings, always the same for the same words: the same message sent to many people, word for word, is
+// what spam filters (LinkedIn's among them) look for.
+export function wording(variants, ...key) {
+  let h = 0;
+  for (const c of key.join("|").toLowerCase()) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return variants[h % variants.length];
+}
+
 // A short note asking for a referral, in the person's name, for them to change and send themselves.
+const ASKS = [
+  (p, j, link) => `Hi ${p.first}, I hope you're doing well! I'm applying for the ${j.title} role at ${j.company}${link}. Would you be open to referring me, or pointing me to the right person on the team? I'd be glad to send my resume. Thank you!`,
+  (p, j, link) => `Hi ${p.first}, I saw the ${j.title} opening at ${j.company}${link}, and I'd like to apply. Since you work there, would you be comfortable referring me, or telling me a little about the team? Happy to share my resume. Thanks so much!`,
+  (p, j, link) => `Hello ${p.first}! I'm interested in the ${j.title} opening at ${j.company}${link}. If you think I'd be a good fit, would you be willing to refer me? I can send my resume and a short summary of my experience. Thank you for considering it!`,
+];
 export function referralNote(person, job, me = {}) {
   const link = job.url ? ` (${job.url})` : "";
-  return `Hi ${person.first}, I hope you're doing well! I'm applying for the ${job.title} role at ${job.company}${link}. Would you be open to referring me, or pointing me to the right person on the team? I'd be glad to send my resume. Thank you!\n${[me.firstName, me.lastName].filter(Boolean).join(" ")}`.trim();
+  const ask = wording(ASKS, person.first, person.last, job.company, job.title);
+  return `${ask(person, job, link)}\n${[me.firstName, me.lastName].filter(Boolean).join(" ")}`.trim();
 }

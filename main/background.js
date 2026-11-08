@@ -68,7 +68,8 @@ export function startBackground({ core, here, show, open, visible }) {
       try { app.setLoginItemSettings({ openAtLogin: login, openAsHidden: true, args: ["--hidden"] }); } catch { /* not allowed here */ }
     }
     const c = st.counts || {};
-    const work = !s.paused && (!!st.state.job || st.state.now === "searching" || ((c.queued || 0) > 0 && st.appliedToday < s.dailyCap && !(s.dryRun && !s.reviewedDryRun && st.firstFilled)));
+    // Queued jobs that are waiting (a referral, a few days between applications to one company) aren't work for today.
+    const work = !s.paused && (!!st.state.job || st.state.now === "searching" || ((c.queued || 0) > 0 && !!st.next && st.appliedToday < s.dailyCap && !(s.dryRun && !s.reviewedDryRun && st.firstFilled)));
     if (s.keepAwake !== false && work) { if (blocker === null) blocker = powerSaveBlocker.start("prevent-app-suspension"); }
     else if (blocker !== null) { powerSaveBlocker.stop(blocker); blocker = null; }
     const items = news(st);

@@ -73,9 +73,45 @@ test("a company with as many applications this month as they allow gets no more,
   add("globex-3", { company: "Globex", age: 0 });
   assert.strictEqual(W.pickNext().slug, "globex-3");
   reset({ perCompanyMonth: 0 });
-  add("sent-now", { company: "Globex", status: "applied", applied_at: new Date().toISOString() });
+  for (const k of [1, 2, 3]) add(`sent-${k}`, { company: "Globex", status: "applied", applied_at: new Date(Date.now() - (5 + k) * day).toISOString() });
   add("globex-4", { company: "Globex", age: 0 });
-  assert.strictEqual(W.pickNext().slug, "globex-4");
+  assert.strictEqual(W.pickNext().slug, "globex-4", "no limit");
+});
+
+test("never two applications to one company within a few days: the later one waits its turn, and the rest go meanwhile", () => {
+  reset({ perCompanyMonth: 3 });
+  add("sent-yesterday", { company: "Globex", status: "applied", applied_at: new Date(Date.now() - 1 * day).toISOString() });
+  add("globex-new", { company: "Globex Inc", age: 0 });
+  add("initech", { company: "Initech", age: 5 });
+  assert.strictEqual(W.peekNext().slug, "initech");
+  assert.strictEqual(W.pickNext().slug, "initech");
+  getDb().prepare("UPDATE jobs SET status = 'applied', applied_at = ? WHERE slug = 'initech'").run(new Date().toISOString());
+  assert.strictEqual(W.pickNext(), null, "only Globex is left, and it waits");
+  assert.strictEqual(W.pickNext.waiting, 1);
+  assert.strictEqual(getJob("globex-new").status, "queued", "waiting, not skipped");
+  getDb().prepare("UPDATE jobs SET applied_at = ? WHERE slug = 'sent-yesterday'").run(new Date(Date.now() - (W.SPACING_DAYS + 0.1) * day).toISOString());
+  assert.strictEqual(W.pickNext().slug, "globex-new", "a few days later");
+});
+
+test("practice runs sent all together go first, but a few days apart at one company and within the monthly limit", () => {
+  reset({ perCompanyMonth: 2 });
+  add("pr-g1", { company: "Globex", real: 2, age: 3 });
+  add("pr-g2", { company: "Globex", real: 2, age: 2 });
+  add("pr-g3", { company: "Globex", real: 2, age: 1 });
+  add("pr-i1", { company: "Initech", real: 2, age: 9 });
+  add("plain", { company: "Hooli", age: 0 });
+  const sent = [];
+  const send = (slug, daysAgo) => { sent.push(slug); getDb().prepare("UPDATE jobs SET status = 'applied', applied_at = ? WHERE slug = ?").run(new Date(Date.now() - daysAgo * day).toISOString(), slug); };
+  send(W.pickNext().slug, 0);
+  send(W.pickNext().slug, 0);
+  assert.deepStrictEqual(sent, ["pr-g3", "pr-i1"], "one per company, before the ordinary queue");
+  assert.strictEqual(W.pickNext().slug, "plain", "the second at Globex waits a few days");
+  getDb().prepare("UPDATE jobs SET applied_at = ? WHERE slug = 'pr-g3'").run(new Date(Date.now() - 5 * day).toISOString());
+  send(W.pickNext().slug, 0);
+  assert.strictEqual(sent[2], "pr-g2");
+  assert.strictEqual(W.pickNext().slug, "plain");
+  assert.strictEqual(getJob("pr-g1").status, "skipped", "two at Globex this month: the limit");
+  assert.match(getJob("pr-g1").reason, /your limit for one company/);
 });
 
 test("what the person asked for isn't held back by the company limit", () => {

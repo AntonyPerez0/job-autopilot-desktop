@@ -664,8 +664,8 @@ Some postings are left out before the AI reads them, so they cost nothing:
   or never. Every other must-have still has to be met, and forms always get your
   real numbers.
 - **One company, over and over.** **Applications to one company** sends at most
-  2 a month to one employer (at first; 1, 3 or no limit). Where several of its
-  jobs fit, the best match with your resume goes first.
+  2 a month to one employer (at first; 1, 3 or no limit), never two within 3 days.
+  Where several of its jobs fit, the best match with your resume goes first.
 
 ### Companies you'd love to work for
 
@@ -830,7 +830,8 @@ works; only how much it shows.
 - **Practice runs you liked can go out too.** The **Practice runs** list has
   **Send them for real** (and each one, **Send this one for real**). Each is
   filled in again and sent, at your daily pace and before the rest of the queue;
-  ones whose postings have closed are left out. A practice run is never sent as
+  ones whose postings have closed are left out, and at any one company they go
+  a few days apart, within your monthly limit. A practice run is never sent as
   it was filled, since forms and postings change. Right after **Start sending**,
   the app offers to send them.
 - From then on it sends applications: 10 a day by default, 6 minutes apart,
@@ -995,7 +996,36 @@ stops early for it), and works while the autopilot is paused too.
   do that part in the app's own window).
 - **Flood one employer.** At most 2 applications a month go to one company at
   first (Settings > Jobs to look for > **Applications to one company**), the best
-  match first.
+  match first, and never two within 3 days (see below).
+
+### Staying clear of spam filters
+
+Employers' application systems and recruiters screen out applications that look
+like spam. The app sends yours the way a careful person would:
+
+- **One company at a time.** Never two applications to the same company within
+  3 days, and no more than your monthly limit (2 at first). A job at a company
+  you just applied to waits its turn; others go meanwhile. Practice runs sent
+  all at once follow these rules too. A job you pick yourself (one practice run
+  sent for real, a job added by its link, one you answered questions for) goes
+  when its turn comes.
+- **A person's pace.** Your daily limit, with a gap of your chosen minutes plus a
+  little more each time, so they don't go out like clockwork. At least 40 to 70
+  seconds on each form before Submit (filling usually takes longer anyway): forms
+  sent within seconds are a classic sign of a bot.
+- **No traps.** Some forms hide a box only a bot would fill (a "honeypot": off the
+  page, see-through, a pixel wide, or labeled "if you are human, leave this field
+  blank"). The app never reads or fills those, so the spam filter has nothing to
+  catch.
+- **Never the same application twice**, and written answers made for each
+  posting, not pasted from one to the next.
+- **Messages in your own words.** The referral and follow-up notes come in a few
+  wordings, with each person's name, the job and the company, so you never send
+  the same message word for word to many people. You send them yourself, from
+  your own LinkedIn or email; the app never messages anyone.
+
+No app can promise an employer won't flag an application, but these are the
+signs spam filters look for.
 
 ### Mailbox
 

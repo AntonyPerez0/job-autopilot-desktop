@@ -134,6 +134,41 @@
     return !!(lab && shown(lab)) || !!(el.parentElement && shown(el.parentElement) && /radio|checkbox/.test(el.type));
   }
 
+  // A trap for bots (a "honeypot"): a box people never see, or one that tells them to leave it alone. Only a bot fills
+  // one, and the employer's spam filter then throws the application away, so it's never read and never filled.
+  // Only boxes to type into: radios, checkboxes and dropdowns are often drawn hidden on purpose, with a visible label.
+  const TRAP_WORDS = /\bleave (this|the) (field|box) (blank|empty)\b(?!\s*(if|unless|when|for|or))|\bif you('re| are) (a )?human\b|should be left (unchanged|blank|empty)|for validation purposes|\b(spam|bot) (check|trap)\b/i;
+  const TRAP_NAME = /honey ?pot|ohnohoney|^hp$|[-_[]hp\]?$|^hp[-_]|\bhpot\b|bot[-_]?(field|check|trap)|anti[-_]?spam|spam[-_]?(check|trap|field)|^b_[0-9a-f]{12,}_[0-9a-f]{6,}$/i;
+  function trap(el) {
+    const type = (el.type || "").toLowerCase();
+    if (!/^(input|textarea)$/i.test(el.tagName) || /^(radio|checkbox|file|hidden|submit|button|range|color)$/.test(type)) return false;
+    if (el.getAttribute("role") === "combobox" || el.getAttribute("aria-autocomplete")) return false;
+    if (TRAP_NAME.test(el.name || "") || TRAP_NAME.test(el.id || "") || /\b(honeypot|ohnohoney|hpot|hp-field)\b/i.test(String(el.className || ""))) return true;
+    // Its own words: its label, its hint, and the box around it that holds no other field (never the form's text).
+    let wrap = "";
+    for (let box = el.parentElement, i = 0; box && i < 3; box = box.parentElement, i++) {
+      if (box.querySelectorAll("input, textarea, select").length > 1) break;
+      wrap = box.textContent;
+    }
+    const near = [labelOf(el), el.placeholder || "", byIds(el.getAttribute("aria-describedby"), el), clean(wrap).slice(0, 300)].join(" ");
+    if (TRAP_WORDS.test(clean(near))) return true;
+    // On the page, but where no one can see it: off the left or top edge, a box of a pixel or less, see-through, or
+    // clipped away inside a tiny wrapper. A wrapper around several fields is a part of the form (a step, an animation).
+    const r = el.getBoundingClientRect();
+    if (r.width || r.height) {
+      if (r.right + scrollX <= 0 || r.bottom + scrollY <= 0 || r.width <= 1 || r.height <= 1) return true;
+    }
+    for (let n = el, i = 0; n && n.nodeType === 1 && i < 6; n = n.parentElement, i++) {
+      const cs = getComputedStyle(n);
+      const own = n === el || n.querySelectorAll("input, textarea, select").length <= 1;
+      if (!own) break;
+      if (Number(cs.opacity) === 0) return true;
+      if (/rect\(\s*0(px)?[ ,]+0(px)?[ ,]+0(px)?[ ,]+0(px)?\s*\)/.test(cs.clip || "")) return true;
+      if (n !== el && /hidden|clip/.test(cs.overflow)) { const b = n.getBoundingClientRect(); if (b.width <= 1 || b.height <= 1) return true; }
+    }
+    return false;
+  }
+
   function byIds(ids, from) {
     const r = from ? rootOf(from) : document;
     const get = (id) => (r.getElementById ? r.getElementById(id) : null) || document.getElementById(id);
@@ -365,6 +400,7 @@
       if (el.closest("footer, [role=contentinfo]")) continue;
       if (el.tagName === "INPUT" && /^(hidden|submit|button|reset|image|search|password)$/.test(type)) continue;
       if (!visibleControl(el)) continue;
+      if (trap(el)) continue;
       if (el.tagName === "INPUT" && (type === "radio" || type === "checkbox")) {
         const key = type + ":" + rootKey(el) + ":" + (el.name || (el.closest("fieldset, [role=radiogroup], [role=group]") ? tag(el.closest("fieldset, [role=radiogroup], [role=group]")) : tag(el)));
         if (!groups.has(key)) { groups.set(key, { type, inputs: [] }); fields.push(groups.get(key)); }

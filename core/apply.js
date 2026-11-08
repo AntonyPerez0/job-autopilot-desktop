@@ -902,6 +902,11 @@ const EXPIRED_RX = /sorry, this job has expired|this job (posting )?(has expired
 // A posting that's gone can send the app to the employer's list of jobs instead (Greenhouse does).
 const JOB_LIST_RX = /^\s*\d+ (open )?(jobs|positions|openings|roles)\s*$/im;
 const BOT_CHECK_RX = /verification required|verify (that )?you are (a )?human|are you a robot|unusual activity from your (device|network)|just a moment\.\.\.|checking your browser|press (and|&) hold/i;
+// Spam filters on application forms throw out forms sent seconds after they opened (only a script is that fast): the
+// app spends at least 40 to 70 seconds on a form before it presses Submit. Reading and filling usually take longer
+// anyway. JA_FAST_FORMS (tests only): no wait.
+export const minOnForm = () => (process.env.JA_FAST_FORMS ? 0 : 40000 + Math.floor(Math.random() * 30000));
+
 const CLOSED_RX = /no longer (accepting|available|open)|position (has been )?filled|job (is )?closed|page not found|job not found|job you requested was not found|posting (is )?(closed|expired)|this job (has )?expired/i;
 const MAX_PAGES = 8;
 
@@ -1179,6 +1184,7 @@ export async function applyTo(job, hooks = {}, opts = {}) {
     }
     if (fields.length < 3) return { ...manual("the app found no form it can fill on this page (it may be a chat, or a site the app does not know)"), screenshot: await shot(page, job.slug, "noform") };
 
+    const formAt = Date.now();
     const postingText = [text, details.description ? "\n\nFROM THE JOB LISTING:\n" + details.description : ""].join("").slice(0, 30000);
     const allKit = [], allFields = [], audit = [...accountNotes];
     const rep = { filled: [], kept: [], decide: [], drafts: [], missing: [] };
@@ -1319,6 +1325,11 @@ export async function applyTo(job, hooks = {}, opts = {}) {
       if (label) { frame = f; break; }
     }
     if (!frame) return { ...result, status: "failed", reason: "no submit button found" };
+    const dwell = formAt + minOnForm() - Date.now();
+    if (dwell > 0) {
+      log(job.slug, `waiting ${Math.round(dwell / 1000)} seconds before Submit: forms sent faster look like spam`);
+      for (let t = dwell; t > 0; t -= 1000) { cut(); if (halted()) break; await sleep(Math.min(1000, t)); }
+    }
     const before = page.url();
     let got428 = false;
     page.on("response", (r) => { if (r.status() === 428 && r.request().method() === "POST") got428 = true; });

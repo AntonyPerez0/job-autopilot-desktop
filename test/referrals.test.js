@@ -44,9 +44,13 @@ test("who they know at a company, kept on this computer, and a note in their nam
   assert.deepStrictEqual(R.peopleAt("Meta").map((p) => p.first), ["Alex"]);
   assert.deepStrictEqual(R.peopleAt("Initech"), []);
   const note = R.referralNote({ first: "Sam" }, { title: "Support Engineer", company: "Globex", url: "https://globex.example/jobs/1" }, { firstName: "Jordan", lastName: "Lee" });
-  assert.match(note, /^Hi Sam,/);
-  assert.match(note, /Support Engineer role at Globex \(https:\/\/globex\.example\/jobs\/1\)/);
+  assert.match(note, /^(Hi|Hello) Sam[,!]/);
+  assert.match(note, /Support Engineer (role|opening) at Globex \(https:\/\/globex\.example\/jobs\/1\)/);
+  assert.match(note, /\brefer(ring)? me\b/);
   assert.match(note, /Jordan Lee$/);
+  assert.strictEqual(R.referralNote({ first: "Sam" }, { title: "Support Engineer", company: "Globex" }, {}), R.referralNote({ first: "Sam" }, { title: "Support Engineer", company: "Globex" }, {}), "the same each time");
+  const firstLines = new Set(["Globex", "Initech", "Hooli", "Acme", "Umbrella", "Stark"].map((c) => R.referralNote({ first: "Sam" }, { title: "Support Engineer", company: c }, {}).replace(c, "X").split(" ").slice(0, 4).join(" ")));
+  assert.ok(firstLines.size >= 2, "not word for word the same for everyone");
   R.clearConnections();
   assert.deepStrictEqual(R.loadConnections().people, []);
 });

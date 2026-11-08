@@ -138,3 +138,15 @@ test("Finish with me: the form moved on when its address changes or most of its 
   moved("https://jobs.example/apply/2", page1);
   assert.strictEqual(moved("https://jobs.example/apply/2", page1), true, "another address");
 });
+
+test("at least 40 to 70 seconds on a form before Submit: spam filters throw out forms sent faster", async () => {
+  const { minOnForm } = await import("../core/apply.js");
+  const was = process.env.JA_FAST_FORMS;
+  delete process.env.JA_FAST_FORMS;
+  const waits = [...Array(50)].map(() => minOnForm());
+  assert.ok(waits.every((w) => w >= 40000 && w < 70000), String(waits));
+  assert.ok(new Set(waits).size > 10, "not the same every time");
+  process.env.JA_FAST_FORMS = "1";
+  assert.strictEqual(minOnForm(), 0, "tests don't wait");
+  if (was === undefined) delete process.env.JA_FAST_FORMS; else process.env.JA_FAST_FORMS = was;
+});

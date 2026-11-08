@@ -227,6 +227,7 @@ function liveChip() {
   else if (/cap/.test(s.now)) { tone = "amber"; txt = `Daily limit reached, resumes ${s.resumesAt ? new Date(s.resumesAt).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }) : "tomorrow"}`; }
   else if (/waiting between/.test(s.now)) txt = "Pacing between applications";
   else if (/queue empty/.test(s.now)) txt = "Queue empty, waiting for the next search";
+  else if (/applied to in the last few days/.test(s.now)) txt = "The next jobs wait a few days: you just applied to those companies";
   const busy = (s.finish && s.finish.phase === "filling") || (!set.paused && (s.job || s.now === "searching"));
   return `<div class="live ${tone}" role="status"><span class="dot ${tone}"></span>${busy ? '<span class="spin" aria-hidden="true"></span>' : ""}<span class="txt">${txt}</span></div>`;
 }
@@ -1052,7 +1053,7 @@ function sendPractice(slugs, afterGoLive) {
   const n = slugs ? slugs.length : st.counts.filled || 0, s = st.settings;
   const one = slugs && slugs.length === 1;
   const m = modal(`<h2>${afterGoLive ? `Send your ${n} practice application${n === 1 ? "" : "s"} too?` : one ? "Send this application for real?" : `Send ${n} practice application${n === 1 ? "" : "s"} for real?`}</h2>
-    <p>${one ? "The app fills the form in again and sends it in your name" : "Each one is filled in again and sent in your name"}${s.dryRun ? ", even though the rest stay in practice mode" : ""}: up to <b>${s.dailyCap} a day</b>, ${one ? "first in line" : "before the rest of the queue"}. ${one ? "If the posting has closed, nothing is sent." : "Postings that have closed are left out."}</p>
+    <p>${one ? "The app fills the form in again and sends it in your name" : "Each one is filled in again and sent in your name"}${s.dryRun ? ", even though the rest stay in practice mode" : ""}: up to <b>${s.dailyCap} a day</b>, ${one ? "first in line" : "before the rest of the queue"}. ${one ? "If the posting has closed, nothing is sent." : "Postings that have closed are left out, and at any one company they go a few days apart, within your monthly limit, so they never look like a flood."}</p>
     <div class="row-actions" style="margin-top:18px"><button class="btn primary" id="m-go">${icon("send")}${one ? "Send it" : "Send them"}</button><button class="btn" id="m-close">Not now</button></div>`);
   m.querySelector("#m-close").onclick = () => m.remove();
   m.querySelector("#m-go").onclick = async () => {
