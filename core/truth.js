@@ -69,9 +69,25 @@ export function heardOption(options, a) {
   return (options || []).length ? r.fix(options) : null;
 }
 
+// A question about working in another country than the one the person answered for ("Are you authorized to work in
+// Canada?" from someone who answered for the United States): what they said doesn't cover it. -> that country, or "".
+// Names in any case; short forms only in capitals ("US", never the word "us").
+const COUNTRIES = [["the United States", /\bunited states\b|\bamerica\b/i, /\bU\.?S\.?(A\.?)?(?![A-Za-z])/], ["Canada", /\bcanad(a|ian)\b/i], ["the United Kingdom", /\bunited kingdom\b|\b(great )?britain\b|\bengland\b/i, /\bU\.?K\.?(?![A-Za-z])/],
+  ["Mexico", /(?<!new )\bm[eé]xico\b/i], ["Australia", /\baustralia\b/i], ["Ireland", /\bireland\b/i], ["Germany", /\bgermany\b/i], ["France", /\bfrance\b/i], ["India", /\bindia\b/i], ["the Netherlands", /\bnetherlands\b/i],
+  ["Spain", /\bspain\b/i], ["Singapore", /\bsingapore\b/i], ["New Zealand", /\bnew zealand\b/i], ["Japan", /\bjapan\b/i], ["Brazil", /\bbra[sz]il\b/i], ["Poland", /\bpoland\b/i], ["the Philippines", /\bphilippines\b/i],
+  ["the European Union", /\beuropean union\b|\beurope\b/i, /\bE\.?U\.?(?![A-Za-z])/]];
+const namedIn = (text) => COUNTRIES.filter(([, rx, short]) => rx.test(text) || (short && short.test(text))).map(([n]) => n);
+export function otherCountry(label, own = "United States") {
+  const named = namedIn(String(label || ""));
+  if (!named.length || String(label).toLowerCase().includes(String(own || "United States").toLowerCase())) return "";
+  return named.some((n) => namedIn(String(own || "United States")).includes(n)) ? "" : named[0];
+}
+
 // Each rule: which questions it covers, whether an answer is wrong, and the true answer.
 export function rules(facts, a, ctx = {}) {
   const heard = a.heardAbout || "Job board";
+  const abroad = () => otherCountry(ctx.label, facts.authCountry || a.authCountry);
+  const abroadWhy = () => `it asks about ${abroad()}, and your answer under About you is about ${facts.authCountry || a.authCountry || "the United States"}`;
   const out = [
     // Legal agreements and legal-history questions are never answered by the AI. The only
     // exceptions are the user's own choices: background checks and drug tests (Settings), and
@@ -88,16 +104,16 @@ export function rules(facts, a, ctx = {}) {
       // "authorized to work (with or without sponsorship)?" is about authorization; one that also asks
       // whether you will need sponsorship mixes two facts, and is left to the model and the user's answers.
       skip: /(require|need)\w*.{0,60}sponsor|sponsor\w*.{0,30}(require|need)/i,
-      bad: (v) => (facts.authorizedToWork === null ? true : facts.authorizedToWork ? !yes(v) : !no(v)),
-      fix: (o) => (facts.authorizedToWork === null ? null : facts.authorizedToWork ? pick(o, (x) => yes(x)) || (o && o.length ? null : "Yes") : pick(o, (x) => no(x)) || (o && o.length ? null : "No")),
-      why: facts.authorizedToWork === null ? "you haven't answered it under About you" : "",
+      bad: (v) => (abroad() || facts.authorizedToWork === null ? true : facts.authorizedToWork ? !yes(v) : !no(v)),
+      fix: (o) => (abroad() || facts.authorizedToWork === null ? null : facts.authorizedToWork ? pick(o, (x) => yes(x)) || (o && o.length ? null : "Yes") : pick(o, (x) => no(x)) || (o && o.length ? null : "No")),
+      get why() { return abroad() ? abroadWhy() : facts.authorizedToWork === null ? "you haven't answered it under About you" : ""; },
     },
     {
       name: "sponsorship", label: /sponsor|visa (status|support)|immigration (case|support)|h-?1b|work permit/i,
       skip: /authori[sz]ed to work|eligible to work|right to work|legally (able|permitted) to work/i,
-      why: facts.needsSponsorship === null ? "you haven't answered it under About you" : "",
-      bad: (v) => (facts.needsSponsorship === null ? true : facts.needsSponsorship ? !yes(v) : !no(v) && !/^n\/?a$/i.test(String(v).trim())),
-      fix: (o) => (facts.needsSponsorship === null ? null : facts.needsSponsorship
+      get why() { return abroad() ? abroadWhy() : facts.needsSponsorship === null ? "you haven't answered it under About you" : ""; },
+      bad: (v) => (abroad() || facts.needsSponsorship === null ? true : facts.needsSponsorship ? !yes(v) : !no(v) && !/^n\/?a$/i.test(String(v).trim())),
+      fix: (o) => (abroad() || facts.needsSponsorship === null ? null : facts.needsSponsorship
         ? pick(o, (x) => yes(x) || /will require|do require|need/i.test(x) && !/not|don.?t/i.test(x)) || (o && o.length ? null : "Yes")
         : pick(o, (x) => no(x) || /not? (require|need)|do not/i.test(x)) || (o && o.length ? null : "No")),
     },
@@ -145,7 +161,8 @@ export function rules(facts, a, ctx = {}) {
       },
     },
     {
-      name: "relocation", label: /relocat/i,
+      // "Do you live in Austin, or are you willing to relocate?" asks two things at once: left to the answer given.
+      name: "relocation", label: /relocat/i, skip: /\b(live|reside|located|based) in\b|\bcurrently (live|reside)\b/i,
       bad: (v) => (relocates(a, ctx) ? !yes(v) : !no(v)),
       fix: (o) => (relocates(a, ctx) ? pick(o, (x) => yes(x)) || (o && o.length ? null : "Yes") : pick(o, (x) => no(x)) || (o && o.length ? null : "No")),
     },

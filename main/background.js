@@ -21,6 +21,7 @@ export function startBackground({ core, here, show, open, visible }) {
     if (w.finish && w.finish.phase === "yours") return `Your turn: ${w.finish.company}`;
     if (w.finish && w.finish.phase === "filling") return `Filling in ${w.finish.company} for you to finish`;
     if (s.paused) return "Paused";
+    if (w.trouble && /^waiting: /.test(w.now || "")) return { internet: "Waiting: no internet", ai: "Waiting: the AI isn't working", browser: "Waiting: no browser to apply with", resume: "Waiting: your resume has a problem", disk: "Waiting: the disk is full" }[w.trouble.kind] || "Waiting";
     if (w.job && w.job.practice) return `Practicing on ${w.job.company}: nothing is sent`;
     if (w.job) return `Applying to ${w.job.company}`;
     if (w.now === "searching") return "Looking for new jobs";
@@ -33,7 +34,7 @@ export function startBackground({ core, here, show, open, visible }) {
     { label: doing(st), enabled: false },
     { type: "separator" },
     { label: "Open Job Autopilot", click: show },
-    { label: st.settings.paused ? "Resume" : "Pause", click: () => core.api.handle("/api/settings", { paused: !st.settings.paused }) },
+    { label: st.settings.paused ? "Continue" : "Pause", click: () => core.api.handle("/api/settings", { paused: !st.settings.paused }) },
     { type: "separator" },
     { label: "Quit Job Autopilot", click: () => app.quit() },
   ]);
@@ -54,6 +55,9 @@ export function startBackground({ core, here, show, open, visible }) {
     if (st.settings.dryRun && st.settings.reviewedDryRun && pr && pr.held && pr.first) out.push({ key: `practice-wait:${pr.first.slug}`, title: "Your practice applications are waiting", body: `${pr.unchecked} new ones are filled in. The app fills in no more until you open one, and nothing is sent until you start sending.`, target: { view: "filled" } });
     const ai = st.search && st.search.aiProblem;
     if (ai) out.push({ key: `ai:${ai}`, title: "The AI stopped working", body: ai, target: { view: "settings" } });
+    // What keeps every application from being tried and needs the person (no internet sorts itself out).
+    const tr = st.state && st.state.trouble;
+    if (tr && tr.kind !== "internet" && !(tr.kind === "ai" && ai)) out.push({ key: `trouble:${tr.text}`, title: "Job Autopilot can't apply right now", body: tr.text, target: tr.kind === "ai" ? { view: "settings" } : { view: "overview" } });
     return out;
   };
 

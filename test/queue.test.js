@@ -236,3 +236,27 @@ test("Finish with me in the worker: the person's turn counts as possibly sent; s
   assert.deepStrictEqual([getJob("f-crash").status, getJob("f-crash").reason], ["failed", "page 2 was not accepted"], "before their turn: as it was");
   assert.strictEqual(W.state.finishDone.outcome, "error");
 });
+
+test("trouble that isn't about one job (no internet, the AI, the browser) is told apart from a job's own, in plain words", () => {
+  const kind = (m) => (W.trouble(m) || {}).kind || null;
+  assert.strictEqual(kind("page.goto: net::ERR_INTERNET_DISCONNECTED at https://jobs.example/1\nCall log:\n  - navigating"), "internet");
+  assert.strictEqual(kind("Model API 402: Insufficient credits"), "ai");
+  assert.strictEqual(kind("Model API 401: No auth credentials found"), "ai");
+  assert.strictEqual(kind("Add your API key in the add-on's Options first."), "ai");
+  assert.strictEqual(kind("fetch failed"), "ai");
+  assert.strictEqual(kind("The application browser is already open. Close its window and try again."), "browser");
+  assert.strictEqual(kind("Your resume has a problem: no approved lines. Open the Resume page to fix it."), "resume");
+  assert.strictEqual(kind("SQLITE_FULL: database or disk is full"), "disk");
+  // A job's own: a slow page, a closed window, a form that broke.
+  for (const m of ["page.goto: Timeout 45000ms exceeded.", "page.evaluate: Target page, context or browser has been closed", "application timed out", "Model API 429: busy", "locator.click: Timeout 15000ms exceeded."]) assert.strictEqual(kind(m), null, m);
+  assert.doesNotMatch(W.trouble("Add your API key in the add-on's Options first.").text, /add-on/);
+  // What a stopped application says never carries a program's own error text.
+  for (const m of ["page.goto: Timeout 45000ms exceeded.\nCall log:\n  - navigating to \"https://x\"", "page.goto: net::ERR_CONNECTION_REFUSED at https://x", "page.evaluate: Target page, context or browser has been closed",
+    "application timed out", "locator.click: Timeout 15000ms exceeded.\nCall log:\n  - waiting for locator"]) {
+    const t = W.plainRunError(m);
+    assert.doesNotMatch(t, /page\.|locator\.|Call log|net::|\d+ms|AI service/, t);
+    assert.match(t, /Try again|Finish it with me/);
+  }
+  assert.match(W.plainRunError("Model API 429: slow down"), /busy/);
+  assert.strictEqual(W.plainRunError("elementHandle.fill: Element is not an <input>\nCall log:\n  - x"), "Element is not an <input>");
+});

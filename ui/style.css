@@ -677,9 +677,9 @@ details.card-fold[open] > summary h2::before, details.card-fold[open] > summary 
 .prog.practice { box-shadow: var(--edge-stock), var(--cast-stock), inset 3px 0 0 var(--color-practice); }
 .prog .spin { flex: none; }
 /* The first time: what a part of the app is for. */
-.tip { display: flex; gap: var(--space-sm); align-items: center; padding: var(--space-sm) var(--space-md); margin-bottom: var(--space-sm); border-radius: var(--radius-card); background: var(--color-work-bg); color: var(--color-ink-2); font-size: var(--text-sm); }
-.tip > svg.i { color: var(--color-work); flex: none; }
-.tip > span { flex: 1; }
+.todo-tip { display: flex; gap: var(--space-sm); align-items: center; padding: var(--space-sm) var(--space-md); margin-bottom: var(--space-sm); border-radius: var(--radius-card); background: var(--color-work-bg); color: var(--color-ink-2); font-size: var(--text-sm); }
+.todo-tip > svg.i { color: var(--color-work); flex: none; }
+.todo-tip > span { flex: 1; }
 /* A practice application: what to check, and the two ways on. */
 .check-block { margin-top: var(--space-md); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-card); background: var(--color-practice-bg); font-size: var(--text-sm); color: var(--color-ink-2); display: grid; gap: var(--space-xs); }
 .check-block > b { color: var(--color-practice); font-weight: 600; font-size: var(--text-md); }

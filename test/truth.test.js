@@ -211,3 +211,26 @@ test("a background investigation and being barred from government programs are t
   assert.strictEqual(check("Are you comfortable going through a background or security clearance investigation for public trust if needed?", "No", ["Yes", "No"], { screenings: "yes" }).k.value, "Yes", "unless they consent to background checks");
   assert.strictEqual(check("Are you currently, or have you ever been, excluded from, debarred or otherwise ineligible to participate in federally funded programs?", "No", ["Yes", "No"]).k.kind, "decide");
 });
+
+test("a question about another country than the one the person answered for waits for them, never their answer turned around", async () => {
+  const { otherCountry } = await import("../core/truth.js");
+  // They said: authorized to work in the United States, and no sponsorship needed there.
+  for (const [label, value] of [["Are you legally authorized to work in Canada?", "No"], ["Are you legally authorized to work in Canada?", "Yes"], ["Will you require sponsorship to work in the UK?", "Yes"]]) {
+    const r = check(label, value, ["Yes", "No"]);
+    assert.strictEqual(r.k.kind, "decide", label);
+    assert.strictEqual(r.k.value, "", label);
+    assert.match(r.k.note, /asks about (Canada|the United Kingdom)/);
+  }
+  // Their own country, named any way or not at all, is still corrected.
+  for (const label of ["Are you legally authorized to work in the US?", "Are you legally authorized to work in the United States?", "Are you authorized to work in the U.S.A.?", "Are you legally authorized to work in the country where this job is located?",
+    "Are you authorized to work in the US or Canada?", "Tell us: are you legally authorized to work?"]) assert.strictEqual(check(label, "No", ["Yes", "No"]).k.value, "Yes", label);
+  assert.strictEqual(otherCountry("Please tell us if you are eligible to work"), "", "the word 'us' is not the US");
+  assert.strictEqual(otherCountry("Are you authorized to work in New Mexico?"), "");
+  assert.strictEqual(otherCountry("Are you authorized to work in Canada?", "Canada"), "");
+  assert.strictEqual(otherCountry("Are you authorized to work in the US?", "Canada"), "the United States");
+});
+
+test("relocation: a question that also asks where they live is left as answered", () => {
+  assert.strictEqual(check("Do you currently live in Austin, or are you willing to relocate?", "Yes", ["Yes", "No"], { relocation: "no" }).notes.length, 0);
+  assert.strictEqual(check("Are you willing to relocate?", "Yes", ["Yes", "No"], { relocation: "no" }).k.value, "No");
+});

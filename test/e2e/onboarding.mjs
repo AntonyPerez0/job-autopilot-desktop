@@ -215,10 +215,10 @@ try {
 
   await win.waitForSelector('h1:has-text("Overview")');
   // No tour: the To do list says what it is, once.
-  await win.waitForSelector('.tip:has-text("This is your To do list")');
+  await win.waitForSelector('.todo-tip:has-text("This is your To do list")');
   await shot("8a-tip");
-  await win.click('.tip button:has-text("Got it")');
-  await win.waitForSelector(".tip", { state: "detached" });
+  await win.click('.todo-tip button:has-text("Got it")');
+  await win.waitForSelector(".todo-tip", { state: "detached" });
   await win.waitForSelector(".todo-card");
   await win.waitForSelector('.week:has-text("Since yesterday")');
   await shot("8-dashboard");

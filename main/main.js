@@ -33,7 +33,8 @@ let win = null, core = null, bg = null;
 let quitting = false;
 app.on("before-quit", () => { quitting = true; });
 // Started with the computer: no window until the person opens it from the menu bar or system tray.
-const startHidden = process.argv.includes("--hidden") || (process.platform === "darwin" && (() => { try { return app.getLoginItemSettings().wasOpenedAsHidden; } catch { return false; } })());
+// (macOS has no "open hidden" any more: an app opened at login by the system is told so, and stays out of the way.)
+const startHidden = process.argv.includes("--hidden") || (process.platform === "darwin" && (() => { try { const l = app.getLoginItemSettings(); return !!(l.wasOpenedAtLogin || l.wasOpenedAsHidden); } catch { return false; } })());
 
 function page(name) { return UI_URL + name; }
 // Only the app's own two pages, in the window's top frame, may call the engine.
@@ -49,6 +50,8 @@ const textSize = (f) => (TEXT_SIZES.includes(Number(f)) ? Number(f) : 1);
 // The window's own title bar is replaced by the app's: the page draws the background, and on Windows
 // the minimize/maximize/close buttons sit on top in the app's paper and ink colours.
 const MAC = process.platform === "darwin", WIN = process.platform === "win32";
+// Windows shows an app's notifications only when the app says which one it is (the name the installer registered).
+if (WIN) app.setAppUserModelId("io.github.antonyperez0.jobautopilot");
 const overlay = () => (nativeTheme.shouldUseDarkColors ? { color: "#0d0f15", symbolColor: "#eceff1", height: 36 } : { color: "#f7f9fa", symbolColor: "#13161d", height: 36 });
 nativeTheme.on("updated", () => { if (WIN) for (const w of BrowserWindow.getAllWindows()) try { w.setTitleBarOverlay(overlay()); } catch { /* a window without an overlay */ } });
 
@@ -102,6 +105,8 @@ function createWindow() {
 }
 
 function showWindow() {
+  // Opened a second time while it's still starting: the window comes up on its own in a moment.
+  if (!core) return;
   if (!win) { createWindow(); return; }
   if (win.isMinimized()) win.restore();
   win.show(); win.focus();
@@ -125,7 +130,17 @@ app.whenReady().then(async () => {
   const api = await import("../core/api.js");
   const worker = await import("../core/worker.js");
   const db = await import("../core/db.js");
-  db.openDb();
+  // A list of jobs that can't be read (the computer lost power while it was being written, say) is set aside and a
+  // new one started, so the app still opens. The jobs already applied to come back from the history file below.
+  let damaged = null;
+  try { db.openDb(); } catch (e) {
+    if (!/not a database|malformed|corrupt/i.test(String(e && e.message))) throw e;
+    const f = path.join(DATA, "autopilot.db");
+    damaged = `${f}.damaged-${new Date().toISOString().slice(0, 10)}`;
+    fs.renameSync(f, damaged);
+    for (const x of ["-wal", "-shm"]) fs.rmSync(f + x, { force: true });
+    db.openDb();
+  }
   core = { store, api, worker };
   // One line per start, so support (and the update test) can see which version ran when.
   try {
@@ -135,6 +150,12 @@ app.whenReady().then(async () => {
   } catch { /* informational only */ }
   const history = await import("../core/history.js");
   history.setDefaultBackupDir(path.join(app.getPath("documents"), "Job Autopilot"));
+  if (damaged) {
+    let back = 0;
+    try { const f = history.backupFile(); if (f && fs.existsSync(f)) back = history.importHistory(fs.readFileSync(f)).added; } catch { /* nothing to bring back */ }
+    db.log(null, `the list of jobs couldn't be read and was set aside (${path.basename(damaged)}); a new one was started${back ? `, with the ${back} jobs you applied to from your application history` : ""}`, "warn");
+    damaged = { file: damaged, back };
+  }
   history.startBackups(app.getVersion());
   handle("history-save", async () => {
     const day = new Date().toISOString().slice(0, 10);
@@ -223,7 +244,11 @@ app.whenReady().then(async () => {
   // The person's own browser opens only OpenRouter's sign-in page, for Connect with OpenRouter.
   api.setOpener((u) => { if (!/^https:\/\/openrouter\.ai\//.test(String(u))) throw new Error("not an OpenRouter address"); return shell.openExternal(String(u)); });
 
-  createWindow();
+  if (!win) createWindow();
+  if (damaged && !TEST_RUN) {
+    dialog.showMessageBox(win, { type: "warning", message: "Your list of jobs couldn't be read, so Job Autopilot started a new one",
+      detail: `${damaged.back ? `The ${damaged.back} jobs you already applied to were brought back from your application history, so none is applied to twice.` : "If you applied to jobs before, bring them back under Settings > Application history > Import a history file, so none is applied to twice."} Your resume, answers and settings are as they were. The old list is kept as ${path.basename(damaged.file)} in the app's folder.` });
+  }
   if (store.getSettings().onboarded) worker.run();
   bg = startBackground({ core, here: HERE, show: showWindow, visible: () => !!win && win.isVisible() && win.isFocused(),
     open: (target) => { showWindow(); if (win) win.webContents.send("navigate", target || {}); } });
@@ -235,8 +260,17 @@ app.whenReady().then(async () => {
     const r = await dialog.showMessageBox(win, { type: "question", buttons: ["Move to Applications", "Not now"], defaultId: 0, cancelId: 1,
       message: "Move Job Autopilot to your Applications folder?", detail: "It needs to be there to update itself. It opens again from there by itself.", checkboxLabel: "Don't ask again" });
     if (r.checkboxChecked) store.saveSettings({ dismissed: [...(store.getSettings().dismissed || []), "move-to-applications"] });
-    if (r.response === 0) { try { quitting = true; app.moveToApplicationsFolder(); } catch (e) { quitting = false; dialog.showMessageBox(win, { type: "warning", message: "Job Autopilot couldn't move itself", detail: `Drag it into Applications yourself, then open it from there. (${e.message})` }); } }
+    if (r.response === 0) { try { quitting = true; if (!app.moveToApplicationsFolder()) quitting = false; } catch (e) { quitting = false; dialog.showMessageBox(win, { type: "warning", message: "Job Autopilot couldn't move itself", detail: `Drag it into Applications yourself, then open it from there. (${e.message})` }); } }
   }
+}).catch((e) => {
+  console.error("startup failed:", e);
+  // With the window up, the app carries on. Without one there would be nothing to see or close: say so, and quit.
+  if (win) return;
+  const m = String((e && e.message) || e);
+  dialog.showErrorBox("Job Autopilot couldn't start", `${/ENOSPC|SQLITE_FULL|disk is full/i.test(m) ? "This computer's disk is full. Free some space, then open Job Autopilot again."
+    : /EACCES|EPERM|EROFS|readonly|read-only/i.test(m) ? `Job Autopilot can't write to its folder (${DATA}). Check that the folder isn't read-only, then open it again.`
+      : "Something went wrong while it was starting. Restart your computer and open it again; if it keeps happening, install the latest version from the Releases page."}\n\n(${m.slice(0, 300)})`);
+  app.exit(1);
 });
 
 // The window closed for real (quitting, or setup not finished): stop the autopilot and quit.

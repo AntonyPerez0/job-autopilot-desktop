@@ -288,7 +288,7 @@ Releases by hand and install it over the old one instead.
 
 ## First run: the setup
 
-The app walks you through five short steps, about ten minutes in all. Only your
+The app walks you through a few short steps, about ten minutes in all. Only your
 name, contact details, city and work authorization are required; everything
 else can wait. If you close the app partway through, setup opens where you
 left off. You can change all of it later under **Settings** and **Resume**.
@@ -871,7 +871,9 @@ it shows.
   always says which mode the app is in, with the button to press: **Practice
   mode** (nothing is sent) with **Start sending**, **Sending** with **Pause**
   and **Back to practice**, or **Paused** with **Continue**. Under it, **Up to
-  10 a day** changes the daily limit.
+  10 a day** changes the daily limit (at least 1; **Pause** is the way to stop).
+  **Back to practice** means nothing more is sent: applications that were lined
+  up to be sent go back to being practice ones.
 - **Closing the window doesn't stop it.** It keeps looking for jobs and
   applying in the background. Open it again from its icon in the menu bar at
   the top of the screen (Mac) or in the system tray next to the clock
@@ -1008,7 +1010,8 @@ stops early for it), and works while the autopilot is paused too.
   - Every fact comes from your approved resume pieces and your answers.
   - Truth rules check the questions that matter most against what you
     entered, and correct any AI answer that disagrees:
-    - work authorization and sponsorship
+    - work authorization and sponsorship (a question about another country
+      than the one you answered for waits for you)
     - years of experience
     - how you heard about the job
     - start date and notice period
@@ -1282,6 +1285,18 @@ passwords are never in it. Send the file to whoever helps you with the app.
   the daily limit may be reached (it starts again the next day), the next jobs
   may be at companies you just applied to (they wait a few days), or nothing is
   up next.
+- **"The app can't apply right now."** Something is in the way of every
+  application, not just one: no internet connection, the AI isn't connected or
+  is out of credit, no browser to apply with, or a problem with your resume.
+  The To do list says which. Your jobs stay in **Up next** (none is marked as
+  stopped for it), and the app tries again every few minutes and carries on by
+  itself once it's sorted out.
+- **"Your list of jobs couldn't be read."** If the computer lost power while
+  the app was saving, the list of jobs can be damaged. The app sets it aside,
+  starts a new one and brings back the jobs you applied to from your
+  application history (see [Moving to a new computer](#moving-to-a-new-computer-or-reinstalling)),
+  so none is applied to twice. Your resume, answers and settings aren't in
+  that file.
 - **Nothing is up next.** The Overview says when the next search is and the
   main reasons jobs were left out ("8 needed a Class A CDL"); **See why** opens
   **Not applied**. It groups the reasons, each with the setting behind it

@@ -47,6 +47,11 @@ test("titles, seniority and excluded companies", () => {
   assert.ok(!titleOk("Senior Software Engineer", austin));
   assert.ok(!titleOk("Software Engineer Intern", austin));
   assert.ok(titleOk("Software Engineer Intern", { ...austin, internships: true }));
+  // Words the person rules out are words, whatever characters they hold: they never break the search.
+  const ruled = { ...austin, titleExclude: ["C++", "(contract)", "*", "night"] };
+  assert.ok(titleOk("Software Engineer", ruled));
+  assert.ok(!titleOk("Software Engineer, Night Shift", ruled));
+  assert.ok(!titleOk("C++ Software Engineer", ruled));
   assert.ok(!titleOk("Software Engineer III", { ...austin, seniority: ["junior"] }));
   assert.ok(!titleOk("Account Executive", austin));
   assert.ok(excludedCompany("Initech LLC", austin));

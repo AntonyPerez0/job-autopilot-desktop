@@ -207,3 +207,24 @@ test("the status: practice applications new since the person last looked, what s
   await handle("/api/job/new3");
   assert.strictEqual(store.getSettings().practiceLookedAt, at, "nothing new: nothing written");
 });
+
+test("back to practice: what was lined up to be sent for real goes back to being practice, so nothing is sent", async () => {
+  getDb().prepare("DELETE FROM jobs").run();
+  store.saveSettings({ dryRun: false, reviewedDryRun: true });
+  add("r1", { status: "filled" }); add("r2", { status: "filled" });
+  await handle("/api/practice/send", {});
+  assert.ok(getJob("r1").real > 0 && getJob("r1").status === "queued");
+  await handle("/api/settings", { dryRun: true });
+  for (const s of ["r1", "r2"]) assert.strictEqual(getJob(s).real, 0, "no longer marked to be sent");
+  assert.strictEqual(W.practiceFor(getJob("r1")), true, "filled in as practice the next time");
+  // One chosen afterwards, in practice mode, is still sent: that's what "Send only this one for real" is.
+  getDb().prepare("UPDATE jobs SET status = 'filled' WHERE slug = 'r2'").run();
+  await handle("/api/job/r2", { action: "send" });
+  assert.strictEqual(W.practiceFor(getJob("r2")), false);
+});
+
+test("the daily limit and the tries per job are never none: Pause is the way to stop", async () => {
+  const s = await handle("/api/settings", { dailyCap: 0, maxAttempts: 0 });
+  assert.strictEqual(s.dailyCap, 1);
+  assert.strictEqual(s.maxAttempts, 1);
+});

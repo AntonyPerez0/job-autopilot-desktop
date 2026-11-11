@@ -31,7 +31,8 @@ const STOPWORDS = new Set(["i", "ii", "iii", "the", "a", "an", "and", "of", "for
 // Words that rule a title out, from the seniority the user accepts.
 export function titleExcludes(prefs) {
   const s = new Set(prefs.seniority || []);
-  const out = [...(prefs.titleExclude || [])];
+  // The person's own words are words, not patterns ("C++", "(contract)").
+  const out = (prefs.titleExclude || []).map((x) => esc(String(x).trim())).filter(Boolean);
   if (!s.has("senior")) out.push("senior", "sr\\.?");
   if (!s.has("lead")) out.push("lead\\b", "head of", "manager", "director");
   if (!s.has("staff")) out.push("staff");
@@ -196,7 +197,7 @@ export async function discover(progress = () => {}, ctx = {}) {
   }
   const profile = loadProfile();
   if (!(prefs.titles || []).length || (!(prefs.cities || []).length && !prefs.remote)) {
-    log(null, "no searches to run: add job titles and a city (or remote) in Settings > Job preferences", "warn");
+    log(null, "no searches to run: add job titles and a city (or remote) in Settings > Jobs to look for", "warn");
     lastSearch.done = true;
     return 0;
   }

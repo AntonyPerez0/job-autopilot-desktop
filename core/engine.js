@@ -75,7 +75,7 @@ export function approvedOnly(p) {
 
 // The profile the engine works from: approved pieces, plus the user's own contact facts and answers.
 export function loadProfile(raw = getProfile(), a = getAnswers()) {
-  if (!raw) throw new Error("No profile yet. Finish onboarding first.");
+  if (!raw) throw new Error("There's no resume yet. Open the Resume page and make one.");
   const p = approvedOnly(raw);
   p.schema = Profile.SCHEMA;
   p.name = fullName(a) || p.name;
@@ -86,7 +86,7 @@ export function loadProfile(raw = getProfile(), a = getAnswers()) {
   p.cannotClaim = [...new Set([...arr(raw.cannotClaim), ...arr(a.cannotClaim)].filter(Boolean))];
   p.rules = raw.rules || Profile.EXAMPLE.rules;
   const errs = Profile.validate(p);
-  if (errs.length) throw new Error("The profile has problems: " + errs.slice(0, 3).join(" ") + " Open Profile to fix them.");
+  if (errs.length) throw new Error("Your resume has a problem: " + errs.slice(0, 3).join(" ") + " Open the Resume page to fix it.");
   return p;
 }
 

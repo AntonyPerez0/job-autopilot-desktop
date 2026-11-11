@@ -42,6 +42,11 @@ const PAGES = {
   "/form-silent": `<form id="f" onsubmit="return false"><label for="fn">First name *</label><input id="fn" required><label for="ln">Last name *</label><input id="ln" required>
     <label for="em">Email *</label><input id="em" type="email" required>
     <button type="submit" onclick="fetch('/done',{method:'POST',body:'silent'})">Submit application</button></form>`,
+  // A form that thanks the visitor before anything is sent, and whose Submit shows an error and no confirmation.
+  "/form-thanks": `<p>Thank you for your interest in Globex! Your application is incomplete until you press Submit.</p>
+    <form id="f" onsubmit="return false"><label for="fn">First name *</label><input id="fn" required><label for="ln">Last name *</label><input id="ln" required>
+    <label for="em">Email *</label><input id="em" type="email" required>
+    <button type="submit" onclick="document.getElementById('out').textContent='Something went wrong on our side.'">Submit application</button><p id="out"></p></form>`,
   // A posting that moves to a government job site (audit 4.3).
   "/to-gov": `<p>Moving</p><script>location.replace("https://www.governmentjobs.com/careers/acme/jobs/1/clerk")</script>`,
   // A window left open by an earlier posting that keeps opening pages (audit 1.2).
@@ -72,7 +77,7 @@ const PAGES = {
       <label for="em">Email *</label><input id="em" type="email" required>
       <button type="submit" onclick="document.body.innerHTML='<h2>Your application has been received.</h2>'">Submit application</button></form></template>`,
 };
-let submitted = null, sends = 0;
+let submitted = null, sends = 0, aiDown = false;
 const site = http.createServer((req, res) => {
   if (req.url === "/done") { let b = ""; req.on("data", (c) => (b += c)); req.on("end", () => { submitted = b; sends++; res.end("ok"); }); return; }
   const body = PAGES[req.url.split("?")[0]];
@@ -82,6 +87,7 @@ const site = http.createServer((req, res) => {
 // Mock AI: answers each listed field from ANSWERS by its label.
 const ai = http.createServer((req, res) => {
   let b = ""; req.on("data", (c) => (b += c)); req.on("end", () => {
+    if (aiDown) { res.writeHead(402, { "content-type": "application/json" }); return res.end(JSON.stringify({ error: { message: "Insufficient credits" } })); }
     const msg = JSON.parse(b);
     const user = (msg.messages.find((m) => m.role === "user") || {}).content || "";
     const fields = (user.split("FORM FIELDS ON THE PAGE")[1] || "").split("\n").map((l) => l.match(/^(\d+)\. (.+?) \[/)).filter(Boolean);
@@ -118,6 +124,12 @@ test("live: fills both pages, submits, sees the confirmation", async () => {
   assert.strictEqual(r.details.pages, 2);
   assert.ok(r.details.kit.some((k) => k.page === 2 && k.value === "Weekends"), "page 2 answers recorded");
   assert.ok(ctx.pages().length <= pagesBefore + 1, "the job's tabs were closed");
+});
+
+test("words of thanks the form showed before Submit are not a confirmation: without a new one, it isn't marked as sent", async () => {
+  const r = await applyTo(job("/form-thanks", "t-thanks"), {}, { dryRun: false, browser: ctx });
+  assert.strictEqual(r.status, "failed", r.reason);
+  assert.match(r.reason, /no confirmation appeared/);
 });
 
 test("traps for bots are never read or filled, so the employer's spam filter has nothing to catch", async () => {
@@ -301,4 +313,29 @@ test("dailyCap 1: the loop stops after one Submit, even when the page doesn't co
   assert.strictEqual(getJob("cap-2").status, "queued", "the next one waits for tomorrow");
   assert.strictEqual(appliedToday(), 1);
   store.saveSettings({ dryRun: true, dailyCap: 10 });
+});
+
+test("trouble that isn't a job's own (the AI account out of credit): no job is marked as stopped or uses a try; the loop waits, says why, and carries on once it's sorted out", { skip: !chromiumPath() && "no Playwright Chromium here" }, async () => {
+  const { getDb, getJob } = await import("../core/db.js");
+  const worker = await import("../core/worker.js");
+  const db = getDb();
+  db.prepare("DELETE FROM jobs").run();
+  store.saveSettings({ dryRun: false, paused: false, reviewedDryRun: true, dailyCap: 5, minutesBetweenApplies: 0, maxAttempts: 2, searchEveryMinutes: 600, browser: "chromium", windowMode: "headless" });
+  for (const [slug, co] of [["tr-1", "Globex"], ["tr-2", "Initech"], ["tr-3", "Hooli"]]) db.prepare("INSERT INTO jobs (slug, key, title, company, location, url, apply_url, status, details) VALUES (?, ?, 'Cashier', ?, 'Austin, TX', ?, ?, 'queued', '{}')")
+    .run(slug, slug, co, base + "/form-ping?" + slug, base + "/form-ping?" + slug);
+  process.env.JA_TROUBLE_WAIT_MS = "1500";
+  aiDown = true; sends = 0;
+  const run = worker.run();
+  try {
+    for (let i = 0; i < 120 && !worker.state.trouble; i++) await pause(1000);
+    assert.strictEqual((worker.state.trouble || {}).kind, "ai");
+    assert.match(worker.state.trouble.text, /out of credit/);
+    await pause(5000); // a few more rounds of waiting
+    for (const slug of ["tr-1", "tr-2", "tr-3"]) { assert.strictEqual(getJob(slug).status, "queued", slug); assert.strictEqual(getJob(slug).attempts, 0, slug); }
+    assert.strictEqual(sends, 0);
+    aiDown = false;
+    for (let i = 0; i < 180 && !db.prepare("SELECT 1 FROM jobs WHERE status = 'applied'").get(); i++) await pause(1000);
+    assert.ok(db.prepare("SELECT 1 FROM jobs WHERE status = 'applied'").get(), "it carries on once the AI works");
+    assert.strictEqual(worker.state.trouble, null);
+  } finally { worker.stop(); await run; delete process.env.JA_TROUBLE_WAIT_MS; store.saveSettings({ dryRun: true, dailyCap: 10 }); }
 });

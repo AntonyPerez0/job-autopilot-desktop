@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert";
 import { tempDataDir } from "./helpers.js";
-import { cleanUrl, familyKey, inAppliedList, jobKey, parseAppliedList, roleKey, sameRoleAs } from "../core/dedupe.js";
+import { cleanUrl, familyKey, inAppliedList, jobKey, parseAppliedList, roleKey, sameRoleAs, sameUrlAs } from "../core/dedupe.js";
 
 test("the same role under variant titles has one role key", () => {
   const k = roleKey("Globex", "Software Engineer, New Grad");
@@ -40,6 +40,19 @@ Umbrella, Data Analyst`);
   assert.ok(inAppliedList(list, { company: "Umbrella Corp", title: "Data Analyst" }));
   assert.ok(!inAppliedList(list, { company: "Initech", title: "Frontend Developer" }));
   assert.strictEqual(cleanUrl("https://x.com/a/application#top"), "https://x.com/a");
+});
+
+test("two postings are the same link only when what names the posting is the same, wherever the site keeps it", () => {
+  // Greenhouse's form has one address for every employer; the employer and the posting come after the "?".
+  const acme = { slug: "a", apply_url: "https://job-boards.greenhouse.io/embed/job_app?for=acme&token=111" };
+  const globex = { slug: "b", apply_url: "https://job-boards.greenhouse.io/embed/job_app?for=globex&token=222" };
+  assert.strictEqual(sameUrlAs(globex, [acme]), null, "another employer's Greenhouse form is another job");
+  assert.ok(sameUrlAs({ slug: "c", apply_url: "https://job-boards.greenhouse.io/embed/job_app?token=111&for=acme&gh_src=abc#app" }, [acme]), "the same posting, however it was reached");
+  assert.notStrictEqual(cleanUrl("https://acme.com/careers?gh_jid=55"), cleanUrl("https://acme.com/careers?gh_jid=56"));
+  assert.notStrictEqual(cleanUrl("https://www.indeed.com/viewjob?jk=abc"), cleanUrl("https://www.indeed.com/viewjob?jk=xyz"));
+  // Where the visitor came from says nothing about the posting.
+  assert.strictEqual(cleanUrl("https://jobs.lever.co/globex/1234/apply?lever-source=LinkedIn&utm_medium=x"), "https://jobs.lever.co/globex/1234");
+  assert.strictEqual(cleanUrl("https://acme.com/Jobs/7/?utm_source=x&ref=y"), "https://acme.com/jobs/7");
 });
 
 test("restart: a job stopped mid-submit is never pressed again", async () => {

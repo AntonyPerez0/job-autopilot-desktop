@@ -572,7 +572,7 @@ export async function answerGroups(page, kit) {
   return unanswered;
 }
 
-const SUCCESS = /thank(s| you)[^.]{0,40}(appl|submi|interest)|application (has been |was )?(received|submitted|complete)|we('ve| have) received your application|successfully (submitted|applied)|your application is (in|on its way)|application submitted/i;
+const SUCCESS = /thank(s| you)[^.]{0,40}(appl|submi|interest)|application (has been |was )?(received|submitted|complete)|we('ve| have) received your application|successfully (submitted|applied)|your application is (in(?![a-z]| [a-z])|on its way)|application submitted/i;
 
 async function codeBoxes(page) {
   for (const f of page.frames()) if (await f.locator("input[maxlength='1']:visible").count().catch(() => 0) >= 6) return true;
@@ -580,12 +580,14 @@ async function codeBoxes(page) {
 }
 
 // Greenhouse answers 428 when it wants the emailed code (reCAPTCHA scored the browser low).
-async function waitOutcome(page, before, wantsCode) {
+// said: the confirming words the page already showed before Submit ("Thank you for your interest in Acme" above a
+// form): only ones that are new count, so a form that words its heading that way isn't taken for a confirmation.
+async function waitOutcome(page, before, wantsCode, said = new Set()) {
   for (let i = 0; i < 30; i++) {
     await sleep(1500);
-    const t = await pageText(page);
-    if (SUCCESS.test(t) || /confirmation|thank|success|submitted/i.test(page.url()) && page.url() !== before) return "applied";
     if (wantsCode() || await codeBoxes(page)) return "code";
+    const t = await pageText(page);
+    if (confirmations(t).some((x) => !said.has(x)) || /confirmation|thank|success|submitted/i.test(page.url()) && page.url() !== before) return "applied";
   }
   return null;
 }
@@ -1319,7 +1321,6 @@ export async function applyTo(job, hooks = {}, opts = {}) {
     if (turn) return await finished(await turn("everything the app could fill in is in. Check it, then press Submit yourself. The app sees when it's sent."));
 
     // Submit.
-    step("submit");
     let frame = null, label = null;
     for (const f of formFrames(page)) {
       label = await f.evaluate(SUBMIT_JS).catch(() => null);
@@ -1335,15 +1336,18 @@ export async function applyTo(job, hooks = {}, opts = {}) {
     let got428 = false;
     page.on("response", (r) => { if (r.status() === 428 && r.request().method() === "POST") got428 = true; });
     if (halted()) return manual(`${halted()} while this application was being filled, so it was not submitted. It's filled in and waiting: check it and submit it yourself, or try again later`);
-    log(job.slug, `pressing "${label}"`);
+    const said = new Set(confirmations(await pageText(page)));
     await frame.locator("[data-ap-submit]").first().scrollIntoViewIfNeeded().catch(() => {});
-    cut();
+    // From this step on the application counts as possibly sent, so it starts only now, right at the press: the
+    // wait above, and closing the app during it, leave it as not sent.
+    step("submit");
+    log(job.slug, `pressing "${label}"`);
     await frame.locator("[data-ap-submit]").first().click({ timeout: 15000 });
 
     step("confirm");
     const submittedAt = Date.now() / 1000;
     if (halted()) return manual(`${halted()} just as Submit was pressed: it may have gone through. Check your email or the site before applying again`);
-    let outcome = await waitOutcome(page, before, () => got428);
+    let outcome = await waitOutcome(page, before, () => got428, said);
     if (outcome === "code") {
       // Only a code from the form's own system (or the employer's own site), signed by it.
       const senders = codeSenders(frame.url(), job.apply_url);
@@ -1363,7 +1367,7 @@ export async function applyTo(job, hooks = {}, opts = {}) {
       step("confirm");
       cut();
       await enterCode(frame, code);
-      outcome = await waitOutcome(page, page.url(), () => got428);
+      outcome = await waitOutcome(page, page.url(), () => got428, said);
       if (outcome === "code") outcome = null;
     }
     result.screenshot = await shot(page, job.slug, "after");

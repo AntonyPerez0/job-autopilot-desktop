@@ -36,6 +36,12 @@ export async function checkNow() {
   return updateState();
 }
 
+// Why an update didn't go in, in plain words.
+const plain = (m) => (/ENOSPC|disk is full/i.test(m) ? "This computer's disk is full. Free some space (the update needs about 500 MB), then try again."
+  : /fetch failed|terminated|ECONNRESET|ENOTFOUND|EAI_AGAIN|timed? ?out|aborted|^download: \d+/i.test(m) ? "The new version couldn't be downloaded. Check your internet connection and try again."
+    : /EBUSY|EPERM|EACCES/i.test(m) ? "Another program is holding the update's file (often antivirus software checking it). Wait a minute and try again, or download the new version from the releases page."
+      : m);
+
 // The .app bundle this copy runs from, and whether it can be replaced.
 function macBundle() {
   const bundle = path.resolve(process.execPath, "..", "..", "..");
@@ -54,7 +60,11 @@ export async function installNow() {
   if (!state.info || !state.info.newer) throw new Error("You already have the latest version.");
   if (["downloading", "waiting", "installing"].includes(state.phase)) return updateState();
   const bundle = process.platform === "darwin" ? macBundle() : null;
-  run(bundle).catch((e) => { state.phase = "error"; state.error = e.message; if (worker) worker.hold(false); });
+  run(bundle).catch((e) => {
+    state.phase = "error"; state.error = plain(e.message);
+    // The autopilot goes on with the version it has (it was stopped if the install had begun).
+    if (worker) { worker.hold(false); const again = (n) => { if (worker.isRunning() && n > 0) return setTimeout(() => again(n - 1), 1000); if (worker.state.now === "stopped") worker.run(); }; again(30); }
+  });
   return updateState();
 }
 

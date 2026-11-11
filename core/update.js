@@ -71,14 +71,18 @@ export async function download(info, dir, onProgress = () => {}) {
   const total = Number(res.headers.get("content-length")) || info.asset.size || 0;
   const hash = crypto.createHash("sha256");
   const out = fs.createWriteStream(file + ".part");
+  // A full disk or a locked file: the download stops with that error (unheard, it would take the whole app down).
+  let failed = null;
+  out.on("error", (e) => { failed = e; });
   let got = 0;
   for await (const chunk of res.body) {
+    if (failed) throw failed;
     hash.update(chunk);
     got += chunk.length;
-    if (!out.write(chunk)) await new Promise((r) => out.once("drain", r));
+    if (!out.write(chunk)) await new Promise((r) => { out.once("drain", r); out.once("error", r); });
     onProgress(total ? got / total : 0);
   }
-  await new Promise((r, j) => out.end((e) => (e ? j(e) : r())));
+  await new Promise((r, j) => { if (failed) return j(failed); out.once("error", j); out.end(r); });
   if (hash.digest("hex") !== want) { fs.rmSync(file + ".part", { force: true }); throw new Error("The download did not match its checksum, so it was thrown away. Try again."); }
   fs.renameSync(file + ".part", file);
   return file;

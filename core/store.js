@@ -14,15 +14,26 @@ export const dataDir = (...p) => {
   return d;
 };
 
+// The person's own files keep the copy from the save before (name.bak): if the computer loses power while one is
+// being written and it can't be read afterwards, that copy is used, not a blank start (the setup all over again).
+const KEPT = new Set(["settings.json", "prefs.json", "answers.json", "profile.json"]);
+const parse = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
+
 export function readJSON(name, fallback) {
-  try { return JSON.parse(fs.readFileSync(path.join(DIR, name), "utf8")); } catch { return fallback; }
+  const file = path.join(DIR, name);
+  try { return parse(file); } catch {
+    if (KEPT.has(name)) { try { return parse(file + ".bak"); } catch { /* no earlier copy either */ } }
+    return fallback;
+  }
 }
 
-// Write to a temp file, then rename, so a crash never leaves half a file.
+// Write to a temp file (all the way to the disk), then rename, so a crash never leaves half a file.
 export function writeJSON(name, value) {
   const file = dataDir(name);
   const tmp = file + ".tmp";
-  fs.writeFileSync(tmp, JSON.stringify(value, null, 2));
+  const fd = fs.openSync(tmp, "w");
+  try { fs.writeFileSync(fd, JSON.stringify(value, null, 2)); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+  if (KEPT.has(name)) { try { parse(file); fs.copyFileSync(file, file + ".bak"); } catch { /* nothing readable to keep */ } }
   fs.renameSync(tmp, file);
   return value;
 }

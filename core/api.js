@@ -3,7 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { getDb, getJob, setJob, appliedToday, practicedToday, practiceSince, log, sqlTime } from "./db.js";
-import { state, kick, forceSearch, searchBrowser, checkReplies, closedOnes, peekNext, finishable, finishControl, requestFinish, PRACTICE_WAITING } from "./worker.js";
+import { state, kick, forceSearch, searchBrowser, checkReplies, closedOnes, peekNext, finishable, finishControl, requestFinish, retryCodeJobs, PRACTICE_WAITING } from "./worker.js";
 import {
   dataDir, getAnswers, getPrefs, getProfile, getSecret, getSettings, saveAnswers, savePrefs, saveProfile, saveSettings, setSecret,
 } from "./store.js";
@@ -66,6 +66,8 @@ const sameHost = (a, b) => !!a && String(a).trim().toLowerCase().replace(/\.+$/,
 const EDITABLE = ["paused", "acceptedTerms", "windowMode", "historyBackup", "historyFolder", "dailyCap", "dayStartsAtHour", "minutesBetweenApplies", "postedWithinDays", "searchEveryMinutes", "headless", "browser", "maxAttempts", "uiMode",
   "keepRunning", "openAtLogin", "keepAwake", "notifications", "setupStep", "touredAt", "dismissed"];
 const bad = (msg, code = 400) => ({ error: plainAiError(msg), code });
+// The same for what isn't an AI call (a mailbox, GitHub, a company's job page): trouble reaching it is said about it.
+const badAt = (msg, what) => ({ error: /timed? ?out|aborted|fetch failed|ENOTFOUND|ECONNREFUSED|ECONNRESET|EAI_AGAIN|ETIMEDOUT|getaddrinfo|network|socket/i.test(String(msg)) ? `The app couldn't reach ${what}. Check your internet connection${/mail/.test(what) ? " and the mail server's name" : ""}, then try again.` : String(msg), code: 400 });
 // main.js plugs in the updater (it needs Electron); without it (tests, scripts) updates are off.
 let updater = null;
 export const setUpdater = (u) => { updater = u; };
@@ -219,13 +221,20 @@ const ROUTES = {
   "POST /api/settings": (b) => {
     const cur = getSettings(), patch = {};
     for (const k of EDITABLE) if (k in b) patch[k] = typeof cur[k] === "number" ? Math.max(0, Number(b[k]) || 0) : typeof cur[k] === "boolean" ? !!b[k] : b[k];
-    if ("dailyCap" in patch) patch.dailyCap = Math.min(100, patch.dailyCap);
+    // At least one a day and one try per job: with none, nothing would ever go out and nothing would say why (Pause is the way to stop).
+    if ("dailyCap" in patch) patch.dailyCap = Math.max(1, Math.min(100, patch.dailyCap));
+    if ("maxAttempts" in patch) patch.maxAttempts = Math.max(1, Math.min(5, patch.maxAttempts));
     if ("dayStartsAtHour" in patch) patch.dayStartsAtHour = Math.min(23, patch.dayStartsAtHour);
     if ("setupStep" in patch) patch.setupStep = Math.min(10, patch.setupStep);
     if ("touredAt" in patch) patch.touredAt = b.touredAt ? new Date().toISOString() : null;
     if ("dismissed" in patch) patch.dismissed = (Array.isArray(b.dismissed) ? b.dismissed : []).filter((x) => typeof x === "string").map((x) => x.slice(0, 60)).slice(0, 50);
     if ("minutesBetweenApplies" in patch) patch.minutesBetweenApplies = Math.max(1, patch.minutesBetweenApplies);
     if (b.dryRun === true) patch.dryRun = true;
+    // Back to practice: nothing is sent, so what was lined up to be sent for real goes back to being practice.
+    if (patch.dryRun && !cur.dryRun) {
+      getDb().prepare("UPDATE jobs SET real = 0, reason = '' WHERE real > 0 AND status = 'queued'").run();
+      getDb().prepare("UPDATE jobs SET real = 0 WHERE real > 0 AND status = 'failed'").run();
+    }
     const s = saveSettings(patch);
     if ("historyFolder" in patch || patch.historyBackup) { try { writeBackup(VERSION); } catch { /* shown on the Settings card */ } }
     kick();
@@ -450,7 +459,7 @@ const ROUTES = {
     const w = getPrefs().watch || [];
     if (w.length >= 30) return bad("That's 30 companies already: remove one first.");
     let found;
-    try { found = await findBoard(input); } catch (e) { return bad(e.message); }
+    try { found = await findBoard(input); } catch (e) { return badAt(e.message, "that company's jobs page"); }
     if (!found) return bad(`Couldn't find ${/^https?:/i.test(input) ? "a job board on that page" : `${input}'s job board`}. The app reads boards on Greenhouse, Lever and Ashby: paste a link to one of its job postings, or to its careers page.`);
     if (!w.some((x) => x.ats === found.ats && x.token === found.token)) savePrefs({ watch: [...w, { name: found.name, ats: found.ats, token: found.token }] });
     log(null, `watching ${found.name}'s job board (${found.ats}, ${found.jobs} open jobs)`);
@@ -477,7 +486,7 @@ const ROUTES = {
   "GET /api/replies": () => getDb().prepare(`SELECT r.id, r.slug, r.at, r.sender, r.subject, r.kind, r.snippet, r.seen, j.company, j.title FROM replies r JOIN jobs j ON j.slug = r.slug
     ORDER BY r.at DESC LIMIT 200`).all(),
   "POST /api/replies/check": async () => {
-    try { const n = await checkReplies({ force: true }); return n === null ? bad("Connect your mailbox first (Settings > Mailbox).") : { added: n }; } catch (e) { return bad(e.message); }
+    try { const n = await checkReplies({ force: true }); return n === null ? bad("Connect your mailbox first (Settings > Mailbox).") : { added: n }; } catch (e) { return badAt(e.message, "your mailbox"); }
   },
   // A diagnostics report: what the app tried and where it stopped, personal details left out unless asked for.
   "POST /api/diagnostics": (b) => diagnostics({ personal: b.personal === true, app: { version: VERSION, packaged: !!(updater && updater.state().packaged) },
@@ -512,7 +521,7 @@ const ROUTES = {
   },
   // Projects from the user's public GitHub repositories.
   "GET /api/github/repos": async (_, q) => {
-    try { return await listRepos(q.get("user")); } catch (e) { return bad(e.message); }
+    try { return await listRepos(q.get("user")); } catch (e) { return badAt(e.message, "GitHub"); }
   },
   "POST /api/github/import": async (b) => {
     if (!aiSettings().apiKey) return bad("Connect an AI first (Settings > AI).");
@@ -626,21 +635,22 @@ const ROUTES = {
     const pass = b.pass || (sameHost(b.host, savedHost) ? getSecret("mailPassword") : "");
     if (!pass) return bad(savedHost && !sameHost(b.host, savedHost) ? "Type the app password for this mail server: your saved password is only sent to the server it was saved for." : "Type your app password first.");
     try { await testMailbox({ host: b.host, port: Number(b.port) || 993, user: b.user, pass }); return { ok: true }; }
-    catch (e) { return bad(/auth|login|credentials|invalid/i.test(e.message) ? "The mailbox refused the email or app password. Check both, and that it is an app password, not your normal password." : e.message); }
+    catch (e) { return bad(/auth|login|credentials|invalid/i.test(e.message) ? "The mailbox refused the email or app password. Check both, and that it is an app password, not your normal password." : badAt(e.message, "your mail server").error); }
   },
   "POST /api/mail/save": async (b) => {
     const savedHost = (getSettings().mailbox || {}).host;
     if (savedHost && !sameHost(b.host, savedHost) && !b.pass) await setSecret("mailPassword", "");
     if (b.pass) await setSecret("mailPassword", String(b.pass).replace(/\s+/g, ""));
     saveSettings({ mailbox: { preset: b.preset, host: b.host, port: Number(b.port) || 993, user: b.user } });
+    retryCodeJobs();
     return { ok: true };
   },
   "POST /api/mail/remove": async () => { await setSecret("mailPassword", ""); saveSettings({ mailbox: null }); return { ok: true }; },
   "POST /api/onboarding/finish": () => {
     try { loadProfile(); } catch (e) { return bad(e.message); }
     const p = getPrefs();
-    if (!(p.titles || []).length) return bad("Add at least one job title in Job preferences.");
-    if (!(p.cities || []).length && !p.remote) return bad("Add a city or allow remote jobs in Job preferences.");
+    if (!(p.titles || []).length) return bad("Add at least one job title under Jobs to look for.");
+    if (!(p.cities || []).length && !p.remote) return bad("Add a city, or tick remote jobs, under Jobs to look for.");
     const s = saveSettings({ onboarded: true, dryRun: true, paused: false });
     return { ok: true, settings: s };
   },

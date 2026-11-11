@@ -34,7 +34,8 @@ export function mailbox() {
   return m && m.host && m.user && pass ? { ...m, pass } : null;
 }
 
-export const state = { now: "starting", job: null, lastSearch: null, nextSearch: null, lastApply: 0, wake: null, progress: null };
+// trouble: what keeps every application from being tried right now ({ text, kind, at }), or null.
+export const state = { now: "starting", job: null, lastSearch: null, nextSearch: null, lastApply: 0, wake: null, progress: null, trouble: null };
 
 // How long each step usually takes, learned from past runs, for the time-left estimate.
 const TIMINGS = () => dataDir("timings.json");
@@ -68,6 +69,36 @@ export const forceSearch = () => { state.lastSearch = null; kick(); };
 export { searchBrowser };
 
 const TRANSIENT = /timeout|timed out|net::|ECONN|socket|Target (page|closed)|browser has been closed|Model API 5|Model API 429|fetch failed|download failed|No browser could be started|aborted/i;
+
+// Trouble that isn't about the job being tried: no internet, the AI not connected or out of credit, no browser, a full
+// disk. Every job would fail the same way, so none is tried (or marked as stopped) until it's sorted out.
+// -> { kind: "internet" | "ai" | "resume" | "browser" | "disk", text } or null
+export function trouble(message) {
+  const m = String(message || "");
+  if (/SQLITE_FULL|ENOSPC|database or disk is full/i.test(m)) return { kind: "disk", text: "This computer's disk is full. Free some space; the app carries on when there's room." };
+  if (/net::ERR_(INTERNET_DISCONNECTED|NAME_NOT_RESOLVED|NETWORK_CHANGED|ADDRESS_UNREACHABLE|NETWORK_ACCESS_DENIED|PROXY_CONNECTION_FAILED)|ENOTFOUND|EAI_AGAIN/i.test(m)) return { kind: "internet", text: "This computer isn't connected to the internet. The app carries on when it is." };
+  if (/Add your API key|Model API 40[123]\b|invalid api key|no auth|unauthori[sz]ed|insufficient (credits|funds|balance)|out of credits?|credit limit|Model API 404\b|model.*(not found|does not exist|no endpoints)/i.test(m)) {
+    return { kind: "ai", text: /Add your API key/i.test(m) ? "The AI isn't connected. Open Settings > AI and connect it." : plainAiError(m) };
+  }
+  if (/fetch failed|ECONNREFUSED/i.test(m)) return { kind: "ai", text: "The app couldn't reach the AI service. Check your internet connection; the app tries again in a few minutes." };
+  if (/Your resume has a problem|There's no resume yet/i.test(m)) return { kind: "resume", text: m.split("\n")[0].slice(0, 300) };
+  if (/application browser is already open|No browser could be started|Chromium download failed/i.test(m)) {
+    return { kind: "browser", text: /already open/i.test(m) ? "The browser the app applies with is already open in another window. Close that window (or restart Job Autopilot); the app tries again in a few minutes."
+      : "The app couldn't start a browser to apply with. Install Google Chrome or Microsoft Edge; the app tries again in a few minutes." };
+  }
+  return null;
+}
+// Why an application stopped, in words a person can act on (never a browser's or a program's own error text).
+export function plainRunError(message) {
+  const m = String(message || "");
+  if (/application timed out/i.test(m)) return "This application took too long, so the app stopped it. Press Try again, or Finish it with me.";
+  if (/Target (page|closed)|browser has been closed|context.{0,20}closed|page.{0,20}closed/i.test(m)) return "The browser window was closed while the app was filling this in. Press Try again.";
+  if (/net::ERR_|Timeout \d+ms exceeded|page\.goto|waiting for (selector|locator|navigation)/i.test(m)) return "The job site didn't load, or took too long to answer. Press Try again later, or Finish it with me.";
+  const ai = plainAiError(m);
+  if (ai !== m) return ai;
+  // Anything else: its first line only, without a program's call log.
+  return m.split(/\n|Call log:/)[0].replace(/^(page|locator|frame|browserType|elementHandle)\.\w+: /, "").trim().slice(0, 300) || "Something went wrong. Press Try again.";
+}
 
 // What goes next: the ones the person picked first (one practice run sent for real, questions answered, a job added by
 // its link), then practice runs sent for real all together, new jobs at companies they want to work for, and the rest:
@@ -299,12 +330,20 @@ async function applyOneInner(job) {
   } catch (e) {
     await abortCurrent();
     if ((getJob(job.slug) || {}).status === "submitting") {
-      setJob(job.slug, { status: "failed", reason: "error right after pressing Submit (" + e.message.slice(0, 200) + "): it may have gone through. Check your email before using Try again." });
+      setJob(job.slug, { status: "failed", reason: "something went wrong right after Submit was pressed, so it may have gone through. Check your email before using Try again." });
       log(job.slug, "error after Submit, not retried: " + e.message, "error");
       return false;
     }
     const retry = TRANSIENT.test(e.message) && job.attempts + 1 < CONFIG.maxAttempts;
-    setJob(job.slug, { status: retry ? "queued" : "failed", reason: "error: " + plainAiError(e.message).slice(0, 400) });
+    // Not about this job: it stays up next with no try used, and nothing more is tried for a few minutes.
+    const t = trouble(e.message);
+    if (t) {
+      setJob(job.slug, { status: "queued", attempts: job.attempts });
+      if (!state.trouble || state.trouble.text !== t.text) log(null, `waiting: ${t.text} (${String(e.message).split("\n")[0].slice(0, 200)})`, "warn");
+      state.trouble = { ...t, at: state.trouble && state.trouble.text === t.text ? state.trouble.at : Date.now() };
+      return "wait";
+    }
+    setJob(job.slug, { status: retry ? "queued" : "failed", reason: "error: " + plainRunError(e.message).slice(0, 400) });
     log(job.slug, `error${retry ? " (will retry)" : ""}: ${e.message}`, "error");
     return false;
   }
@@ -316,6 +355,8 @@ async function applyOneInner(job) {
 // today's count: the person is the one who presses Submit.
 const fin = { want: null, stop: false, sent: false };
 export const FINISH = { every: 2000, minutes: 30 };
+// How long nothing is tried after trouble that isn't about one job (no internet, the AI, the browser).
+const troubleWait = () => Number(process.env.JA_TROUBLE_WAIT_MS) || 5 * 60000;
 // What can be finished this way: an application that stopped (not one that may have gone through), a practice run,
 // and one left to the person that the app may open (never a government job site, nothing without https).
 export function finishable(j) {
@@ -414,6 +455,17 @@ let running = false, stopping = false, held = false;
 // An update waiting to install: finish the application in progress, start no new one.
 export const hold = (on) => { held = !!on; kick(); };
 export const stop = () => { stopping = true; kick(); };
+export const isRunning = () => running;
+
+// Once the mailbox is connected, jobs that stopped at an emailed code get another go. Once, when it's connected: tried
+// again at every start, a code that never arrives (it went to Spam) would have each one filled in and sent again and
+// again, a new code emailed every time.
+export function retryCodeJobs() {
+  if (!mailbox()) return 0;
+  const n = db.prepare("UPDATE jobs SET status = 'queued', attempts = 0 WHERE status = 'failed' AND (reason LIKE 'security code:%' OR reason LIKE 'verify email:%')").run().changes;
+  if (n) { log(null, `mailbox connected: ${n} job${n === 1 ? "" : "s"} that needed an emailed code ${n === 1 ? "is" : "are"} up next again`); kick(); }
+  return n;
+}
 
 export async function run() {
   if (running) return;
@@ -427,11 +479,6 @@ export async function run() {
     if (mail) { setJob(j.slug, { status: "applied", applied_at: new Date().toISOString(), reason: `submitted; confirmed by email after a restart (${mail})` }); log(j.slug, "restart: the confirmation email shows it went through"); }
     else { setJob(j.slug, { status: "failed", reason: "interrupted right after pressing Submit: it may have gone through. Check your email before using Try again." }); log(j.slug, "restart: interrupted mid-submit, not retried", "warn"); }
   }
-  // Once the mailbox is set up, Greenhouse jobs that stopped at the emailed code get another go.
-  if (mailbox()) {
-    const n = db.prepare("UPDATE jobs SET status = 'queued', attempts = 0 WHERE status = 'failed' AND (reason LIKE 'security code:%' OR reason LIKE 'verify email:%')").run().changes;
-    if (n) log(null, `mailbox configured: ${n} jobs that needed an emailed code are up next again`);
-  }
   log(null, `autopilot started (${CONFIG.dryRun ? "practice mode" : "sending for real"}, up to ${CONFIG.dailyCap} a day)`);
   while (!stopping) {
     try {
@@ -439,7 +486,7 @@ export async function run() {
       try { await checkReplies(); } catch (e) { log(null, "reading replies failed: " + e.message, "warn"); }
       if (fin.want && !held) { await runFinish(); continue; }
       // The browser stays open between applications, and closes whenever there is a long wait.
-      if (CONFIG.paused) { state.now = "paused"; state.progress = null; await closeBrowser(); await sleep(30000); continue; }
+      if (CONFIG.paused) { state.now = "paused"; state.progress = null; state.trouble = null; await closeBrowser(); await sleep(30000); continue; }
       const due = !state.lastSearch || Date.now() - state.lastSearch > CONFIG.searchEveryMinutes * 60000;
       if (due) {
         state.now = "searching";
@@ -480,16 +527,22 @@ export async function run() {
       if (held) { state.now = "updating: no new applications until the update is installed"; await sleep(5000); continue; }
       const job = nextJob();
       if (!job) {
+        state.trouble = null;
         await closeBrowser();
         state.now = pickNext.waiting ? "the next jobs are at companies you applied to in the last few days: they wait" : "queue empty, waiting for the next search";
         await sleep(Math.min(5 * 60000, Math.max(30000, state.nextSearch - Date.now())));
         continue;
       }
       const used = await applyOne(job);
+      if (used === "wait") { state.now = "waiting: " + state.trouble.text; await closeBrowser(); await sleep(troubleWait()); continue; }
+      state.trouble = null;
       // The next gap is the person's setting plus up to half again, so applications don't go out like clockwork.
-      if (used) { state.lastApply = Date.now(); state.gapFactor = 1 + Math.random() * 0.5; }
+      if (used === true) { state.lastApply = Date.now(); state.gapFactor = 1 + Math.random() * 0.5; }
     } catch (e) {
-      log(null, "loop error: " + e.message, "error");
+      // The log is in the database: when that's what broke (a full disk), the loop still goes on.
+      try { log(null, "loop error: " + e.message, "error"); } catch { /* said below */ }
+      const t = trouble(e.message);
+      if (t) { state.trouble = { ...t, at: Date.now() }; state.now = "waiting: " + t.text; }
       await sleep(60000);
     }
   }

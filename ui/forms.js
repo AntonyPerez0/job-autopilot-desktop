@@ -1513,7 +1513,7 @@
   function running(el, cfg) {
     const s = cfg.settings;
     el.innerHTML = `<div class="form">
-      <div class="form-row">${fld("Daily limit", inp("dailyCap", s.dailyCap, 'type="number" min="0" max="100"'), "Applications per day, at most.")}
+      <div class="form-row">${fld("Daily limit", inp("dailyCap", s.dailyCap, 'type="number" min="1" max="100"'), "Applications per day, at most.")}
         ${fld("The day starts at", sel("dayStartsAtHour", s.dayStartsAtHour, [...Array(24)].map((_, h) => [h, new Date(2000, 0, 1, h).toLocaleTimeString([], { hour: "numeric" })])), "Your computer's time zone.")}
         ${fld("Minutes between applications", inp("minutesBetweenApplies", s.minutesBetweenApplies, 'type="number" min="1" max="240"'))}</div>
       <div class="form-row">${fld("Search for new jobs every", sel("searchEveryMinutes", s.searchEveryMinutes, [[60, "hour"], [120, "2 hours"], [240, "4 hours"], [720, "12 hours"], [1440, "day"]]))}

@@ -57,7 +57,8 @@ export const getDb = () => db || openDb();
 
 export function log(slug, message, level = "info") {
   console.log(`[${new Date().toISOString()}] ${level} ${slug || "-"} ${message}`);
-  getDb().prepare("INSERT INTO events (slug, level, message) VALUES (?, ?, ?)").run(slug || null, level, String(message).slice(0, 2000));
+  // Never an error of its own: the activity log failing (a full disk) must not stop what was being logged.
+  try { getDb().prepare("INSERT INTO events (slug, level, message) VALUES (?, ?, ?)").run(slug || null, level, String(message).slice(0, 2000)); } catch (e) { console.error("log not saved: " + e.message); }
 }
 
 // Told about every status change, so the application history backup stays current.

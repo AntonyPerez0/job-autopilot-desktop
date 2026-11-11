@@ -235,7 +235,7 @@ export async function applyFill(profile, input = {}, answers = {}) {
         toCheck.push({ b, text: t.text, source: t.src.join(". ") });
         for (const base of p.bases) for (const sec of arr(base.sections)) for (const it of arr(sec.items)) if (it.id === t.e.id) {
           const cap = capFor(base, t.e.id), next = [id, ...arr(it.bullets)];
-          it.bullets = arr(it.bullets).length >= cap ? makeRoom(next, cap, e) : next;
+          it.bullets = arr(it.bullets).length >= cap ? makeRoom(next, cap, t.e) : next;
         }
         added.push({ kind: "ai", title: `${t.e.title}: ${t.text}` });
       } else {

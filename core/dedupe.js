@@ -74,7 +74,15 @@ export function familyKey(company, title) {
   return roleKey(company, t);
 }
 
-export const cleanUrl = (u) => String(u || "").slice(0, 2048).trim().replace(/[?#].*$/, "").replace(/\/(apply|application)\/?$/, "").replace(/\/+$/, "").toLowerCase();
+// A link, for telling whether two are the same posting. What says which posting it is stays, wherever the site puts
+// it: many sites keep it after the "?" (Greenhouse's form is /embed/job_app?for=acme&token=123 for every employer;
+// ?gh_jid=, Indeed's ?jk=). Only what says where the visitor came from is dropped.
+const TRACKING = /^(utm_.*|gh_src|src|source|sourceid|ref|referr?er|refid|trk|trackingid|lever-.*|fbclid|gclid|msclkid|mc_[ce]id|_hs.*|iis|iisn|jobboardsource|origin|from|share|campaign|medium)$/;
+export const cleanUrl = (u) => {
+  const [, path, query = ""] = String(u || "").slice(0, 2048).trim().toLowerCase().match(/^([^?#]*)(?:\?([^#]*))?/);
+  const keep = query.split("&").filter((kv) => kv && !TRACKING.test(kv.split("=")[0])).sort();
+  return path.replace(/\/(apply|application)\/?$/, "").replace(/\/+$/, "") + (keep.length ? "?" + keep.join("&") : "");
+};
 
 // The user's own list: one per line, a posting URL or "Company - Title" / "Title at Company" / "Company, Title".
 export function parseAppliedList(text) {

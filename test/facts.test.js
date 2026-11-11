@@ -39,7 +39,7 @@ test("nothing unapproved reaches the resume", () => {
   const prof = loadProfile(p, exampleAnswers());
   const { spec } = Tailor.checkPlan(prof, { base: prof.bases[0].id, summary: p.summaries[0].id });
   assert.notStrictEqual(spec.summary, p.summaries[0].id);
-  assert.throws(() => loadProfile(unapproved(Profile.EXAMPLE), exampleAnswers()), /problems/);
+  assert.throws(() => loadProfile(unapproved(Profile.EXAMPLE), exampleAnswers()), /Your resume has a problem/);
 });
 
 test("contact and answers come from the common questions", () => {
