@@ -26,7 +26,7 @@ For hourly and everyday jobs as well as office and tech work. Desktop app for ma
 
 **The 60-second tour**: every step from the first setup screen to sending for real.
 
-https://github.com/user-attachments/assets/18073345-3718-43e3-89f1-352ddd10d98b
+https://github.com/user-attachments/assets/06a8dda5-fb2b-438a-ad31-d8e1f804f2bc
 
 </div>
 
