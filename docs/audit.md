@@ -92,7 +92,7 @@ Everything the first round left open. Numbers are the ones those items had in th
 |---|---|---|---|
 | 13 | The Windows installer offered "Anyone who uses this computer". | Read (electron-builder's templates) | `build/installer.nsh` installs for the person who runs it. **Not built here**: the next Windows build will show whether it compiles. |
 | 14 | An update that couldn't replace the app said nothing. | Read | The app notes what it was updating to before it closes; back as the old version, it says so, with **Download it**. |
-| 15 | Nothing checked the tag against `package.json`; the release existed before its files. | Read | **Still open.** The change to `release.yml` is written (a check, and a draft until the files are on it) but not in the repository yet: pushing a workflow file needs a GitHub login that is allowed to change workflows. |
+| 15 | Nothing checked the tag against `package.json`; the release existed before its files. | Read | `release.yml`: a check, and a draft until the files are on it. In from the release after 0.9.23; **not run yet.** |
 | 16 | macOS keychain: Deny could leave a key saved unprotected. | Read | Never written unprotected on a Mac or Windows; saving fails and says why. **Not run on a Mac.** |
 | 17 | The diagnostics report kept some answers. | Ran | Legal and personal yes/no answers are only "set"; quoted answers in the app's notes go; the phone number however it's written; the home folder's name. The city searched around stays, and the README says so. |
 | 18 | File errors as they came. | Ran (the reviewer), read | A locked PDF, a `.doc` renamed `.docx`, a cut-off history file, a file open in another program: each says what to do. |

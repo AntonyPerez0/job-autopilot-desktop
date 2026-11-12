@@ -30,6 +30,13 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      # The app tells people a new version is out by comparing its own version with the release's tag: the two must match.
+      - name: The tag is the version in package.json
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          v="v$(node -p "require('./package.json').version")"
+          [ "$v" = "$GITHUB_REF_NAME" ] || { echo "::error::the tag is $GITHUB_REF_NAME, but package.json says $v"; exit 1; }
       - run: npm ci
       - name: Unit tests
         run: npm run test:unit
@@ -163,8 +170,11 @@ jobs:
           # "Update now" in the app checks every download against these.
           (cd out && sha256sum * > SHA256SUMS.txt)
           ls -la out
+          # A draft until every file is on it: "Update now" in an app that looks meanwhile sees no release at all,
+          # not one with nothing to download.
           gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
-            gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --title "Job Autopilot $GITHUB_REF_NAME" \
+            gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --draft --title "Job Autopilot $GITHUB_REF_NAME" \
               --notes "Download the .dmg for macOS (Apple Silicon and Intel) or the Setup .exe for Windows. These builds are not signed yet: see the README for the one-time Open Anyway / Run anyway step." \
               $([[ "$GITHUB_REF_NAME" == *-* ]] && echo --prerelease)
           gh release upload "$GITHUB_REF_NAME" out/* -R "$GITHUB_REPOSITORY" --clobber
+          gh release edit "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --draft=false
