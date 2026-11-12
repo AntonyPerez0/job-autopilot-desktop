@@ -15,7 +15,9 @@
   --text: var(--color-ink); --text-2: var(--color-ink-2); --text-3: var(--color-muted); --text-4: var(--color-muted);
   --surface: var(--color-cotton); --surface-2: var(--color-paper-2); --border: var(--color-rule); --border-strong: var(--color-rule-2);
   --brand: var(--color-board); --brand-text: var(--color-ink);
-  --side-w: 15.5rem; --bar-h: 36px;
+  /* The sidebar's width: the person's own (--side-set, dragged at its edge), kept between a width its controls fit in
+     and one that leaves the pages most of the window. */
+  --side-w: clamp(14rem, var(--side-set, 15.5rem), min(26rem, 40vw)); --bar-h: 36px;
   --color-field-edge: oklch(57% 0.014 258);
 }
 
@@ -755,3 +757,16 @@ details.card-fold[open] > summary h2::before, details.card-fold[open] > summary 
 }
 /* How to do something, as numbered steps. */
 .how { margin: 0; padding-left: 1.25rem; display: grid; gap: var(--space-3xs); color: var(--color-ink-2); font-size: var(--text-sm); }
+
+/* The sidebar's edge: drag it (or use the arrow keys on it) to make the sidebar wider or narrower. */
+.side-grip { position: fixed; left: var(--side-w); top: var(--tb-h); bottom: 0; width: 9px; margin-left: -1px; z-index: var(--z-raised); cursor: col-resize; touch-action: none; }
+.side-grip::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: transparent; transition: background-color var(--dur-micro) var(--ease-out); }
+.side-grip:hover::before { background: var(--color-rule-2); }
+.side-grip:focus-visible { outline: none; }
+.side-grip:focus-visible::before, body.sizing .side-grip::before { background: var(--color-focus); }
+body.sizing { cursor: col-resize; user-select: none; }
+/* At its narrowest nothing in the sidebar is cut off: a page's name stays on one line, and a row of controls wraps. */
+.side { overflow-x: hidden; }
+.side .nav > span:not(.count) { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.side-foot .row { flex-wrap: wrap; }
+@media (max-width: 860px) { .side-grip { display: none; } }

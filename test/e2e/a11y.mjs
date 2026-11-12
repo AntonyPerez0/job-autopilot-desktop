@@ -156,6 +156,23 @@ for (let i = 0; i < 80 && !opened; i++) {
     if (!returned) console.log(`closing ${f.job} left the focus on:`, await win.evaluate(() => document.activeElement && document.activeElement.outerHTML.slice(0, 200)));
   }
 }
+// The sidebar's edge with the keyboard alone: the arrow keys make it wider and narrower, within what fits, and say so.
+await go("overview");
+const side = () => win.evaluate(() => Math.round(document.querySelector(".side").getBoundingClientRect().width));
+const grip = () => win.evaluate(() => { const g = document.getElementById("side-grip"); return ["aria-valuemin", "aria-valuenow", "aria-valuemax"].map((k) => Number(g.getAttribute(k))); });
+const w0 = await side();
+await win.focus("#side-grip");
+await win.keyboard.press("ArrowRight"); await win.waitForTimeout(300);
+const w1 = await side();
+await win.keyboard.press("Home"); await win.waitForTimeout(300);
+const [lo, nowLo] = await grip(), wLo = await side();
+await win.keyboard.press("End"); await win.waitForTimeout(300);
+const [, nowHi, hi] = await grip();
+const cut = await win.evaluate(() => { const s = document.querySelector(".side"); return s.scrollWidth > s.clientWidth; });
+await win.dblclick("#side-grip"); await win.waitForTimeout(300);
+const sized = w1 === w0 + 16 && wLo === lo && nowLo === lo && nowHi === hi && hi > lo && (await side()) === w0 && !cut;
+if (!sized) console.log("sidebar width:", { w0, w1, lo, wLo, nowLo, nowHi, hi, back: await side(), cut });
+await audit("the sidebar's edge focused");
 await app.close();
 console.log("keyboard: sidebar pages reached:", [...reached].join(", "));
 
@@ -180,6 +197,7 @@ await w2.evaluate(() => document.querySelectorAll("details").forEach((d) => { d.
 for (const scheme of ["light", "dark"]) { await w2.emulateMedia({ colorScheme: scheme }); await w2.waitForTimeout(300); await audit2(`setup: AI (${scheme})`); }
 await app2.close();
 if (!reached.has("Overview") || !reached.has("Settings")) problems.push({ where: "keyboard", id: "keyboard-nav", help: "The sidebar's pages can't all be reached with Tab", nodes: [], count: 1 });
+if (!sized) problems.push({ where: "keyboard", id: "sidebar-width", help: "The sidebar's width can't be changed with the arrow keys on its edge (or doesn't go back with a double-click)", nodes: [], count: 1 });
 if (!opened) problems.push({ where: "keyboard", id: "keyboard-job", help: "A job can't be opened with the keyboard", nodes: [], count: 1 });
 else if (!returned) problems.push({ where: "keyboard", id: "focus-return", help: "Closing a job doesn't put the focus back on it", nodes: [], count: 1 });
 

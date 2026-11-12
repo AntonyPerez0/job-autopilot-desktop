@@ -64,7 +64,7 @@ const originOfUrl = (u) => { try { const x = new URL(String(u || "")); return x.
 const sameOrigin = (a, b) => !!originOfUrl(a) && originOfUrl(a) === originOfUrl(b);
 const sameHost = (a, b) => !!a && String(a).trim().toLowerCase().replace(/\.+$/, "") === String(b || "").trim().toLowerCase().replace(/\.+$/, "");
 const EDITABLE = ["paused", "acceptedTerms", "windowMode", "historyBackup", "historyFolder", "dailyCap", "dayStartsAtHour", "minutesBetweenApplies", "postedWithinDays", "searchEveryMinutes", "headless", "browser", "maxAttempts", "uiMode",
-  "keepRunning", "openAtLogin", "keepAwake", "notifications", "setupStep", "touredAt", "dismissed"];
+  "keepRunning", "openAtLogin", "keepAwake", "notifications", "setupStep", "touredAt", "dismissed", "sideWidth"];
 const bad = (msg, code = 400) => ({ error: plainAiError(msg), code });
 // The same for what isn't an AI call (a mailbox, GitHub, a company's job page): trouble reaching it is said about it.
 const badAt = (msg, what) => ({ error: /timed? ?out|aborted|fetch failed|ENOTFOUND|ECONNREFUSED|ECONNRESET|EAI_AGAIN|ETIMEDOUT|getaddrinfo|network|socket/i.test(String(msg)) ? `The app couldn't reach ${what}. Check your internet connection${/mail/.test(what) ? " and the mail server's name" : ""}, then try again.` : String(msg), code: 400 });
@@ -226,6 +226,7 @@ const ROUTES = {
     if ("maxAttempts" in patch) patch.maxAttempts = Math.max(1, Math.min(5, patch.maxAttempts));
     if ("dayStartsAtHour" in patch) patch.dayStartsAtHour = Math.min(23, patch.dayStartsAtHour);
     if ("setupStep" in patch) patch.setupStep = Math.min(10, patch.setupStep);
+    if ("sideWidth" in patch) patch.sideWidth = patch.sideWidth ? Math.max(120, Math.min(800, Math.round(patch.sideWidth))) : 0;
     if ("touredAt" in patch) patch.touredAt = b.touredAt ? new Date().toISOString() : null;
     if ("dismissed" in patch) patch.dismissed = (Array.isArray(b.dismissed) ? b.dismissed : []).filter((x) => typeof x === "string").map((x) => x.slice(0, 60)).slice(0, 50);
     if ("minutesBetweenApplies" in patch) patch.minutesBetweenApplies = Math.max(1, patch.minutesBetweenApplies);

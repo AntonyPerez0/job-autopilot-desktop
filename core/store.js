@@ -48,6 +48,7 @@ export const SETTINGS_DEFAULTS = {
   paused: false,
   dailyCap: 10,
   textSize: 1,               // the window's zoom: 1, 1.15 or 1.3 (Settings > Appearance)
+  sideWidth: 0,              // the sidebar's width in pixels, as the person dragged it (0: the usual width)
   uiMode: "simple",          // simple: only what most people need; advanced: everything
   dayStartsAtHour: 9,        // the daily limit resets at this local hour
   minutesBetweenApplies: 6,

@@ -798,6 +798,9 @@ half of good matches to be ones the app can do by itself.
 
 ### Easy to see and use
 
+- **A wider or narrower sidebar:** drag the sidebar's right edge. The app
+  remembers the width; a double-click on the edge puts it back. With the
+  keyboard, Tab to the edge and use the left and right arrow keys.
 - **Text size:** Settings > Appearance has Normal, Larger and Largest, and
   makes everything in the window bigger. Ctrl and + or - (Cmd on a Mac) zooms
   too; Ctrl 0 goes back to your chosen size. On a big screen the text and the

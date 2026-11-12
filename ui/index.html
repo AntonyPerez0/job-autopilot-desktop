@@ -28,6 +28,7 @@
       <div id="update-side"></div>
     </div>
   </aside>
+  <div class="side-grip" id="side-grip" role="separator" aria-orientation="vertical" aria-label="Sidebar width" tabindex="0" title="Drag to make the sidebar wider or narrower. Double-click to put it back."></div>
   <div>
     <div class="mobile-mode" id="mmode"></div>
     <nav class="mobile-bar" id="mnav" aria-label="Pages"></nav>
@@ -219,8 +220,54 @@ function renderControls() {
   $("daystart").textContent = new Date(2000, 0, 1, s.dayStartsAtHour || 0).toLocaleTimeString([], { hour: "numeric" });
   $("model").textContent = "Model: " + st.model;
   applyMode(s.uiMode);
+  if (!sizing) sideWidth(s.sideWidth);
   $("update-side").innerHTML = updateSide();
   const card = $("update-card"); if (card) card.innerHTML = updateCard();
+}
+// The sidebar's width, the person's own: dragged at its edge, or the arrow keys on it (Home and End: as narrow and as
+// wide as it goes); a double-click puts it back. The style sheet keeps it within what fits, whatever is asked for.
+let sizing = false;
+function sideWidth(px) {
+  const root = document.documentElement, grip = $("side-grip");
+  if (px > 0) root.style.setProperty("--side-set", px + "px"); else root.style.removeProperty("--side-set");
+  // Worked out the way the style sheet does, not measured: with "reduce motion" on, a measurement right after a
+  // change still gives the width from before it.
+  const rem = parseFloat(getComputedStyle(root).fontSize) || 16;
+  const lo = 14 * rem, hi = Math.max(lo, Math.min(26 * rem, 0.4 * innerWidth));
+  const now = Math.round(Math.min(hi, Math.max(lo, px > 0 ? px : 15.5 * rem)));
+  grip.setAttribute("aria-valuemin", Math.round(lo));
+  grip.setAttribute("aria-valuemax", Math.round(hi));
+  grip.setAttribute("aria-valuenow", now);
+  grip.setAttribute("aria-valuetext", now + " pixels wide");
+  return now;
+}
+const keepSideWidth = async (px) => { const w = px > 0 ? sideWidth(px) : 0; if (!px) sideWidth(0); if (st) st.settings.sideWidth = w; await api("/api/settings", { sideWidth: w }); };
+{
+  const grip = $("side-grip");
+  grip.addEventListener("pointerdown", (e) => {
+    if (e.button) return;
+    e.preventDefault();
+    sizing = true; document.body.classList.add("sizing");
+    grip.setPointerCapture(e.pointerId);
+  });
+  grip.addEventListener("pointermove", (e) => { if (sizing) sideWidth(Math.max(1, Math.round(e.clientX))); });
+  const done = (e) => {
+    if (!sizing) return;
+    sizing = false; document.body.classList.remove("sizing");
+    if (grip.hasPointerCapture(e.pointerId)) grip.releasePointerCapture(e.pointerId);
+    keepSideWidth(Number(grip.getAttribute("aria-valuenow")));
+  };
+  grip.addEventListener("pointerup", done);
+  grip.addEventListener("pointercancel", done);
+  grip.addEventListener("dblclick", () => keepSideWidth(0));
+  grip.addEventListener("keydown", (e) => {
+    const now = Number(grip.getAttribute("aria-valuenow")), step = e.shiftKey ? 48 : 16;
+    const to = { ArrowLeft: now - step, ArrowRight: now + step, Home: Number(grip.getAttribute("aria-valuemin")), End: Number(grip.getAttribute("aria-valuemax")) }[e.key];
+    if (to === undefined) return;
+    e.preventDefault();
+    keepSideWidth(Math.max(1, to));
+  });
+  addEventListener("resize", () => { if (st) sideWidth(st.settings.sideWidth); });
 }
 // The update button lives in three places: the sidebar (always), Settings > Updates, and a banner when one is out.
 function updateSide() {

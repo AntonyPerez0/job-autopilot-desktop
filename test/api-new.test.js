@@ -228,3 +228,10 @@ test("the daily limit and the tries per job are never none: Pause is the way to 
   assert.strictEqual(s.dailyCap, 1);
   assert.strictEqual(s.maxAttempts, 1);
 });
+
+test("the sidebar's width is kept as a whole number of pixels, within reason, and 0 is the usual width", async () => {
+  assert.strictEqual((await handle("/api/settings", { sideWidth: 301.6 })).sideWidth, 302);
+  assert.strictEqual((await handle("/api/settings", { sideWidth: 99999 })).sideWidth, 800);
+  assert.strictEqual((await handle("/api/settings", { sideWidth: "wide" })).sideWidth, 0);
+  assert.strictEqual((await handle("/api/settings", { sideWidth: 0 })).sideWidth, 0);
+});
