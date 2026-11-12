@@ -10,12 +10,23 @@ import fs from "node:fs";
 import path from "node:path";
 import { checkForUpdate, download } from "../core/update.js";
 
-const state = { phase: "idle", progress: 0, info: null, error: null, checkedAt: null };
+// failed: the version the app tried to install the last time it closed for an update, when it came back as it was.
+const state = { phase: "idle", progress: 0, info: null, error: null, checkedAt: null, failed: null };
+// Written just before the app closes to be replaced: what it was, and what it should come back as.
+const PENDING = () => path.join(app.getPath("userData"), "update-pending.json");
 export const updateState = () => ({ ...state, packaged: app.isPackaged });
 
 let worker = null;
 export function initUpdater(w) {
   worker = w;
+  // Back from an update: as the new version (the download isn't needed any more), or still the old one, which means
+  // the computer didn't let the app be replaced. That is said, with the way round it.
+  try {
+    const p = JSON.parse(fs.readFileSync(PENDING(), "utf8"));
+    fs.rmSync(PENDING(), { force: true });
+    if (p && p.from === app.getVersion() && Date.now() - p.at < 86400000) state.failed = String(p.version || "");
+    else fs.rmSync(path.join(app.getPath("userData"), "updates"), { recursive: true, force: true });
+  } catch { /* no update was under way */ }
   const check = () => checkNow().catch(() => {});
   setTimeout(check, 10000);
   setInterval(check, 6 * 3600 * 1000).unref();
@@ -30,7 +41,7 @@ export async function checkNow() {
   } catch (e) {
     // A failed check is not a failed update: keep any update already found, and say what happened.
     state.phase = state.info && state.info.newer ? "available" : "checkfailed";
-    state.error = "Could not reach GitHub to check for updates (" + e.message + "). The app tries again in a few hours.";
+    state.error = "Couldn't check for a new version just now (no answer from GitHub). The app tries again in a few hours.";
   }
   state.checkedAt = Date.now();
   return updateState();
@@ -117,5 +128,6 @@ open "$APP"`;
     // The same switches electron-updater uses: silent, as an update, and start the app afterwards.
     await launchDetached(file, ["/S", "--updated", "--force-run"]);
   } else throw new Error("Automatic updates are for macOS and Windows.");
+  try { fs.writeFileSync(PENDING(), JSON.stringify({ version: state.info.latest, from: app.getVersion(), at: Date.now() })); } catch { /* only for the note after a failed install */ }
   setTimeout(() => app.exit(0), 500);
 }

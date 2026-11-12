@@ -70,6 +70,7 @@ export function aiFetch(url, opts = {}, ai = getSettings().ai) {
 // What went wrong with the AI, in words anyone can act on ("Model API 402: ..." means nothing to most people).
 export function plainAiError(message) {
   const m = String(message || "");
+  if (/Add your API key/i.test(m)) return "The AI isn't connected. Open Settings > AI and press Connect again.";
   if (/Model API 40[13]\b|invalid api key|no auth|unauthori[sz]ed/i.test(m)) return "The AI key didn't work. Open Settings > AI, paste your key again and press Test.";
   if (/Model API 402\b|insufficient (credits|funds|balance)|out of credits?|credit limit/i.test(m)) return "Your AI account is out of credit. Add a few dollars at openrouter.ai (Settings, then Credits), then try again.";
   if (/Model API 429\b|rate.?limit|too many requests/i.test(m)) return "The AI service is busy right now. Wait a minute and try again.";

@@ -8,7 +8,8 @@ form filling and sending, the Electron shell and updater). Each finding says how
 - **Read**: the code path was traced end to end.
 - **Suspected**: depends on a real site, macOS or Windows, none of which could be run here.
 
-Part 1 is what was fixed with this audit. Part 2 is what's still open, most harmful first.
+Part 1 is what was fixed first. Part 2 is the rest, fixed in a second round. Part 3 is what still needs checking on a
+Mac, on Windows or on a real job site.
 
 ---
 
@@ -57,77 +58,69 @@ Part 1 is what was fixed with this audit. Part 2 is what's still open, most harm
 
 ---
 
-## 2. Still open
+## 2. Fixed in a second round
 
-Not changed, because each needs a decision, a real site, or a Mac or Windows computer to check.
+Everything the first round left open. Numbers are the ones those items had in the first version of this file.
 
 ### Could send or record something wrong
 
-1. **A last step named "Continue" or "Next" isn't treated as sending.** The app presses it as a page turn; if the
-   page after it has no fields and no Submit, the job is "Not sent: no submit button found" although it went out, and
-   Try again applies twice. In Finish it with me the app presses that button itself. (`core/apply.js:844, 1287, 1328`.
-   Read; no real site checked.) Fix: after any Next, look for a new confirmation before saying "no submit button".
-2. **A CAPTCHA after Submit is marked "may have gone through"**, so Finish it with me is refused for it, the way the
-   README offers. Whether the CAPTCHA frame is on the page before any challenge decides the fix, and needs a real
-   site. (`core/worker.js:289`, `core/apply.js:1373`. Read.)
-3. **A blocked page is filed as a closed posting.** Any answer of 400 or more is "probably closed", so a bot wall
-   (403) or an outage (5xx) puts the job under Not applied. (`core/apply.js:1118`. Read.) Fix: only 404 and 410.
-4. **A required password box on a long form is asked as a question**, and the answer is kept in `answers.json` in
-   plain text. (`core/apply.js:48`, `core/asked.js`. Read; depends on the site.)
-5. **Finish it with me** closes the tab at 30 minutes even while the person is typing; if they use the form's tab to
-   open something else, the app reads and fills that page; a crash while filling puts the job back up next, where it
-   can be sent without them. (`core/apply.js:986-1040`, `core/worker.js:359, 422`. Read and suspected.)
+| # | What went wrong | Checked | The fix |
+|---|---|---|---|
+| 1 | **A last step named "Continue" or "Next" wasn't treated as sending**: "Not sent: no submit button found" for an application that went out, and Try again applied twice. | Ran | After a Next with nothing left to fill in or press, a new confirmation means applied, and none means it may have gone through (`lastNext` in `core/apply.js`). Test in `apply-flow.test.js`. |
+| 1 | In Finish it with me the app pressed Next itself, and so could send. | Ran | The person presses every button that moves the form on. |
+| - | **Found by the new test:** on a form that swaps its pages in place, the app pressed the first page's hidden Next again on page 2 and timed out. | Ran | The mark comes off the old button first (`NEXT_JS`, `SUBMIT_JS`). |
+| 2 | **A CAPTCHA after Submit was marked "may have gone through"**, so Finish it with me was refused for it. The check also took the challenge's frame being on the page for a challenge, and that frame is there from the start. | Ran | Only a challenge that is showing counts; then nothing was sent, and it can be finished with the app. The same for an emailed code that never came (`notSent`). |
+| 3 | **A blocked page (403) or an outage (5xx) was filed as a closed posting.** | Ran | Only 404 and 410 mean closed. A site that refuses the app's browser goes to Apply yourself; one that is down is tried again. |
+| 4 | **A form that makes an account as it goes** (a required password among its questions) had the password asked as a question and kept in plain text. | Ran | It's a sign-in wall: Apply yourself. A password, Social Security number, bank or card number is never asked for or kept (`SECRET_RX` in `core/asked.js`). |
+| 5 | **Finish it with me** closed the tab at 30 minutes even while the person typed; read and filled whatever page they opened in the form's tab; and a crash while filling put the job back up next. | Read; the crash ran | The wait runs from the last thing typed (two hours at most). On a page that isn't the application the app does nothing. A job being finished goes back where it was after a crash. |
 
-### Quietly does less than it says
+### Quietly did less than it said
 
-6. **With a mailbox connected, a second role at the same employer is skipped as "already applied".** The app's own
-   confirmation email for the first role counts as one that "names no role". This turns "2 a month" into 1.
-   (`core/mail.js:107`. Ran.)
-7. **The same title at the same employer is found once, ever**, whatever happened to the first (skipped, closed
-   months ago, another store). The README says the app keeps two. (`core/discover.js:183, 251`. Read.)
-8. **A mailbox that stops working is never reported**: "checked 10 minutes ago" goes on showing, and replies older
-   than two days before the last failed check are never read. (`core/worker.js:203`. Read.)
-9. **When the AI is failing, a search can hold up applications for a long time** (three tries with waits for every
-   new posting), and one failed posting in a hundred raises "The AI stopped working". (`core/discover.js:288-299`.
-   Read.)
-10. **A job interrupted twice by quitting stays in Up next and is never picked.** (`core/worker.js:76, 422`. Ran.)
-11. **"I applied" on an Apply-yourself job counts toward the app's daily limit.** (`core/api.js`, `core/db.js:80`.
-    Ran.)
-12. **"Unfortunately" alone marks a reply as Not selected** ("unfortunately I missed your call… are you free
-    Thursday?"). (`core/mail.js:291`. Ran.)
+| # | What went wrong | Checked | The fix |
+|---|---|---|---|
+| 6 | With a mailbox connected, a second role at one employer was skipped as "already applied". | Ran | The app's own confirmations for other roles there don't count (`matchConfirmation`). |
+| 7 | The same title at one employer was found once, ever. | Ran | A job that was left out stands for new postings of it for a month. One the app has still stands for them all (the app never applies to the same role twice). |
+| 8 | A mailbox that stopped working was never reported. | Ran | "Checked" is the last real read; a failure is in the To do list, with a notification; nothing is skipped once it works again. |
+| 9 | A failing AI held searches up, and one failed posting raised "The AI stopped working". | Ran | After five postings in a row with no answer the rest wait; the warning needs every one to have failed. |
+| 10 | A job interrupted twice by quitting stayed in Up next and was never picked. | Ran | With no try left it goes to Needs you, with Try again. |
+| 11 | "I applied" counted toward the app's daily limit. | Ran | It doesn't. |
+| 12 | "Unfortunately" alone marked a reply as Not selected. | Ran | It counts with the no that follows it. |
 
-### Installing and updating
+### Installing, updating, files
 
-13. **The Windows installer offers "Anyone who uses this computer"**, which installs to Program Files; every later
-    update then needs an administrator prompt, and if it's declined the app has already closed. The README says the
-    installer is per-user. (`electron-builder.yml`. Read in electron-builder's templates.) Fix: `build/installer.nsh`
-    with `customInstallMode` forcing the current user.
-14. **An update that can't replace the app says nothing**: the old version opens again and offers the same update.
-    (`main/updater.js`. Read; the macOS App Management case is suspected.)
-15. **Nothing checks that the tag matches `package.json`**, and the release exists for a few minutes before its files
-    do, when Update now says "This release has no update file". (`release.yml`. Read.)
-16. **macOS keychain: Deny** drops every secret without a word, and a key saved afterwards may be kept unencrypted.
-    (`main/secrets.js`. Suspected.)
-
-### Privacy and files
-
-17. **The diagnostics report keeps some answers the README says are left out**: the yes/no legal answers, the
-    person's cities, a phone number written another way than they typed it, a two-letter name. (`core/diagnostics.js`.
-    Ran.)
-18. **File errors as they come**: a password-protected PDF ("No password given"), a `.doc` renamed `.docx`, a cut-off
-    history file, a list saved over a file that's open in Excel ("EBUSY"). (Ran by the reviewer.)
-19. **Nothing is ever deleted**: activity, screenshots and two PDFs per job grow without limit. (Read.)
+| # | What went wrong | Checked | The fix |
+|---|---|---|---|
+| 13 | The Windows installer offered "Anyone who uses this computer". | Read (electron-builder's templates) | `build/installer.nsh` installs for the person who runs it. **Not built here**: the next Windows build will show whether it compiles. |
+| 14 | An update that couldn't replace the app said nothing. | Read | The app notes what it was updating to before it closes; back as the old version, it says so, with **Download it**. |
+| 15 | Nothing checked the tag against `package.json`; the release existed before its files. | Read | **Still open.** The change to `release.yml` is written (a check, and a draft until the files are on it) but not in the repository yet: pushing a workflow file needs a GitHub login that is allowed to change workflows. |
+| 16 | macOS keychain: Deny could leave a key saved unprotected. | Read | Never written unprotected on a Mac or Windows; saving fails and says why. **Not run on a Mac.** |
+| 17 | The diagnostics report kept some answers. | Ran | Legal and personal yes/no answers are only "set"; quoted answers in the app's notes go; the phone number however it's written; the home folder's name. The city searched around stays, and the README says so. |
+| 18 | File errors as they came. | Ran (the reviewer), read | A locked PDF, a `.doc` renamed `.docx`, a cut-off history file, a file open in another program: each says what to do. |
+| 19 | Nothing was ever deleted. | Ran | `core/tidy.js`, at each start. Sent applications keep everything. Test in `tidy.test.js`. |
+| - | Quit from the tray or Cmd+Q skipped closing the browser the app applies with. | Read | `will-quit` in `main/main.js`. |
 
 ### Easier to use
 
-20. **Closing the window for the first time** is explained only by a notification, which may not show. A one-time
-    question in the window (Keep working / Quit) would be surer.
-21. **The bottom of the sidebar doesn't fit a 720-pixel-tall window**: the version and Check for updates need
-    scrolling, and at 640 so does the daily limit.
-22. **Pay is written three ways** ("$17-$21/hour", "$18-20/hour", "$120,000-140,000"). One way everywhere: "$17 to
-    $21 an hour".
-23. **An Apply-yourself job opens on an empty Answers tab.** Posting or Fit would say more.
-24. The 60-second video at the top of the README shows the screens from before 0.9.22.
+| # | What | The change |
+|---|---|---|
+| 20 | Closing the window for the first time was explained only by a notification. | The window asks once: **Keep it working** or **Quit Job Autopilot**. |
+| 21 | The bottom of the sidebar didn't fit a short window. | It fits at 960 × 640 in Simple (measured). |
+| 22 | Pay was written three ways. | One way: "$17 to $21 an hour". |
+| 23 | A job with no answers yet opened on an empty Answers tab. | It opens on what the posting asks for, or the posting. |
+| - | Setup, the AI step: one long sentence. | Three numbered steps above the button. |
+| - | Setup, the resume step: a **Read my resume** button that did nothing after a file was dropped, and GitHub projects offered to everyone. | The button shows only when something waits to be read; GitHub only for office and tech work. |
+| - | **It's all true** used the system's OK/Cancel box. | Asked in the page: **Yes, all of it** / **Not yet**. |
+| 24 | The README's video showed old screens. | `node scripts/tour-video.mjs` makes it again (`out/tour.mp4`). GitHub only plays a video dropped into one of its own text boxes, so the new link has to be made by hand. |
+
+## 3. What still needs a look that couldn't be had here
+
+- **A Mac:** started at login stays hidden; the keychain's Deny; the first-close question; Quit closing the browser.
+- **Windows:** the installer without the "Anyone who uses this computer" page; notifications showing; an update that
+  Windows won't let through.
+- **Real job sites:** a last step named "Continue"; a CAPTCHA after Submit; a 403 bot wall. Each is covered by a
+  test page here, not by a live site.
+- **A Mac with Chrome as the person's own browser:** when a new application tab opens, focus may go to the wrong
+  app (`core/browser.js`, `keepFocus`). Suspected by the reviewer; nothing was changed.
 
 ---
 

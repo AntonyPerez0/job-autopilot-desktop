@@ -47,6 +47,27 @@ const PAGES = {
     <form id="f" onsubmit="return false"><label for="fn">First name *</label><input id="fn" required><label for="ln">Last name *</label><input id="ln" required>
     <label for="em">Email *</label><input id="em" type="email" required>
     <button type="submit" onclick="document.getElementById('out').textContent='Something went wrong on our side.'">Submit application</button><p id="out"></p></form>`,
+  // A form whose last step is named "Continue": pressing it sends the application.
+  "/form-continue": `<form id="f" onsubmit="return false">
+    <div id="p1"><label for="fn">First name *</label><input id="fn" required><label for="ln">Last name *</label><input id="ln" required><label for="em">Email *</label><input id="em" type="email" required>
+      <button type="button" onclick="if(!fn.value)return;p1.style.display='none';p2.style.display='block'">Next</button></div>
+    <div id="p2" style="display:none"><label for="ph">Phone *</label><input id="ph" required><label for="da">Days available *</label><input id="da" required>
+      <button type="button" onclick="if(!ph.value)return;fetch('/done',{method:'POST',body:'continue'}).then(()=>{document.body.innerHTML=location.search.includes('quiet')?'<p>All done.</p>':'<h2>Thank you for applying!</h2>'})">Continue</button></div></form>`,
+  // A check that the visitor is a person: its frame is on the page from the start, hidden and far off the page; it shows
+  // when Submit is pressed, and holds the form back.
+  "/form-captcha": `<div style="visibility:hidden;position:absolute;top:-10000px"><iframe title="recaptcha challenge" src="/recaptcha/api2/bframe?k=1" style="width:400px;height:580px"></iframe></div>
+    <form id="f" onsubmit="return false"><label for="fn">First name *</label><input id="fn" required><label for="ln">Last name *</label><input id="ln" required>
+    <label for="em">Email *</label><input id="em" type="email" required>
+    <button type="submit" onclick="if(location.search.includes('show')){const d=document.querySelector('div');d.style.visibility='visible';d.style.top='40px'}">Submit application</button></form>`,
+  // A form that makes an account as it goes: a password it requires, among its other questions.
+  "/form-password": `<form onsubmit="return false">${["First name", "Last name", "Email", "Phone", "Street", "City", "State", "ZIP code", "Days available"].map((l, i) => `<label for="q${i}">${l} *</label><input id="q${i}" required>`).join("")}
+    <label for="pw">Create a password *</label><input id="pw" type="password" required><button type="submit">Submit application</button></form>`,
+  // Finish with me: nothing on page 1 that the app can't answer, and a Next the person presses all the same.
+  "/finish-next": `<form id="f" onsubmit="return false">
+    <div id="p1"><label for="fn">First name *</label><input id="fn" required><label for="ln">Last name *</label><input id="ln" required><label for="em">Email *</label><input id="em" type="email" required>
+      <button type="button" onclick="window.NEXTS=(window.NEXTS||0)+1;p1.style.display='none';p2.style.display='block'">Next</button></div>
+    <div id="p2" style="display:none"><label for="ph">Phone *</label><input id="ph" required><label for="da">Days available *</label><input id="da" required>
+      <button type="submit" onclick="document.body.innerHTML='<h2>Thank you for applying!</h2>'">Submit application</button></div></form>`,
   // A posting that moves to a government job site (audit 4.3).
   "/to-gov": `<p>Moving</p><script>location.replace("https://www.governmentjobs.com/careers/acme/jobs/1/clerk")</script>`,
   // A window left open by an earlier posting that keeps opening pages (audit 1.2).
@@ -80,6 +101,9 @@ const PAGES = {
 let submitted = null, sends = 0, aiDown = false;
 const site = http.createServer((req, res) => {
   if (req.url === "/done") { let b = ""; req.on("data", (c) => (b += c)); req.on("end", () => { submitted = b; sends++; res.end("ok"); }); return; }
+  // A site that refuses the app's browser, and one that is down.
+  if (req.url === "/blocked") { res.writeHead(403, { "content-type": "text/html" }); return res.end("<!doctype html><html><body><h1>Access denied</h1></body></html>"); }
+  if (req.url === "/down") { res.writeHead(503, { "content-type": "text/html" }); return res.end("<!doctype html><html><body><h1>Service unavailable</h1></body></html>"); }
   const body = PAGES[req.url.split("?")[0]];
   res.writeHead(body ? 200 : 404, { "content-type": "text/html" });
   res.end(`<!doctype html><html><body>${body || "not found"}</body></html>`);
@@ -130,6 +154,40 @@ test("words of thanks the form showed before Submit are not a confirmation: with
   const r = await applyTo(job("/form-thanks", "t-thanks"), {}, { dryRun: false, browser: ctx });
   assert.strictEqual(r.status, "failed", r.reason);
   assert.match(r.reason, /no confirmation appeared/);
+});
+
+test("a last step named 'Continue' sends the application: with a confirmation it's applied, with none it may have gone through (never 'no submit button')", async () => {
+  sends = 0;
+  const r = await applyTo(job("/form-continue", "t-continue"), {}, { dryRun: false, browser: ctx });
+  assert.strictEqual(r.status, "applied", r.reason);
+  assert.strictEqual(r.reason, 'submitted ("continue")');
+  assert.strictEqual(sends, 1);
+  const steps = [];
+  const q = await applyTo(job("/form-continue?quiet", "t-continue-quiet"), { progress: (k) => steps.push(k) }, { dryRun: false, browser: ctx });
+  assert.strictEqual(q.status, "failed", q.reason);
+  assert.match(q.reason, /nothing more to fill in or press, and showed no confirmation/);
+  assert.ok(steps.includes("confirm"), "counted as possibly sent, so it's never pressed again on its own");
+});
+
+test("a check that they're a person: showing after Submit, nothing was sent and it's theirs to finish; hidden on the page, it says nothing", async () => {
+  const shown = await applyTo(job("/form-captcha?show", "t-captcha"), {}, { dryRun: false, browser: ctx });
+  assert.deepStrictEqual([shown.status, shown.reason, shown.notSent], ["failed", "a CAPTCHA challenge blocked the submit", true]);
+  const hidden = await applyTo(job("/form-captcha", "t-captcha-hidden"), {}, { dryRun: false, browser: ctx });
+  assert.strictEqual(hidden.status, "failed");
+  assert.match(hidden.reason, /no confirmation appeared/);
+  assert.ok(!hidden.notSent, "Submit was pressed and nothing says it was held back: it may have gone through");
+});
+
+test("a site that refuses the app's browser is the person's to apply to, not a closed posting; one that is down is tried again later; a form that wants a password is theirs too", async () => {
+  const blocked = await applyTo(job("/blocked", "t-blocked"), {}, { dryRun: false, browser: ctx });
+  assert.strictEqual(blocked.status, "manual", blocked.reason);
+  assert.match(blocked.reason, /wouldn't let the app's browser in/);
+  await assert.rejects(() => applyTo(job("/down", "t-down"), {}, { dryRun: false, browser: ctx }), /job site error 503/);
+  const gone = await applyTo(job("/nowhere", "t-gone"), {}, { dryRun: false, browser: ctx });
+  assert.deepStrictEqual([gone.status, /probably closed/.test(gone.reason)], ["skipped", true]);
+  const pw = await applyTo(job("/form-password", "t-password"), {}, { dryRun: true, browser: ctx });
+  assert.strictEqual(pw.status, "manual", pw.reason);
+  assert.match(pw.reason, /sign in or create an account/);
 });
 
 test("traps for bots are never read or filled, so the employer's spam filter has nothing to catch", async () => {
@@ -254,6 +312,36 @@ test("finish with me: the person answers what the app can't and presses Next; th
   assert.match(fin.turns[1], /Check it, then press Submit yourself/);
   assert.deepStrictEqual(r.details.finishTyped, [{ label: "Shirt size *", value: "Medium" }], "kept even though the form moved on");
   assert.ok(r.details.kit.some((k) => k.page === 2 && k.value === "+1 (512) 555-0142"));
+});
+
+test("finish with me: the app never presses a button that moves the form on; the person presses Next, and the app fills the next page", async () => {
+  let nextsBefore = null;
+  const fin = person([
+    async (pg) => { await pause(1500); nextsBefore = await pg.evaluate(() => window.NEXTS || 0); assert.strictEqual(await pg.inputValue("#fn"), "Jordan", "page 1 is filled in"); await pg.click("text=Next"); },
+    async (pg) => { assert.strictEqual(await pg.inputValue("#ph"), "+1 (512) 555-0142"); await pg.click("text=Submit application"); },
+  ]);
+  const r = await applyTo(job("/finish-next", "t-fin-next"), {}, { browser: ctx, finish: fin });
+  assert.ifError(fin.error);
+  assert.strictEqual(nextsBefore, 0, "Next was theirs to press");
+  assert.match(fin.turns[0], /this page is filled in\. Check it, then press "Next"/);
+  assert.strictEqual(r.status, "applied", r.reason);
+});
+
+test("finish with me: a page that isn't the application (their mailbox, opened in the form's tab) is never read or filled; back on the form, it carries on", async () => {
+  const elsewhere = base.replace("127.0.0.1", "localhost") + "/form-ping"; // another site, with a form of its own
+  let there = null;
+  const fin = person([
+    async (pg) => {
+      await pg.goto(elsewhere); await pause(7000);
+      there = { first: await pg.inputValue("#fn"), email: await pg.inputValue("#em"), turns: fin.turns.length };
+      await pg.goto(base + "/finish-2"); await pg.fill("#fn", "Jordan"); await pg.fill("#ln", "Lee"); await pg.fill("#sz", "Medium"); await pause(700); await pg.click("text=Next");
+    },
+    async (pg) => { await pg.click("text=Submit application"); },
+  ]);
+  const r = await applyTo(job("/finish-2", "t-fin-away"), {}, { browser: ctx, finish: fin });
+  assert.ifError(fin.error);
+  assert.deepStrictEqual(there, { first: "", email: "", turns: 1 }, "nothing typed there, and the app didn't take it for the next page");
+  assert.strictEqual(r.status, "applied", r.reason);
 });
 
 test("finish with me: a sign-in first, then the app fills the form; 'I sent it' when the page doesn't say", async () => {

@@ -11,14 +11,20 @@ export async function resumeText(name, bytes) {
   if (ext === ".pdf") {
     // unpdf ships a build of pdf.js with no native parts, so it runs inside Electron.
     const { extractText, getDocumentProxy } = await import("unpdf");
-    const doc = await getDocumentProxy(data);
-    const { text } = await extractText(doc, { mergePages: false });
-    return [].concat(text).join("\n\n").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+    try {
+      const doc = await getDocumentProxy(data);
+      const { text } = await extractText(doc, { mergePages: false });
+      return [].concat(text).join("\n\n").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+    } catch (e) {
+      throw new Error(/password/i.test(String(e && (e.message || e.name)))
+        ? `${name} is locked with a password, so the app can't read it. Open it, save a copy without the password (or print it to a new PDF), and add that one.`
+        : `${name} couldn't be read as a PDF. Open it and save it again as a PDF or a Word file (.docx), then add that one.`);
+    }
   }
   if (ext === ".docx") {
     const mammoth = (await import("mammoth")).default;
-    const r = await mammoth.extractRawText({ buffer: Buffer.from(data) });
-    return r.value.trim();
+    try { return (await mammoth.extractRawText({ buffer: Buffer.from(data) })).value.trim(); }
+    catch { throw new Error(`${name} couldn't be read as a Word file. If it's an older .doc with a new name, open it in Word or Google Docs and save it as .docx or PDF, then add that one.`); }
   }
   if (ext === ".txt" || ext === ".md") return Buffer.from(data).toString("utf8");
   throw new Error(`${name}: only PDF and DOCX resumes can be read (save a .doc as .docx first)`);
@@ -128,6 +134,7 @@ export async function importResumes(files, onStep = () => {}, settings = aiSetti
   for (const [i, f] of files.entries()) {
     onStep(`Reading ${f.name}`);
     const text = await resumeText(f.name, f.bytes);
+    if (text.length < 200 && f.name === "pasted.txt") throw new Error("That's too short to make a resume from. Paste your whole resume, or use Make a resume with me and tell the app about your work.");
     if (text.length < 200) throw new Error(`${f.name}: almost no text could be read (a scanned image?). Export it from Word or Google Docs as a PDF or DOCX and try again.`);
     texts.push(text);
     onStep(`Turning ${f.name} into a profile (${i + 1} of ${files.length})`);

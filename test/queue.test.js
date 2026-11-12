@@ -260,3 +260,50 @@ test("trouble that isn't about one job (no internet, the AI, the browser) is tol
   assert.match(W.plainRunError("Model API 429: slow down"), /busy/);
   assert.strictEqual(W.plainRunError("elementHandle.fill: Element is not an <input>\nCall log:\n  - x"), "Element is not an <input>");
 });
+
+test("what the app was filling in when it closed: up next again, or Needs you when no try is left; one the person was finishing goes back where it was", async () => {
+  reset();
+  store.saveSettings({ paused: true, maxAttempts: 2 });
+  add("cut-1", { status: "working", attempts: 1 });
+  add("cut-2", { status: "working", attempts: 2 });
+  add("cut-fin", { status: "working", attempts: 1, details: { category: "retail", finishBefore: { status: "manual", reason: "Apply yourself: this site needs your own account" } } });
+  const run = W.run();
+  await new Promise((r) => setTimeout(r, 300));
+  W.stop(); await run;
+  assert.strictEqual(getJob("cut-1").status, "queued");
+  assert.deepStrictEqual([getJob("cut-2").status, /closed while it was filling this in/.test(getJob("cut-2").reason)], ["failed", true], "never left up next where nothing would pick it");
+  const fin = getJob("cut-fin");
+  assert.deepStrictEqual([fin.status, fin.reason, JSON.parse(fin.details)], ["manual", "Apply yourself: this site needs your own account", { category: "retail" }], "not up next, where it could be sent without them");
+  assert.strictEqual(W.pickNext().slug, "cut-1");
+  store.saveSettings({ paused: false, maxAttempts: 3 });
+});
+
+test("'I applied' on a job the person applied to by hand doesn't use up the app's daily limit", async () => {
+  reset();
+  const { appliedToday } = await import("../core/db.js");
+  const now = new Date().toISOString();
+  add("mine", { status: "applied", reason: "applied by you", applied_at: now });
+  assert.strictEqual(appliedToday(), 0);
+  add("apps", { status: "applied", reason: 'submitted ("submit application")', applied_at: now });
+  assert.strictEqual(appliedToday(), 1);
+});
+
+test("a mailbox that stops working is said, isn't asked again every minute, and nothing is skipped once it works again", async () => {
+  reset();
+  process.env.JA_MAIL_PASSWORD = "app-password";
+  store.saveSettings({ mailbox: { host: "imap.example.com", port: 993, user: "maria@example.com" }, repliesCheckedAt: null });
+  add("sent-1", { status: "applied", applied_at: new Date(Date.now() - 3 * day).toISOString() });
+  let reads = 0, since = null;
+  const refuse = async () => { reads++; throw new Error("Invalid credentials (Failure)"); };
+  await assert.rejects(() => W.checkReplies({ read: refuse }));
+  assert.match(W.state.mailProblem, /app password/);
+  assert.ok(!store.getSettings().repliesCheckedAt, "not 'checked a minute ago' when it wasn't read");
+  assert.strictEqual(await W.checkReplies({ read: refuse }), null, "not asked again straight away");
+  assert.strictEqual(reads, 1);
+  const n = await W.checkReplies({ force: true, read: async (m, s) => { since = s; return []; } });
+  assert.strictEqual(n, 0);
+  assert.strictEqual(W.state.mailProblem, null);
+  assert.ok(store.getSettings().repliesCheckedAt);
+  assert.ok(Date.now() - since > 3 * day, "read from before the application, not from the failed try");
+  store.saveSettings({ mailbox: null }); delete process.env.JA_MAIL_PASSWORD;
+});

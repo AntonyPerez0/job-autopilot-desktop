@@ -23,6 +23,7 @@ import { call } from "./freehire.js";
 import { classifyReply, findConfirmation, mailSince, maybeEmployer, replyJob, replySnippet } from "./mail.js";
 import { dataDir, getPrefs, getSecret, getSettings, saveSettings } from "./store.js";
 import { saveYourAnswers } from "./asked.js";
+import { tidy } from "./tidy.js";
 
 const CONFIG = new Proxy({}, { get: (_, k) => getSettings()[k] });
 const db = new Proxy({}, { get: (_, k) => { const d = getDb(); return typeof d[k] === "function" ? d[k].bind(d) : d[k]; } });
@@ -68,7 +69,7 @@ export const kick = () => { if (state.wake) state.wake(); };
 export const forceSearch = () => { state.lastSearch = null; kick(); };
 export { searchBrowser };
 
-const TRANSIENT = /timeout|timed out|net::|ECONN|socket|Target (page|closed)|browser has been closed|Model API 5|Model API 429|fetch failed|download failed|No browser could be started|aborted/i;
+const TRANSIENT = /timeout|timed out|net::|job site error|ECONN|socket|Target (page|closed)|browser has been closed|Model API 5|Model API 429|fetch failed|download failed|No browser could be started|aborted/i;
 
 // Trouble that isn't about the job being tried: no internet, the AI not connected or out of credit, no browser, a full
 // disk. Every job would fail the same way, so none is tried (or marked as stopped) until it's sorted out.
@@ -93,6 +94,7 @@ export function plainRunError(message) {
   const m = String(message || "");
   if (/application timed out/i.test(m)) return "This application took too long, so the app stopped it. Press Try again, or Finish it with me.";
   if (/Target (page|closed)|browser has been closed|context.{0,20}closed|page.{0,20}closed/i.test(m)) return "The browser window was closed while the app was filling this in. Press Try again.";
+  if (/job site error (\d+)/.test(m)) return `The job site had a problem of its own (error ${m.match(/job site error (\d+)/)[1]}). Press Try again later.`;
   if (/net::ERR_|Timeout \d+ms exceeded|page\.goto|waiting for (selector|locator|navigation)/i.test(m)) return "The job site didn't load, or took too long to answer. Press Try again later, or Finish it with me.";
   const ai = plainAiError(m);
   if (ai !== m) return ai;
@@ -204,7 +206,8 @@ function appliedSameRole(job) {
 async function inboxConfirms(job) {
   const m = mailbox();
   if (!m) return null;
-  return findConfirmation(m, job.company, job.title, 60, job.apply_url || job.url);
+  const own = db.prepare(APPLIED_SQL).all().filter((r) => r.slug !== job.slug && companyKey(r.company) === companyKey(job.company)).map((r) => r.title);
+  return findConfirmation(m, job.company, job.title, 60, job.apply_url || job.url, own);
 }
 
 // Only freehire's own postings are asked about: no other board's job is ever named to freehire.me.
@@ -228,14 +231,24 @@ export const REPLY_EVERY_MINUTES = 60;
 export async function checkReplies({ force = false, read = mailSince } = {}) {
   const m = mailbox();
   if (!m) return null;
+  // last: the last time the mailbox was really read (what's shown as "checked", and where the next read starts);
+  // tried: the last attempt, read or not, so a mailbox that refuses isn't asked again every minute.
   const last = Date.parse(getSettings().repliesCheckedAt || "") || 0;
-  if (!force && Date.now() - last < REPLY_EVERY_MINUTES * 60000) return null;
+  if (!force && Date.now() - Math.max(last, checkReplies.tried || 0) < REPLY_EVERY_MINUTES * 60000) return null;
+  checkReplies.tried = Date.now();
   const jobs = db.prepare(`${APPLIED_SQL.replace(" FROM jobs WHERE ", " FROM jobs WHERE applied_at > datetime('now', '-120 days') AND (")})`).all();
-  saveSettings({ repliesCheckedAt: new Date().toISOString() });
-  if (!jobs.length) return 0;
+  if (!jobs.length) { saveSettings({ repliesCheckedAt: new Date().toISOString() }); state.mailProblem = null; return 0; }
   const first = Math.min(...jobs.map((j) => Date.parse(j.applied_at) || Date.now()));
   const since = new Date(Math.max(first - 86400000, last ? last - 2 * 86400000 : 0, Date.now() - 120 * 86400000));
-  const mails = (await read(m, since, (x) => maybeEmployer(x.from, jobs))) || [];
+  let mails;
+  try { mails = (await read(m, since, (x) => maybeEmployer(x.from, jobs))) || []; }
+  catch (e) {
+    state.mailProblem = /auth|login|credentials|invalid|password/i.test(e.message) ? "Your mailbox refused the app password (it's often cancelled when the main password changes). Make a new app password and put it in under Settings > Mailbox."
+      : "The app couldn't reach your mailbox. If your internet is working, check the mail server under Settings > Mailbox.";
+    throw e;
+  }
+  state.mailProblem = null;
+  saveSettings({ repliesCheckedAt: new Date().toISOString() });
   let added = 0;
   for (const mail of mails) {
     const j = replyJob(mail, jobs);
@@ -317,12 +330,13 @@ async function applyOneInner(job) {
     const known = (x) => x && !/\b(not stated|unknown|n\/a)\b/i.test(x);
     if (JSON.parse(job.details || "{}").addedByUser && known(p.employer) && known(p.jobTitle)) setJob(job.slug, { company: p.employer, title: p.jobTitle });
     // Submit was pressed but no confirmation came: it may have gone through, so it's never sent again on its own.
-    const maybe = !!pressedAt && r.status !== "applied";
+    // (A challenge to prove they're a person that held the form back, or a code that never came: not sent.)
+    const maybe = !!pressedAt && r.status !== "applied" && !r.notSent;
     const reason = maybe && !/may have gone through/.test(r.reason || "") ? `${String(r.reason || "").replace(/\.?$/, "")}. Submit was pressed, so it may have gone through. Check your email before using Try again.` : r.reason;
     setJob(job.slug, {
       status: maybe ? "failed" : r.status, reason, details: r.details || null,
       resume_file: r.resume_file || null, screenshot: r.screenshot || null,
-      applied_at: r.status === "applied" ? new Date().toISOString() : pressedAt,
+      applied_at: r.status === "applied" ? new Date().toISOString() : maybe ? pressedAt : null,
       ...(r.status === "filled" ? { filled_at: new Date().toISOString() } : {}),
     });
     log(job.slug, `${maybe ? "failed" : r.status}: ${reason}`, r.status === "failed" || maybe ? "warn" : "info");
@@ -397,7 +411,9 @@ export async function runFinish(apply = applyTo) {
   state.now = "finishing an application with you";
   state.job = { slug, title: job.title, company: job.company };
   state.finish = { ...state.finish, phase: "filling", at: Date.now() };
-  setJob(slug, { status: "working" });
+  // Where it was, kept with it: if the app is closed while it fills this in, it goes back there, not up next (where
+  // it could be sent without the person).
+  setJob(slug, { status: "working", details: { ...JSON.parse(job.details || "{}"), finishBefore: before } });
   log(slug, `finish with me: filling in ${job.title} at ${job.company}, then it's your turn`);
   const finish = {
     ...FINISH,
@@ -436,10 +452,10 @@ export async function runFinish(apply = applyTo) {
   } catch (e) {
     await abortCurrent();
     const maybe = (getJob(slug) || {}).status === "submitting";
-    setJob(slug, maybe ? { status: "failed", reason: `finishing it stopped (${plainAiError(e.message).slice(0, 160)}) after your turn began: it may have gone through. Check your email before using Try again.` }
-      : { status: before.status, reason: before.reason });
+    setJob(slug, { details: JSON.parse(job.details || "{}"), ...(maybe ? { status: "failed", reason: "finishing it stopped after your turn began, so it may have gone through. Check your email before using Try again." }
+      : { status: before.status, reason: before.reason }) });
     log(slug, `finish with me stopped: ${e.message}`, "warn");
-    error = plainAiError(e.message).slice(0, 200);
+    error = (trouble(e.message) || {}).text || plainRunError(e.message).slice(0, 200);
   } finally {
     const now = getJob(slug) || {};
     state.finishDone = { slug, title: job.title, company: job.company, status: now.status, outcome, at: Date.now(),
@@ -471,7 +487,17 @@ export async function run() {
   if (running) return;
   running = true; stopping = false;
   loadTimings();
-  db.prepare("UPDATE jobs SET status = 'queued' WHERE status = 'working'").run();
+  try { tidy(); } catch (e) { log(null, "tidying up failed: " + e.message, "warn"); }
+  // What was being filled in when the app closed. One the person was finishing goes back where it was (never up
+  // next, where it could be sent without them). The rest are up next again; one with no tries left would sit there
+  // and never be picked, so it goes to Needs you, with Try again.
+  for (const j of db.prepare("SELECT slug, details, attempts FROM jobs WHERE status = 'working'").all()) {
+    let d = {}; try { d = JSON.parse(j.details || "{}") || {}; } catch { /* none */ }
+    const was = d.finishBefore;
+    if (was && was.status) { delete d.finishBefore; setJob(j.slug, { status: was.status, reason: was.reason || null, details: d }); }
+    else if ((j.attempts || 0) < CONFIG.maxAttempts) setJob(j.slug, { status: "queued" });
+    else { setJob(j.slug, { status: "failed", reason: "the app was closed while it was filling this in. Press Try again." }); log(j.slug, "restart: closed while this was being filled in, and it has no tries left", "warn"); }
+  }
   // Stopped between pressing Submit and the employer's answer: it may have gone through.
   // Never press it again on our own; the inbox decides, or the user does.
   for (const j of db.prepare("SELECT * FROM jobs WHERE status = 'submitting'").all()) {
@@ -483,7 +509,7 @@ export async function run() {
   while (!stopping) {
     try {
       // Replies are read while paused too: the person still wants to hear back.
-      try { await checkReplies(); } catch (e) { log(null, "reading replies failed: " + e.message, "warn"); }
+      try { await checkReplies(); } catch (e) { if (state.mailSaid !== state.mailProblem) log(null, "reading replies failed: " + e.message, "warn"); state.mailSaid = state.mailProblem; }
       if (fin.want && !held) { await runFinish(); continue; }
       // The browser stays open between applications, and closes whenever there is a long wait.
       if (CONFIG.paused) { state.now = "paused"; state.progress = null; state.trouble = null; await closeBrowser(); await sleep(30000); continue; }

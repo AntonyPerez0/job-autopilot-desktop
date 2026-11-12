@@ -7,6 +7,8 @@
   const icon = (n) => `<svg class="i" aria-hidden="true"><use href="#i-${n}"/></svg>`;
   const uid = () => Math.random().toString(36).slice(2, 9);
   const msg = (el, kind, text) => { el.innerHTML = text ? `<div class="msg ${kind}">${esc(text)}</div>` : ""; };
+  // What went wrong on the app's side of the window, without the wrapping Electron puts around it.
+  const ipcError = (e) => String((e && e.message) || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
   const fld = (label, inner, hint) => `<div class="fld"><span>${label}</span>${inner}${hint ? `<small>${hint}</small>` : ""}</div>`;
   const inp = (name, value, attrs = "") => `<input name="${esc(name)}" value="${esc(value)}" ${attrs}>`;
   // A month and a year, so every date on the resume is written the same way ("Sep 2023"). The hidden field
@@ -63,9 +65,12 @@
       el.innerHTML = `<div class="form" data-ai-form>
         ${prov === "openrouter" ? `<div class="connect">
           <p style="margin:0">The easiest way is an <b>OpenRouter</b> account that you pay for yourself: usually about a cent per application, and $5 of credit lasts for hundreds.</p>
+          <ol class="how">
+            <li>Press <b>${cfg.hasKey ? "Connect again" : "Connect with OpenRouter"}</b>. Your web browser opens OpenRouter's page.</li>
+            <li>Sign in there, or make a free account, and press <b>Authorize</b>.</li>
+            <li>Come back to this window. If the account has no credit yet, a button here takes you to add some.</li></ol>
           <div class="row-actions"><button type="button" class="btn primary" data-connect>${icon("key")}${cfg.hasKey ? "Connect again" : "Connect with OpenRouter"}</button>
             <button type="button" class="btn ghost" data-connect-cancel hidden>Cancel</button></div>
-          <small class="hint">Your web browser opens OpenRouter. Sign in, or make a free account there, then press <b>Authorize</b>. Come back here once the page says you're connected.</small>
           <div data-cmsg>${cfg.hasKey && tested ? `<div class="msg ok">Connected to OpenRouter.</div>` : ""}</div></div>` : ""}
         <details class="more" data-paste ${prov === "openrouter" ? "" : "hidden"}><summary><b>I already have a key, or want another model</b><span>Paste an OpenRouter key, or pick the model</span></summary><div class="form" data-paste-host style="padding:4px 16px 16px"></div></details>
         <details class="more" ${prov === "openrouter" ? "" : "open"}><summary><b>Other ways to connect an AI</b><span>Another service, or a free model on this computer</span></summary>
@@ -176,22 +181,26 @@
   function resumes(el, cfg, onImported, { withGithub = true } = {}) {
     let files = [];
     el.innerHTML = `<div class="form">
-      <div class="drop" data-drop>${icon("upload")}<div style="margin-top:8px"><b>Drop your resumes here</b> or click to choose</div>
-        <small>PDF or Word (.docx). Several versions of your resume give the app more approved pieces to pick from.</small>
+      <div class="drop" data-drop>${icon("upload")}<div style="margin-top:8px"><b>Drop your resume here</b>, or click to choose it</div>
+        <small>A PDF or a Word file (.docx). You can add more than one: the app takes the best of each.</small>
         <input type="file" accept=".pdf,.docx" multiple hidden></div>
       <div data-files class="sub-list"></div>
       <details class="more" data-builder><summary><b>I don't have a resume</b><span>Answer a few questions and the app writes one with you</span></summary><div data-creator style="padding:4px 16px 16px"></div></details>
-      <details class="more" ${withGithub ? "" : "hidden"}><summary><b>Add projects from my GitHub</b><span>The app reads your public projects and writes lines about them</span></summary><div data-github style="padding:4px 16px 16px"></div></details>
+      <details class="more" ${withGithub && (cfg.prefs || {}).jobKind !== "hourly" ? "" : "hidden"}><summary><b>Add projects from my GitHub</b><span>The app reads your public projects and writes lines about them</span></summary><div data-github style="padding:4px 16px 16px"></div></details>
       <details class="more"><summary><b>Paste your resume as text</b><span>If your file won't upload</span></summary><div class="fld" style="margin-top:10px"><textarea name="text" rows="8" placeholder="Paste the full text of your resume"></textarea></div></details>
       <div class="row-actions"><button type="button" class="btn primary" data-read>${icon("bolt")}Read my resume${cfg.profile ? " again" : ""}</button>
         <label class="check" ${cfg.profile ? "" : "hidden"}><input type="checkbox" name="merge" checked>Add to what I already approved</label>
         ${cfg.profile ? "" : `<button type="button" class="btn ghost" data-example>Use the example profile to try the app</button>`}</div>
       <div data-msg></div></div>`;
     const drop = el.querySelector("[data-drop]"), input = drop.querySelector("input"), m = el.querySelector("[data-msg]");
-    const draw = () => { el.querySelector("[data-files]").innerHTML = files.map((f, i) => `<div class="sub-item" style="grid-template-columns:1fr auto;display:grid;align-items:center">${icon("file")} ${esc(f.name)} <button type="button" class="btn ghost sm" data-rm="${i}">${icon("x")}</button></div>`).join("");
+    // The button is for what waits to be read: a file that couldn't be read the first time, or pasted text.
+    const offerRead = () => { goBtn.hidden = !files.length && !val(el, "text").trim(); };
+    const draw = () => { offerRead(); el.querySelector("[data-files]").innerHTML = files.map((f, i) => `<div class="sub-item" style="grid-template-columns:1fr auto;display:grid;align-items:center">${icon("file")} ${esc(f.name)} <button type="button" class="btn ghost sm" data-rm="${i}">${icon("x")}</button></div>`).join("");
       el.querySelectorAll("[data-rm]").forEach((b) => b.onclick = () => { files.splice(Number(b.dataset.rm), 1); draw(); }); };
     // A file dropped or chosen is read straight away: there's no second button to find.
     const goBtn = el.querySelector("[data-read]");
+    el.querySelector("[name=text]").oninput = offerRead;
+    offerRead();
     const addFiles = (list) => { const n = files.length; for (const f of list) if (/\.(pdf|docx)$/i.test(f.name)) files.push(f); else msg(m, "err", `${f.name}: only PDF and .docx files`); draw();
       if (files.length > n && !goBtn.disabled) read(val(el, "merge")); };
     drop.onclick = () => input.click();
@@ -778,8 +787,8 @@
     el.querySelector("[data-preview]").onclick = async () => { const r = await pdf(); if (r) window.open(r.url, "_blank"); };
     el.querySelector("[data-download]").onclick = async () => {
       const r = await pdf(); if (!r) return;
-      const f = await window.ja.saveResume(r.file, r.fileName || "Resume.pdf");
-      if (f) msg(sm, "ok", "Saved to " + f);
+      try { const f = await window.ja.saveResume(r.file, r.fileName || "Resume.pdf"); if (f) msg(sm, "ok", "Saved to " + f); }
+      catch (e) { msg(sm, "err", ipcError(e)); }
     };
     const drawRemember = () => {
       const host = el.querySelector("[data-remember]");
@@ -930,9 +939,14 @@
         bulk = true;
         draw();
       };
+      // Asked once more, in the page itself, with buttons that say what they do.
       if (everything) everything.onclick = () => {
-        if (!confirm(simple ? "Is every line true? Only press OK if you've read all of them." : "Approve every piece? Only do this if you've read them and every line is true.")) return;
-        approveMany([...["summaries", "headers", "skills", "education", "bases"].flatMap((k) => arr(p[k])), ...["experience", "projects"].flatMap((k) => arr(p[k]).flatMap((e) => arr(e.bullets)))]);
+        const box = everything.parentElement;
+        box.style.flexWrap = "wrap"; box.style.flex = "1 1 16rem"; box.style.justifyContent = "flex-end"; box.style.alignItems = "center";
+        box.innerHTML = `<b style="margin:0">Have you read every line, and is each one true?</b><button type="button" class="btn sm primary" data-yes>${icon("check")}Yes, all of it</button><button type="button" class="btn sm" data-no>Not yet</button>`;
+        box.querySelector("[data-yes]").onclick = () => approveMany([...["summaries", "headers", "skills", "education", "bases"].flatMap((k) => arr(p[k])), ...["experience", "projects"].flatMap((k) => arr(p[k]).flatMap((e) => arr(e.bullets)))]);
+        box.querySelector("[data-no]").onclick = () => draw();
+        box.querySelector("[data-no]").focus();
       };
       el.querySelectorAll("[data-all]").forEach((e) => e.onclick = () => { let o = p; for (const x of e.dataset.all.split(".")) o = o[x]; approveMany(arr(o)); });
       // The simple view: a whole part is right, one doubted line is true after all, or a part needs fixing.
@@ -1576,7 +1590,7 @@
       el.querySelector("[data-on]").onchange = async (e) => { await api("/api/settings", { historyBackup: e.target.checked }); draw(); };
       el.querySelector("[data-folder]").onclick = async () => { const d = await window.ja.pickFolder(); if (d) { await api("/api/settings", { historyFolder: d }); draw(); } };
       const show = el.querySelector("[data-show]"); if (show) show.onclick = () => window.ja.showFile(h.file);
-      el.querySelector("[data-save]").onclick = async () => { const f = await window.ja.saveHistory(); if (f) msg(m, "ok", "Saved to " + f); };
+      el.querySelector("[data-save]").onclick = async () => { try { const f = await window.ja.saveHistory(); if (f) msg(m, "ok", "Saved to " + f); } catch (e) { msg(m, "err", ipcError(e)); } };
       el.querySelector("[data-import]").onclick = () => input.click();
       input.onchange = async () => {
         const f = input.files[0]; if (!f) return;

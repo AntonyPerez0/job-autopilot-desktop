@@ -310,7 +310,8 @@ left off. You can change all of it later under **Settings** and **Resume**.
    your own words, in a chat (or answer a short form); the app writes one with
    you (see [Making and improving your resume](#making-and-improving-your-resume)).
    Have projects on GitHub? Open **Add projects from my GitHub** (see
-   [Projects from GitHub](#projects-from-github)).
+   [Projects from GitHub](#projects-from-github)); it's there when you picked
+   office and tech work, or both.
 4. **Check it.** Each part of your resume (your summary, each job, your
    skills, your school) reads as it will on the page. Press **Looks right** on
    each part that's all true, or **Fix this** to change or delete a line. A line
@@ -742,7 +743,8 @@ board's** copy of the posting (Indeed, LinkedIn, ZipRecruiter). The app doesn't
 chat with bots, and it makes accounts only on Workday and only if you turn that
 on (see [Job site accounts](#job-site-accounts-workday)). Good matches on the
 other sites go to **Apply yourself**. Open one, apply on the site, then press
-**I applied** so it's never suggested again.
+**I applied** so it's never suggested again. (What you apply to by hand doesn't
+count toward the app's daily limit.)
 
 ### Job site accounts (Workday)
 
@@ -787,7 +789,11 @@ Paylocity, JazzHR, BambooHR, Jobvite and many company sites. It handles:
 - forms spread over several pages
 
 If a site turns out to want a sign-in after all, the job moves to Apply
-yourself instead of stopping. For everyday jobs, expect roughly a third to a
+yourself instead of stopping. So does a form that makes an account as it goes
+(it asks you to create a password), and a site that won't let the app's browser
+in. The app never asks you for a password, a Social Security number or a bank
+or card number, and never keeps one: those you type on the form yourself, with
+**Finish it with me**. For everyday jobs, expect roughly a third to a
 half of good matches to be ones the app can do by itself.
 
 ### Easy to see and use
@@ -877,7 +883,8 @@ it shows.
 - **Closing the window doesn't stop it.** It keeps looking for jobs and
   applying in the background. Open it again from its icon in the menu bar at
   the top of the screen (Mac) or in the system tray next to the clock
-  (Windows); **Quit** is there too. While it has applications to send that
+  (Windows); **Quit** is there too. The first time you close the window, the
+  app says so and asks whether to keep working or quit. While it has applications to send that
   day, it keeps the computer from going to sleep (the screen can still turn
   off). Settings > **While it works** turns each of these off, and can start
   the app (without a window) when your computer starts.
@@ -954,8 +961,9 @@ applications, practice applications and Apply yourself jobs the app may open):
    application with everything it knows.
 2. Where it can't go on, it's your turn: a note at the bottom of the page says
    what's left ("Fill in Shirt size, then press Next"), and a banner in the app
-   says the same. Sign in, answer, fix what the site shows. When you press
-   **Next** on a form with several pages, the app fills in the next page for you.
+   says the same. Sign in, answer, fix what the site shows. On a form with
+   several pages you press **Next** yourself (the app never presses a button
+   that moves the form on in this mode), and the app fills in the next page.
 3. When everything the app can do is in, check it and press **Submit**
    yourself. The app never presses Submit in this mode.
 4. The app sees the employer's confirmation and marks the application sent. If
@@ -966,9 +974,12 @@ what you typed into the questions it couldn't answer is kept for its next try.
 If you pressed Submit before stopping, the app marks it as possibly sent and
 never sends it again on its own. After a finish, the app offers to keep your
 answers for every application that asks the same (legal questions excepted:
-those have their own settings under About you). It waits up to 30 minutes for
-you, starts as soon as what the app is doing now is done (a search under way
-stops early for it), and works while the autopilot is paused too.
+those have their own settings under About you). It waits 30 minutes from the
+last thing you typed or chose (two hours at the very most), starts as soon as
+what the app is doing now is done (a search under way stops early for it), and
+works while the autopilot is paused too. If you open something else in the
+form's tab (your email, to find a code), the app reads and fills in nothing
+there, and carries on when you're back on the application.
 
 ### After you apply
 
@@ -1103,7 +1114,7 @@ application system (signed by it, the way your mailbox provider checks), and
 names the employer. They're sorted by their own words, without the AI, and stay
 on your computer. The app never answers them: you reply from your own email.
 
-The connection is read-only: the app never sends, deletes, moves or marks
+If the mailbox stops answering, the To do list says so. The connection is read-only: the app never sends, deletes, moves or marks
 anything. It needs an **app password**, which is a separate password just for
 this app. You can only create one when two-step verification is turned on.
 
@@ -1156,7 +1167,12 @@ the folder):
 That folder holds your profile, answers, preferences, the job list, every
 resume that was sent, the screenshots, and the AI's answers to the resume
 questions it was asked (kept 120 days, so the same facts give the same
-resume). The only file kept elsewhere is the
+resume). So the folder doesn't grow for ever, each time the app starts it
+clears out activity older than 90 days, the screenshots, resume and posting
+text of jobs it left out over a month ago, and the screenshots and resume of
+applications that stopped, were only practice or were left to you over four
+months ago. Everything about an application that was sent is kept. The only
+file kept elsewhere is the
 application history described above (you can turn it off in Settings). The API key, the mailbox password and the job-site account password
 are encrypted by your operating system's keychain (macOS Keychain, Windows
 DPAPI).
@@ -1253,9 +1269,11 @@ another place, with what the app tried and where it stopped:
 - your settings and what's set up;
 - the app's recent activity.
 
-Your name, contact details and answers are left out (they read [name], [email]
-and so on) unless you tick **Include my personal details**. Your AI key and
-passwords are never in it. Send the file to whoever helps you with the app.
+Your name, contact details, address and links are left out (they read [name],
+[email] and so on), and of what you answered about yourself only whether each
+is answered, unless you tick **Include my personal details**. What you search
+for is in it: the job titles and the city. Your AI key and passwords are never
+in it. Send the file to whoever helps you with the app.
 
 - **"Your AI account is out of credit."** Add a few dollars at
   [openrouter.ai](https://openrouter.ai) (Settings, then Credits). The app
@@ -1276,9 +1294,19 @@ passwords are never in it. Send the file to whoever helps you with the app.
   site would not let the app's browser in, or did not load. Press **Search
   now** to try again; if it keeps happening, turn on another place to look in
   Settings > Jobs to look for.
-- **Only two of a chain's jobs show up.** When one employer posts the same job
-  for many stores ("Delivery Driver" at twenty locations), the app keeps two,
-  so Up next isn't twenty copies of one job.
+- **Only one or two of a chain's jobs show up.** When one employer posts the
+  same job for many stores ("Delivery Driver" at twenty locations), the app
+  keeps two (one, when the postings have the very same title), so Up next
+  isn't twenty copies of one job. A job the app left out stands for new
+  postings of it for a month; after that a new one is looked at afresh.
+- **"Version x didn't install."** The app closed to update itself and came
+  back as it was: Windows or macOS didn't let it be replaced. Press **Download
+  it** in that message and install the new version over the old one; your data
+  and settings stay.
+- **"Your mailbox stopped working."** Mail services cancel an app password when
+  you change your main password. Make a new one (see [Mailbox](#mailbox)) and
+  put it in under Settings > Mailbox. Nothing is lost: the app reads what came
+  in meanwhile.
 - **Nothing is being sent.** Look at the box at the bottom left. **Practice
   mode**: open a practice application from the To do list, and press **Start
   sending** when it looks right. **Paused**: press **Continue**. **Sending**:
@@ -1453,7 +1481,10 @@ Issues and pull requests are welcome. Run `npm test`, `npm run e2e` and
 `npm run a11y` before sending a change, and keep the honesty rules intact: the
 app never states a fact the user didn't give. After a change to how the app
 looks, `node scripts/readme-shots.mjs` remakes the README's screenshots from
-made-up data, with a stand-in for the AI, so it needs no key.
+made-up data, with a stand-in for the AI, so it needs no key, and
+`node scripts/tour-video.mjs` remakes the 60-second tour (`out/tour.mp4`, with
+ffmpeg). GitHub only plays a video in a README from a file dropped into one of
+its own text boxes, so the link at the top is made by hand from that file.
 
 ## License
 

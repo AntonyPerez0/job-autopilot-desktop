@@ -103,3 +103,35 @@ test("the same employer on its own site and on its application system is one pos
   assert.strictEqual(getJob("fake-gh"), undefined, "its copy on Greenhouse is the same job");
   assert.ok(getJob("fake-io"), "umbrella.io is another site");
 });
+
+test("one posting the AI stumbles on is not 'the AI stopped working'; when none gets an answer it is, and the search stops asking after five in a row", async () => {
+  failIf = (user) => /at Stumble/.test(user);
+  results = [posting("fake-stumble", "Stumble", "https://apply.workable.com/stumble/j/S1/"), posting("fake-ok-a", "Okay A", "https://apply.workable.com/okaya/j/A/")];
+  await D.discover();
+  assert.strictEqual(D.lastSearch.aiProblem, "", "the rest were read, so the AI works");
+  failIf = null; status = 400; screens = [];
+  results = [...Array(9)].map((_, i) => posting("fake-down-" + i, "Down " + i, `https://apply.workable.com/down${i}/j/D/`));
+  await D.discover();
+  assert.ok(D.lastSearch.aiProblem, "said once none of them got an answer");
+  assert.strictEqual(screens.length, 5, "five postings in a row with no answer: the other four wait for the next search");
+  assert.strictEqual(D.lastSearch.done, true);
+  status = 200;
+});
+
+test("a job that was left out stands for new postings of it for a month; one the app has stands for them always", async () => {
+  const { getDb } = await import("../core/db.js");
+  const db = getDb();
+  results = [posting("fake-old-1", "Monthly", "https://apply.workable.com/monthly/j/M1/")];
+  await D.discover();
+  db.prepare("UPDATE jobs SET status = 'skipped', reason = 'posting closed before the app got to it' WHERE slug = 'fake-old-1'").run();
+  results = [posting("fake-old-2", "Monthly", "https://apply.workable.com/monthly/j/M2/")];
+  await D.discover();
+  assert.strictEqual(getJob("fake-old-2"), undefined, "the same job, left out a moment ago: not looked at again");
+  db.prepare("UPDATE jobs SET found_at = datetime('now', '-40 days') WHERE slug = 'fake-old-1'").run();
+  await D.discover();
+  assert.strictEqual(getJob("fake-old-2").status, "queued", "over a month later, a new posting of it is looked at afresh");
+  results = [posting("fake-old-3", "Monthly", "https://apply.workable.com/monthly/j/M3/")];
+  db.prepare("UPDATE jobs SET found_at = datetime('now', '-400 days') WHERE slug = 'fake-old-2'").run();
+  await D.discover();
+  assert.strictEqual(getJob("fake-old-3"), undefined, "one that's up next (or sent) stands for every posting of it, however old");
+});

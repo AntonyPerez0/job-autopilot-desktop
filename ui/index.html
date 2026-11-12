@@ -102,6 +102,14 @@ function avatar(name, cls = "") {
   return `<div class="avatar ${cls}" aria-hidden="true">${esc(ini)}</div>`;
 }
 const cleanTitle = (t) => String(t || "").trim();
+// Pay as the posting lists it, said one way wherever it came from: "$17 to $21 an hour", "$52,000 a year".
+function pay(s) {
+  const t = String(s || "").trim();
+  const m = t.match(/^(USD |\$|[A-Z]{3} )?([\d,]+(?:\.\d+)?)(?:\s*[-–]\s*(?:USD |\$|[A-Z]{3} )?([\d,]+(?:\.\d+)?))?\s*\/\s*(hour|day|week|2 weeks|month|year)$/);
+  if (!m) return t.replace(/^USD /, "$");
+  const cur = !m[1] || /USD|\$/.test(m[1]) ? "$" : m[1];
+  return `${cur}${m[2]}${m[3] ? ` to ${cur}${m[3]}` : ""} ${m[4] === "hour" ? "an hour" : m[4] === "2 weeks" ? "every 2 weeks" : "a " + m[4]}`;
+}
 const SOURCE = { greenhouse: "Greenhouse", lever: "Lever", ashby: "Ashby", usajobs: "USAJOBS", neogov: "GovernmentJobs.com", calcareers: "CalCareers" };
 
 // Turn a raw reason into a short category a person reads at a glance.
@@ -491,7 +499,7 @@ function renderList() {
   const canSkip = ["queued", "failed", "manual"].includes(view);
   setHtml(host, `${top}${note}<table><thead><tr><th>Role</th><th class="hide-md">Location</th><th class="hide-md adv">Found on</th><th>Status</th><th class="hide-md adv">${whenLabel}</th></tr></thead><tbody>
     ${rows.map((j) => `<tr data-open-job="${esc(j.slug)}">
-      <td><div class="co-cell">${avatar(j.company)}<div><div class="t">${jobLink(j)}</div><div class="s">${meta(esc(j.company), j.salary ? esc(j.salary.replace(/^USD /, "$").replace(/\/year$/, "")) : "")}</div></div></div></td>
+      <td><div class="co-cell">${avatar(j.company)}<div><div class="t">${jobLink(j)}</div><div class="s">${meta(esc(j.company), esc(pay(j.salary)))}</div></div></div></td>
       <td class="hide-md muted">${esc(j.location)}${j.work_mode ? `<div class="reason">${esc(j.work_mode)}</div>` : ""}</td>
       <td class="hide-md adv"><span class="tag">${esc(SOURCE[j.source] || j.source)}</span></td>
       <td>${badge(category(j))}${j.stage && STAGE_BADGE[j.stage] ? `<div style="margin-top:4px">${badge(STAGE_BADGE[j.stage])}</div>` : j.reply ? `<div style="margin-top:4px">${replyBadge(j.reply)}</div>` : quiet(j) ? `<div style="margin-top:4px">${badge({ label: "No reply yet", tone: "gray", icon: "clock" })}</div>` : ""}${j.status !== "applied" ? `<div class="reason">${esc(humanReason(j))}</div>` : ""}
@@ -504,7 +512,7 @@ function renderList() {
 async function saveApplications(btn) {
   btn.disabled = true;
   try { const r = await window.ja.saveApplications(); if (r) toast(`Saved ${r.count} application${r.count === 1 ? "" : "s"}. Its folder is open.`); }
-  catch (e) { toast("The list couldn't be saved: " + String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, "")); }
+  catch (e) { toast(String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, "")); }
   finally { btn.disabled = false; }
 }
 // A job the app left out, applied to anyway (from its row or its panel).
@@ -538,8 +546,14 @@ async function renderLog() {
 async function openJob(slug) {
   open = await api("/api/job/" + encodeURIComponent(slug));
   if (!open || open.error) return;
-  if (!["answers", "fit", "resume", "shots", "posting", "prep"].includes(dtab) || (open.asks || []).length || (dtab === "prep" && !open.standing)) dtab = "answers";
-  const wasOpen = $("drawer").classList.contains("open");
+  const wasOpen = $("drawer").classList.contains("open"), again = wasOpen && shownSlug === slug;
+  // A job opens on what there is to see: its questions or answers; with none yet (not tried, left out, one to apply to
+  // yourself), what the posting asks for, or the posting. Drawn again after a button, it stays on the tab it was on.
+  const d0 = open.details || {}, has = { answers: (open.asks || []).length || (d0.kit || []).some((k) => k.kind !== "blank"), fit: !!(d0.check && (d0.check.items || []).length), posting: !!d0.description };
+  if ((open.asks || []).length) dtab = "answers";
+  else if (dtab === "prep" && open.standing) dtab = "prep";
+  else if (!again || !["answers", "fit", "resume", "shots", "posting"].includes(dtab)) dtab = has.answers ? "answers" : has.fit ? "fit" : has.posting ? "posting" : "answers";
+  shownSlug = slug;
   if (!wasOpen) opener = document.activeElement;
   renderDrawer();
   $("drawer").classList.add("open"); $("scrim").classList.add("open"); $("drawer").setAttribute("aria-hidden", "false");
@@ -555,7 +569,7 @@ function focusSoon(get, tries = 10) {
   el.focus();
   if (document.activeElement !== el && tries > 0) requestAnimationFrame(() => focusSoon(get, tries - 1));
 }
-let opener = null;
+let opener = null, shownSlug = null;
 // Clicks on what carries a job, a link, a page or a tab: one listener, and no value ever inside inline
 // JavaScript (an apostrophe in a job's slug or link can't break out of anything).
 document.addEventListener("click", (e) => {
@@ -612,7 +626,7 @@ function renderDrawer() {
   const tabs = [["answers", "Answers"], ["fit", "Fit"], ["resume", "Resume"], ["shots", "Screenshots"], ["posting", "Posting"], ...(j.standing ? [["prep", "Interview prep"]] : [])];
   const toneCallout = { green: "green", red: "red", amber: "amber", blue: "blue", violet: "violet", gray: "gray" }[c.tone];
   // Questions only the person can answer (a resume that wouldn't attach isn't one: Try again is the way on).
-  const asks = (j.asks || []).filter((q) => !q.file).length, fin = st.state.finish && st.state.finish.slug === j.slug;
+  const asks = (j.asks || []).filter((q) => !q.file && !q.secret).length, fin = st.state.finish && st.state.finish.slug === j.slug;
   const B = (cls, attrs, ic, label) => `<button type="button" class="btn sm ${cls}" ${attrs}>${ic ? icon(ic) : ""}${label}</button>`;
   // The one or two things to do now, by where the application is; everything else under More.
   const main = [], more = [];
@@ -639,7 +653,7 @@ function renderDrawer() {
       <div class="dr-title">${avatar(j.company, "lg")}<div style="min-width:0"><h2 id="dr-title" tabindex="-1">${esc(cleanTitle(j.title))}</h2><div class="s">${esc(j.company)}</div></div>
         <button class="btn ghost sm dr-close" onclick="closeDrawer()" aria-label="Close">${icon("x")}<span class="dr-back">Back</span></button></div>
       <div class="chips">${badge(c)}${j.location ? `<span class="tag">${icon("pin", 'style="width:13px;height:13px"')}${esc(j.location)}</span>` : ""}
-        ${j.salary ? `<span class="tag">${icon("dollar", 'style="width:13px;height:13px"')}${esc(j.salary.replace(/^USD /, "$"))}</span>` : ""}
+        ${j.salary ? `<span class="tag">${esc(pay(j.salary))}</span>` : ""}
         ${j.source ? `<span class="tag adv">Found on ${esc(SOURCE[j.source] || j.source)}</span>` : ""}${j.posted_at ? `<span class="tag">Posted ${ago(j.posted_at)}</span>` : ""}
         ${d.check && d.check.checked ? `<button type="button" class="tag tag-btn" data-tab="fit">${icon("check", 'style="width:13px;height:13px"')}Meets ${d.check.met} of ${d.check.checked}</button>` : ""}
         ${d.real && d.real.level ? `<button type="button" class="tag tag-btn warn" data-tab="fit">${icon("alert", 'style="width:13px;height:13px"')}${d.real.level === "likely" ? "Likely" : "Possibly"} not being filled</button>` : ""}</div>
@@ -883,6 +897,7 @@ function askForm(j) {
   const company = String(j.company || "").toLowerCase();
   const control = (q, i) => q.file
     ? `<div class="msg info">The app couldn't attach your resume to this form. Press <b>Try again</b> above; if it happens again, open the application form and upload it yourself (the <b>Resume</b> tab has the file).</div>`
+    : q.secret ? `<div class="msg info">The app never asks for this or keeps it. Press <b>Finish it with me</b> above: the app fills in the rest, and you type this on the form yourself.</div>`
     : q.options.length
     ? `<select name="ask-${i}" class="inp"><option value="">Pick an answer</option>${q.options.map((o) => `<option>${esc(o)}</option>`).join("")}</select>`
     : q.long ? `<textarea name="ask-${i}" rows="4" class="inp" placeholder="Your answer, in your own words"></textarea>`
@@ -891,14 +906,14 @@ function askForm(j) {
   return `<div class="ask" id="ask-form"><h3>Answer to continue</h3>
     <p class="hint">The app stopped here instead of guessing: these required questions have no answer in your facts. Answer them, and the app fills them in exactly as you wrote and tries again. Only say what's true.</p>
     ${asks.map((q, i) => `<div class="fld ask-q"><span>${esc(q.label)}</span>${q.note ? `<small>${esc(q.note)}</small>` : ""}${control(q, i)}
-      ${q.file ? "" : `<label class="check"><input type="checkbox" name="ask-all-${i}" ${everywhere(q) ? "checked" : ""}>Use this answer for other applications that ask the same question</label>`}</div>`).join("")}
-    <div class="row-actions"><button class="btn primary" id="ask-go" onclick="answerAsks()">${icon("check")}Save my answers and try again</button>
+      ${q.file || q.secret ? "" : `<label class="check"><input type="checkbox" name="ask-all-${i}" ${everywhere(q) ? "checked" : ""}>Use this answer for other applications that ask the same question</label>`}</div>`).join("")}
+    <div class="row-actions">${asks.some((q) => !q.file && !q.secret) ? `<button class="btn primary" id="ask-go" onclick="answerAsks()">${icon("check")}Save my answers and try again</button>` : ""}
       <button class="btn" onclick="act('skip')">${icon("skip")}Skip this job</button></div>
     <small class="hint">Rather not answer, or don't want this one after all? Skip it: nothing is sent, and the app won't apply to it.</small><div id="ask-msg"></div></div>`;
 }
 async function answerAsks() {
   const f = $("ask-form"), asks = open.asks || [];
-  const answers = asks.map((q, i) => q.file ? null : ({ label: q.label, value: f.querySelector(`[name="ask-${i}"]`).value.trim(), remember: f.querySelector(`[name="ask-all-${i}"]`).checked })).filter(Boolean);
+  const answers = asks.map((q, i) => q.file || q.secret ? null : ({ label: q.label, value: f.querySelector(`[name="ask-${i}"]`).value.trim(), remember: f.querySelector(`[name="ask-all-${i}"]`).checked })).filter(Boolean);
   if (!answers.length) { await act("retry"); return; }
   const left = answers.filter((x) => !x.value);
   if (left.length) return Forms.msg($("ask-msg"), "err", `Answer every question first (${left.length} left). The application can't go out with a required question empty.`);
@@ -924,7 +939,7 @@ function drawerTab(j, d) {
         <div class="a">${esc(k.value || "")}<span class="kind ${k.kind}">${names[k.kind] || k.kind}</span>${k.note && k.kind !== "text" ? `<span class="why">${esc(k.note)}</span>` : ""}${fix && k.kind !== "file" ? `<button type="button" class="btn sm ghost qa-fix" data-edit-answer="${i}" aria-label="Change the answer to ${esc(k.label.slice(0, 80))}">Change</button>` : ""}</div></div>`).join("")}</div>`;
     }
     if ((p.notClaimed || []).length) h += `<div class="section-t adv">Deliberately not claimed</div><ul class="bul adv">${p.notClaimed.map((n) => `<li>${esc(n.what)} <span>${esc(n.why || "")}</span></li>`).join("")}</ul>`;
-    return ask + h || empty("list", "No answers recorded", j.status === "queued" ? "This job has not been attempted yet." : j.status === "manual" ? `You apply to this one yourself. The app can make a resume for this job to upload there.${j.resume_file ? "" : `<div class="row-actions" style="justify-content:center;margin-top:10px"><button type="button" class="btn sm" onclick="makeResume(this)">${icon("file")}Make my resume for this job</button></div>`}` : "This job stopped before the form was filled in.");
+    return ask + h || empty("list", "No answers recorded", j.status === "queued" ? "The app hasn't filled this one in yet. Its answers show up here when it has." : j.status === "skipped" ? "The app left this job out, so it filled in nothing." : j.status === "manual" ? `You apply to this one yourself. The app can make a resume for this job to upload there.${j.resume_file ? "" : `<div class="row-actions" style="justify-content:center;margin-top:10px"><button type="button" class="btn sm" onclick="makeResume(this)">${icon("file")}Make my resume for this job</button></div>`}` : "This job stopped before the form was filled in.");
   }
   if (dtab === "fit") return fitTab(d);
   if (dtab === "resume") {
@@ -1051,7 +1066,7 @@ async function refresh(full) {
 if (!TITLES[view]) view = "overview";
 refresh(true);
 // A notification was clicked: the job it's about, or a page.
-if (window.ja.onNavigate) window.ja.onNavigate((t) => { if (t && t.job) openJob(t.job); else if (t && t.view) (t.view === "settings" ? openSettings("ai") : go(t.view)); });
+if (window.ja.onNavigate) window.ja.onNavigate((t) => { if (t && t.job) openJob(t.job); else if (t && t.view) (t.view === "settings" ? openSettings("ai") : t.view === "mailbox" ? openSettings("mailbox") : go(t.view)); });
 setInterval(tickProgress, 1000);
 let lastPoll = 0;
 setInterval(() => {
@@ -1096,7 +1111,11 @@ function updateBanner() {
   const v = esc(u.info.latest);
   const page = `<button class="btn sm" data-open-url="${esc(u.info.url)}">${icon("ext")}What's new</button>`;
   let body, actions = "";
-  if (u.phase === "available") {
+  if (u.phase === "available" && u.failed === u.info.latest) {
+    // The app closed to update and came back as it was: the computer didn't let it be replaced.
+    body = `<b>Version ${v} didn't install</b>The app closed to update itself and came back as version ${esc(u.info.current)}: this computer didn't let it be replaced. Download version ${v} and install it over this one. Your data and settings stay.`;
+    actions = `<button class="btn sm primary" data-open-url="${esc(u.info.url)}">${icon("ext")}Download it</button>${u.packaged ? `<button class="btn sm" onclick="installUpdate()">Try again</button>` : ""}`;
+  } else if (u.phase === "available") {
     body = `<b>Version ${v} is available</b>You have ${esc(u.info.current)}. Updating keeps all your data and settings, and the app restarts by itself.`;
     actions = u.packaged ? `${page}<button class="btn sm primary" onclick="installUpdate()">${icon("upload")}Update now</button>` : page;
   } else if (u.phase === "downloading") {
@@ -1109,7 +1128,7 @@ function updateBanner() {
     body = `<b>The update did not install</b>${esc(u.error || "")}`;
     actions = `<button class="btn sm" data-open-url="${esc(u.info.url)}">${icon("ext")}Download it instead</button>${u.packaged ? `<button class="btn sm primary" onclick="installUpdate()">Try again</button>` : ""}`;
   }
-  return `<div class="banner ${u.phase === "error" ? "amber" : "blue"}">${icon("upload")}<div style="flex:1">${body}</div>${actions ? `<div class="right">${actions}</div>` : ""}</div>`;
+  return `<div class="banner ${u.phase === "error" || (u.phase === "available" && u.failed === u.info.latest) ? "amber" : "blue"}">${icon("upload")}<div style="flex:1">${body}</div>${actions ? `<div class="right">${actions}</div>` : ""}</div>`;
 }
 async function installUpdate() {
   const r = await api("/api/update/install", {});
@@ -1155,6 +1174,9 @@ function todoItems() {
   const codes = st.codes || { count: 0 };
   if (codes.count && !rp.mailbox) add({ prio: 3, urgent: true, tone: "amber", icon: "mail", title: `Connect your mailbox to finish ${codes.count === 1 ? "an application" : codes.count + " applications"}`,
     text: "The employer emailed a code or a link to confirm. With your mailbox connected, the app reads it and finishes the application.", actions: `<button class="btn sm primary" onclick="openSettings('mailbox')">Connect my mailbox</button>` });
+  // A mailbox that stopped answering: replies and emailed codes are being missed until it's put right.
+  if (rp.mailbox && st.state.mailProblem) add({ prio: 3, urgent: true, tone: "amber", icon: "mail", title: "Your mailbox stopped working", text: `${esc(st.state.mailProblem)} Until then the app can't see replies from employers or read emailed codes.`,
+    actions: `<button class="btn sm primary" onclick="openSettings('mailbox')">Open Mailbox settings</button>` });
   const mb = st.maybe || { count: 0 };
   if (mb.count && mb.first) add({ prio: 4, tone: "amber", icon: "mail", title: `${one(mb.count, "application", "applications")} may have gone through`,
     text: "Submit was pressed, but no confirmation came. Look in your email for the employer's thank-you, then say whether it went through.",
@@ -1327,6 +1349,8 @@ const HELP = [
   ["How do I stop it, or take a break?", "Press <b>Pause</b> at the bottom left. Nothing more is filled in or sent until you press <b>Continue</b>. To keep practicing instead of sending, press <b>Back to practice</b>."],
   ["Does it keep working when I close the window?", `Yes. It keeps looking for jobs and applying. Open it again from the ${window.ja && window.ja.platform === "darwin" ? "menu bar at the top of the screen" : "system tray, next to the clock"}, where there's also <b>Quit</b>. You can change this in Settings > While it works.`],
   ["An application stopped and asks me something. What do I do?", "Some questions only you can answer. Open the application from your To do list, answer the question, and press <b>Save my answers and try again</b>. The app remembers your answer for the next forms that ask. Or press <b>Finish it with me</b> and answer it on the form yourself."],
+  ["The app says it can't apply right now.", `Something is in the way of every application, not just one job: no internet connection, the AI isn't connected or is out of credit, no browser to apply with, or a problem with your resume. Your To do list says which one. Your jobs stay in <a href="#" data-go="queued">Up next</a>, and the app carries on by itself once it's sorted out.`],
+  ["Why is a job under Apply yourself?", `Some sites need your own account, use a chat bot, or won't let the app's browser in, so the app can't apply there by itself. Open the job from <a href="#" data-go="manual">Apply yourself</a>: <b>Open the application</b> takes you to it, <b>Make my resume for this job</b> gives you a resume to upload there, and <b>Finish it with me</b> has the app fill in what it can while you do the rest. Press <b>I applied</b> when it's sent.`],
   ["How do I change the jobs it looks for?", "Go to <b>Settings</b> > Jobs to look for: the job titles, your city and how far you'll go, and your years of experience."],
   ["How do I fix my resume?", "Go to <b>Resume</b> in the menu on the left. <b>All your resume pieces</b> has every line: change it, delete it, or untick it so it's never used."],
   ["I need a list of my applications (unemployment claims).", `On the <a href="#" data-go="applied">Applied</a> page, press <b>Save a list of them</b>: a spreadsheet with the date, employer, job title, place and link of every application sent.`],
@@ -1342,7 +1366,7 @@ async function saveDiagnostics(btn) {
     const r = await window.ja.saveDiagnostics($("diag-personal").checked);
     if (!r) return Forms.msg(m, "", "");
     Forms.msg(m, "ok", `Saved: ${r.file} (${Math.max(1, Math.round(r.bytes / 1024))} KB). Its folder is open: send the file to whoever helps you with the app.`);
-  } catch (e) { Forms.msg(m, "err", "The report couldn't be saved: " + String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, "")); }
+  } catch (e) { Forms.msg(m, "err", String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, "")); }
   finally { btn.disabled = false; }
 }
 const diagCard = () => `<div class="card sec" style="margin-top:12px"><h2>Something not working?</h2>

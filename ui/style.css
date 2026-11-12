@@ -731,3 +731,27 @@ details.card-fold[open] > summary h2::before, details.card-fold[open] > summary 
   .dr-close .dr-back { display: inline; }
   .dr-close svg.i { display: none; }
 }
+
+/* A short window (a small laptop): the sidebar's pages and its controls fit without scrolling. */
+@media (max-height: 800px) {
+  .side { padding-top: var(--space-xs); padding-bottom: var(--space-xs); gap: 0; }
+  .brand { padding-bottom: var(--space-xs); }
+  .nav { min-height: 30px; }
+  .nav-label { padding-top: var(--space-xs); }
+  .side-foot { gap: var(--space-3xs); padding-top: var(--space-xs); }
+  .side-foot .row { min-height: 28px; }
+  .mode-box { padding: var(--space-2xs) var(--space-xs); }
+}
+@media (max-height: 690px) {
+  .nav { min-height: 28px; }
+  .mode-line .mode-text { display: none; }
+}
+/* The smallest window the app allows. */
+@media (max-height: 650px) {
+  .brand { padding-bottom: 0; }
+  .nav { min-height: 26px; }
+  .nav-label { padding-top: var(--space-2xs); padding-bottom: 0; }
+  .side-foot .row { min-height: 26px; }
+}
+/* How to do something, as numbered steps. */
+.how { margin: 0; padding-left: 1.25rem; display: grid; gap: var(--space-3xs); color: var(--color-ink-2); font-size: var(--text-sm); }

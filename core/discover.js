@@ -181,7 +181,10 @@ export async function discover(progress = () => {}, ctx = {}) {
   }
   const seen = new Set(db.prepare("SELECT slug FROM jobs").all().map((r) => r.slug));
   const keys = new Set();
-  for (const r of db.prepare("SELECT key, url, apply_url FROM jobs").all()) addTo(keys, r.url || r.apply_url, r.key);
+  // A job the app has (up next, sent, stopped, the person's to apply to) stands for every posting of it. One that
+  // was left out stands for them a month: after that a new posting of it is looked at afresh (the first one may
+  // have closed, or been left out for a setting the person has changed since).
+  for (const r of db.prepare("SELECT key, url, apply_url FROM jobs WHERE status != 'skipped' OR found_at > datetime('now', '-30 days')").all()) addTo(keys, r.url || r.apply_url, r.key);
   const live = db.prepare("SELECT company, title, url, apply_url FROM jobs WHERE status != 'skipped'").all();
   const roles = new Set();
   for (const r of live) addTo(roles, r.url || r.apply_url, roleKey(r.company, r.title));
@@ -225,7 +228,7 @@ export async function discover(progress = () => {}, ctx = {}) {
   // The lowest pay the person would take, as an hourly figure (a yearly one counts 2,080 hours).
   const floor = Number(prefs.minPay) > 0 ? (prefs.minPayPer === "year" ? Number(prefs.minPay) / 2080 : Number(prefs.minPay)) : 0;
   const dollars = (n) => "$" + (n >= 100 ? Math.round(n).toLocaleString("en-US") : (Math.round(n * 100) / 100).toString());
-  let added = 0, toYou = 0, ji = 0, screenedOk = 0;
+  let added = 0, toYou = 0, ji = 0, screenedOk = 0, failedInRow = 0;
   const failed = [];
   const insertJob = (j, key, status, reason, apply, check = null) => db.prepare(`INSERT OR IGNORE INTO jobs (slug, key, title, company, location, work_mode, source, url, apply_url, salary, posted_at, status, reason, details)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(j.slug, key, j.title, j.company, j.location || "", j.work_mode || "",
@@ -289,13 +292,15 @@ export async function discover(progress = () => {}, ctx = {}) {
       try {
         const known = found1(verdicts, j.url, fam);
         const s = known || await screen(profile, j, j.description, a, prefs);
-        if (!known) screenedOk++;
+        if (!known) { screenedOk++; failedInRow = 0; }
         for (const k of storeKeys(j.url, fam)) verdicts.set(k, s);
         if (!s.ok) { status = "skipped"; reason = `screen: ${s.reason}`; }
         else reason = status === "manual" ? `${why}. Screen: ${s.reason}` : `screen: ${s.reason}`;
       } catch (e) {
-        lastSearch.aiProblem = plainAiError(e.message);
         failed.push({ j, key, error: e.message });
+        // The AI isn't answering at all: the rest wait for the next search, and applications go on meanwhile
+        // (each try takes its time, and a search of a hundred postings would hold everything up for an hour).
+        if (++failedInRow >= 5 && !screenedOk) { log(null, `the AI didn't answer for ${failedInRow} postings in a row: the rest of this search waits for the next one`, "warn"); break; }
         continue;
       }
     }
@@ -315,6 +320,8 @@ export async function discover(progress = () => {}, ctx = {}) {
     log(j.slug, `${status}: ${j.title} at ${j.company} (${j.location}) via ${j.board}${reason ? " - " + reason : ""}`);
   }
   if (leftOut.size) log(null, `left out without the AI, as kinds of work you don't want: ${[...leftOut].map(([c, n]) => `${n} ${kindName(c)}`).join(", ")}`);
+  // One posting the AI stumbled on isn't "the AI stopped working": only when none of them got an answer.
+  if (failed.length && !screenedOk) lastSearch.aiProblem = plainAiError(failed[0].error);
   if (failed.length && !screenedOk) log(null, `every screening in this search failed (${failed.length}): the AI seems unavailable, so none of them counts as a try`, "warn");
   else for (const { j, key, error } of failed) {
     const n = countScreenFailure(j.slug);

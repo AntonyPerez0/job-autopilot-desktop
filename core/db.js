@@ -77,10 +77,11 @@ export const getJob = (slug) => getDb().prepare("SELECT * FROM jobs WHERE slug =
 const startHour = () => Math.max(0, Math.min(23, Number(getSettings().dayStartsAtHour) || 0));
 
 // An application "day" runs from dayStartsAtHour to the same hour the next day (local time). Every row with a
-// submit time today counts: applied, mid-submit, or pressed without a confirmation ("may have gone through").
+// submit time today counts: applied, mid-submit, or pressed without a confirmation ("may have gone through"). Not
+// the ones the person applied to by hand on the job's own site ("I applied"): the limit is on what the app sends.
 export function appliedToday() {
   const shift = `-${startHour()} hours`;
-  return getDb().prepare("SELECT COUNT(*) n FROM jobs WHERE applied_at IS NOT NULL AND applied_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(applied_at, 'localtime', ?) = date('now', 'localtime', ?)").get(shift, shift).n;
+  return getDb().prepare("SELECT COUNT(*) n FROM jobs WHERE applied_at IS NOT NULL AND COALESCE(reason, '') != 'applied by you' AND applied_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' AND date(applied_at, 'localtime', ?) = date('now', 'localtime', ?)").get(shift, shift).n;
 }
 
 // Practice applications filled in today (same day as appliedToday): in practice mode they count toward the daily limit,

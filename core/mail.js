@@ -97,15 +97,20 @@ export function roleCore(title, company) {
 }
 
 // hits: [{ date, subject, text }] confirmation emails from this employer. Returns a description, or null.
-export function matchConfirmation(hits, company, title) {
-  const core = roleCore(title, company);
-  for (const h of hits) {
+// ownTitles: the roles the app itself already applied to at this employer. Their confirmations are the app's own:
+// they don't say this other role was applied to by hand (two roles at one employer are two applications).
+export function matchConfirmation(hits, company, title, ownTitles = []) {
+  const names = (h, t) => {
+    const core = roleCore(t, company);
     const text = (h.subject + " " + h.text).replace(/\s+/g, " ").toLowerCase();
     const present = core.filter((w) => new RegExp(`\\b${w}\\b`).test(text)).length;
-    if (core.length && present >= Math.max(2, Math.round(core.length * 0.8))) return `${String(h.date).slice(0, 22)} | ${h.subject}`;
-  }
-  // one confirmation from the employer and it names no role we could check
-  if (hits.length === 1) {
+    return core.length > 0 && present >= Math.max(2, Math.round(core.length * 0.8));
+  };
+  const core = roleCore(title, company);
+  for (const h of hits) if (names(h, title)) return `${String(h.date).slice(0, 22)} | ${h.subject}`;
+  hits = hits.filter((h) => !ownTitles.some((t) => names(h, t)));
+  // one confirmation from the employer and it names no role we could check (and it can't be for one the app sent)
+  if (hits.length === 1 && !ownTitles.length) {
     const text = (hits[0].subject + " " + hits[0].text).toLowerCase();
     if (!core.some((w) => w.length > 3 && text.includes(w))) return `${String(hits[0].date).slice(0, 22)} | ${hits[0].subject} (names no role)`;
   }
@@ -288,7 +293,8 @@ export function confirmationOk(mail, job) {
 // still a rejection. Sentences about what might happen later ("if your background fits, we'll reach out to
 // schedule an interview") don't count: they're how a "thanks for applying" email talks.
 const OFFER = /\b(pleased|happy|excited|delighted|thrilled) to (extend|offer)\b|\boffer (letter|of employment)\b|\bjob offer\b|\bverbal offer\b/i;
-const REJECT = /\bunfortunately\b|\bnot (to )?(be )?(moving|move|proceeding|proceed) forward\b|\bdecided (not to (move|proceed)|to (move|proceed|go|pursue)[^.]{0,30}\b(other|another|different) (candidates?|applicants?|direction))|\bother candidates whose\b|\bnot (been )?selected\b|\bposition (has been|was|is now) filled\b|\bno longer (under consideration|being considered)\b|\bregret to inform\b|\bnot (a|the right) (match|fit)\b|\bwon't be (moving|proceeding)\b|\bwill not be (moving|proceeding|advancing)\b/i;
+// "Unfortunately" on its own says nothing ("unfortunately I missed your call"): it counts with the no that follows it.
+const REJECT = /\bunfortunately\b[^.!?]{0,200}\b(not|unable|won't|cannot|can't|no longer|(other|another|different) (candidates?|applicants?|direction)|decided|filled|closed|cancell?ed|regret)\b|\bnot (to )?(be )?(moving|move|proceeding|proceed) forward\b|\bdecided (not to (move|proceed)|to (move|proceed|go|pursue)[^.]{0,30}\b(other|another|different) (candidates?|applicants?|direction))|\bother candidates whose\b|\bnot (been )?selected\b|\bposition (has been|was|is now) filled\b|\bno longer (under consideration|being considered)\b|\bregret to inform\b|\bnot (a|the right) (match|fit)\b|\bwon't be (moving|proceeding)\b|\bwill not be (moving|proceeding|advancing)\b/i;
 const INTERVIEW = /\binterview\b|\bphone screen\b|\b(schedule|set up|book|find) (a |an )?(time|call|chat|meeting|conversation)\b|\byour availability\b|\bcalendly\.com\b|\bwould (like|love) to (speak|talk|meet|chat|connect)\b|\binvite you to\b|\bavailable (for|to) (a |an )?(call|chat|talk|meet)/i;
 const ASSESS = /\bassessment\b|\bskills? test\b|\bquestionnaire\b|\bcomplete (the|this|a|our) (test|task|assignment|exercise|challenge)\b|\bhirevue\b|\bcodesignal\b|\bhackerrank\b|\bcriteria corp\b|\bpre-?employment test\b/i;
 const INFO = /\b(additional|more|further) (information|details|documents?)\b|\bplease (provide|send|complete|confirm|upload|fill out)\b|\bbackground (check|screening)\b|\breferences\b|\baction (required|needed)\b|\bmissing (information|documents?)\b/i;
@@ -381,7 +387,7 @@ export async function mailSince(cfg, since, keep, { max = 400, download = 60 } =
   } finally { if (c) await c.logout().catch(() => {}); }
 }
 
-export async function findConfirmation(cfg, company, title, days = 60, url = "") {
+export async function findConfirmation(cfg, company, title, days = 60, url = "", ownTitles = []) {
   let c;
   try {
     c = await connect(cfg);
@@ -401,6 +407,6 @@ export async function findConfirmation(cfg, company, title, days = 60, url = "")
         hits.push({ date: t.date, subject, text: t.text });
       }
     }
-    return matchConfirmation(hits, company, title);
+    return matchConfirmation(hits, company, title, ownTitles);
   } catch { return undefined; } finally { if (c) await c.logout().catch(() => {}); }
 }

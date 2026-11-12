@@ -46,6 +46,7 @@ export function promoteYourAnswers() {
 }
 
 const KINDS = "required, no answer|needs you|still empty";
+const SECRET_RX = /pass ?word|passcode|\bpin\b|social security|\bssn\b|\bsin\b|bank account|routing number|account number|credit card|card number|\bcvv\b|passport (number|no)|tax (id|number)|\bitin\b/i;
 const nkey = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 const ITEM = new RegExp(`(${KINDS}): ([\\s\\S]*?)(?=; (?:${KINDS}): |$)`, "g");
 
@@ -71,6 +72,8 @@ export function asksFor(job, details = {}) {
     // The field it is, even when the wording differs a little ("Work authorization *" / "Work authorization").
     const f = fields.find((x) => labelKey(x.label) === key) ||
       (key.length >= 8 ? fields.find((x) => { const k = labelKey(x.label); return k.length >= 8 && (k.startsWith(key) || key.startsWith(k)); }) : null);
+    // Never asked for, never kept: a password, or a number that is a secret. The person types it on the form itself.
+    if (SECRET_RX.test(label)) { out.push({ label, note: "", options: [], required: true, long: false, secret: true }); continue; }
     // A file the app couldn't attach is not a question to type an answer to.
     if ((f && f.type === "file") || (!f && /^(resume|cv|cover letter|attach|upload)\b/i.test(label) && fields.some((x) => x.type === "file"))) {
       out.push({ label, note: "", options: [], required: true, long: false, file: true });

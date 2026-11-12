@@ -130,9 +130,12 @@ export function classifyNamed(name, url) {
 // Whether the page in front of the app is a sign-in wall rather than an application form.
 export const LOGIN_WALL_JS = `(() => {
   const vis = (e) => e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden';
-  const pw = [...document.querySelectorAll('input[type=password]')].filter(vis).length;
+  const pws = [...document.querySelectorAll('input[type=password]')].filter(vis);
+  const pw = pws.length;
+  // A password the form itself requires (an account made as part of applying), or one asked for twice.
+  const pwMust = pws.filter((e) => e.required || e.getAttribute('aria-required') === 'true').length || (pw >= 2 ? 1 : 0);
   const fields = [...document.querySelectorAll('input:not([type=hidden]):not([type=password]), select, textarea')].filter(vis).length;
   const t = (document.body ? document.body.innerText : '').slice(0, 5000);
   const signIn = /\\b(sign in|log in|login|create (an )?account|create your account|register to apply|returning (user|candidate)|new user)\\b/i.test(t);
-  return { pw, fields, signIn };
+  return { pw, pwMust, fields, signIn };
 })()`;

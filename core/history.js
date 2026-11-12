@@ -38,7 +38,7 @@ export function exportHistory(appVersion = "") {
 
 export function parseHistory(buf) {
   let b = Buffer.from(buf);
-  if (b[0] === 0x1f && b[1] === 0x8b) b = zlib.gunzipSync(b);
+  if (b[0] === 0x1f && b[1] === 0x8b) { try { b = zlib.gunzipSync(b); } catch { throw new Error("This history file is cut off or damaged. Copy it again from where it's kept (Documents > Job Autopilot), and import that copy."); } }
   let doc;
   try { doc = JSON.parse(b.toString("utf8")); } catch { throw new Error("This is not a Job Autopilot history file."); }
   if (!doc || doc.format !== FORMAT || !Array.isArray(doc.jobs)) throw new Error("This is not a Job Autopilot history file.");

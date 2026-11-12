@@ -72,6 +72,16 @@ function createWindow() {
     const st = core.store.getSettings();
     if (quitting || !st.onboarded || st.keepRunning === false) return;
     e.preventDefault();
+    // The first time, said in the window itself (a notification may never show): closing it doesn't stop the app,
+    // where it went, and the choice to quit instead.
+    if (!TEST_RUN && !(st.dismissed || []).includes("hide-notice")) {
+      core.store.saveSettings({ dismissed: [...(st.dismissed || []), "hide-notice"] });
+      dialog.showMessageBox(win, { type: "info", buttons: ["Keep it working", "Quit Job Autopilot"], defaultId: 0, cancelId: 0,
+        message: "Job Autopilot keeps working after you close this window",
+        detail: `It goes on looking for jobs and filling in applications. Open it again from its icon ${MAC ? "in the menu bar at the top of the screen" : "in the system tray, next to the clock (it may be under the small arrow there)"}. Quit is there too.\n\nSettings > While it works changes this.` })
+        .then((r) => { if (r.response === 1) { quitting = true; app.quit(); } else if (win) win.hide(); });
+      return;
+    }
     win.hide();
     if (bg) bg.hidden();
   });
@@ -157,12 +167,20 @@ app.whenReady().then(async () => {
     damaged = { file: damaged, back };
   }
   history.startBackups(app.getVersion());
+  // A file saved where the person chose; a file that can't be written says why in plain words.
+  const saveFile = (to, write) => {
+    try { write(to); } catch (e) {
+      const m = `${e.code || ""} ${e.message || ""}`;
+      throw new Error(/EBUSY|EPERM|EACCES/.test(m) ? "That file is open in another program (Excel, say), or that folder can't be written to. Close the file or pick another name or folder, and save again."
+        : /ENOSPC/.test(m) ? "There's no room left on that disk. Pick another place, or free some space." : "The file couldn't be saved there. Pick another folder and try again.");
+    }
+  };
   handle("history-save", async () => {
     const day = new Date().toISOString().slice(0, 10);
     const r = await dialog.showSaveDialog(win, { title: "Save your application history", defaultPath: path.join(app.getPath("documents"), `job-autopilot-history-${day}.json.gz`),
       filters: [{ name: "Job Autopilot history", extensions: ["gz"] }] });
     if (r.canceled || !r.filePath) return null;
-    fs.writeFileSync(r.filePath, history.exportHistory(app.getVersion()));
+    saveFile(r.filePath, (f) => fs.writeFileSync(f, history.exportHistory(app.getVersion())));
     return r.filePath;
   });
   // Save a resume PDF the app made (Resume page > Download) wherever the user likes.
@@ -171,7 +189,7 @@ app.whenReady().then(async () => {
     if (!fs.existsSync(src)) return null;
     const r = await dialog.showSaveDialog(win, { title: "Save your resume", defaultPath: path.join(app.getPath("downloads"), path.basename(String(suggested || "Resume.pdf"))), filters: [{ name: "PDF", extensions: ["pdf"] }] });
     if (r.canceled || !r.filePath) return null;
-    fs.copyFileSync(src, r.filePath);
+    saveFile(r.filePath, (f) => fs.copyFileSync(src, f));
     return r.filePath;
   });
   // A diagnostics report, saved where the person chooses (Downloads by default), then shown in its folder.
@@ -182,7 +200,7 @@ app.whenReady().then(async () => {
     const r = await dialog.showSaveDialog(win, { title: "Save the diagnostics report", defaultPath: path.join(app.getPath("downloads"), `job-autopilot-diagnostics-${stamp}.json`),
       filters: [{ name: "Diagnostics report", extensions: ["json"] }] });
     if (r.canceled || !r.filePath) return null;
-    fs.writeFileSync(r.filePath, JSON.stringify(report, null, 1));
+    saveFile(r.filePath, (f) => fs.writeFileSync(f, JSON.stringify(report, null, 1)));
     shell.showItemInFolder(r.filePath);
     return { file: r.filePath, stopped: report.stopped.length, bytes: fs.statSync(r.filePath).size };
   });
@@ -201,7 +219,7 @@ app.whenReady().then(async () => {
       filters: [{ name: "Spreadsheet (CSV)", extensions: ["csv"] }] });
     if (r.canceled || !r.filePath) return null;
     // With a byte-order mark, so Excel reads names like "Nestlé" right.
-    fs.writeFileSync(r.filePath, "\ufeff" + list.csv);
+    saveFile(r.filePath, (f) => fs.writeFileSync(f, "\ufeff" + list.csv));
     shell.showItemInFolder(r.filePath);
     return { file: r.filePath, count: list.count };
   });
@@ -273,15 +291,26 @@ app.whenReady().then(async () => {
   app.exit(1);
 });
 
-// The window closed for real (quitting, or setup not finished): stop the autopilot and quit.
-app.on("window-all-closed", async () => {
-  if (bg) bg.stop();
-  if (core) {
-    core.worker.stop();
-    const { closeBrowser } = await import("../core/browser.js");
-    await Promise.race([closeBrowser(), new Promise((r) => setTimeout(r, 4000))]);
-  }
-  app.quit();
+// Before the app goes, however it was told to (the window closed for real, Quit in the tray, Cmd+Q): the autopilot
+// stops and the browser it applies with is closed, so none is left running behind.
+let tidied = false;
+async function tidyUp() {
+  if (tidied) return;
+  tidied = true;
+  try {
+    if (bg) bg.stop();
+    if (core) {
+      core.worker.stop();
+      const { closeBrowser } = await import("../core/browser.js");
+      await Promise.race([closeBrowser(), new Promise((r) => setTimeout(r, 4000))]);
+    }
+  } catch (e) { console.error("closing down:", e); }
+}
+app.on("window-all-closed", async () => { await tidyUp(); app.quit(); });
+app.on("will-quit", (e) => {
+  if (tidied) return;
+  e.preventDefault();
+  tidyUp().finally(() => app.exit(0));
 });
 
 process.on("unhandledRejection", (e) => console.error("unhandled:", e));

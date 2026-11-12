@@ -99,7 +99,7 @@ export const aiSettings = () => {
 async function retry(fn, n = 3) {
   let last;
   for (let i = 0; i < n; i++) {
-    try { return await fn(); } catch (e) { last = e; if (/Model API 4(0[0-3]|04)/.test(e.message)) break; await new Promise((r) => setTimeout(r, 4000 * (i + 1))); }
+    try { return await fn(); } catch (e) { last = e; if (/Model API 4(0[0-3]|04)/.test(e.message) || i === n - 1) break; await new Promise((r) => setTimeout(r, 4000 * (i + 1))); }
   }
   throw last;
 }

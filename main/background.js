@@ -9,6 +9,7 @@ import path from "node:path";
 // the person is looking at the window right now.
 export function startBackground({ core, here, show, open, visible }) {
   let tray = null, blocker = null, seen = null, login = null;
+  const shown = new Set();
   // Linux (not a supported platform, but the tests run there) needs a display for a tray icon; without one, the window
   // comes back by opening the app again.
   const canTray = process.platform !== "linux" || !!(process.env.DISPLAY || process.env.WAYLAND_DISPLAY) && !process.argv.includes("--ozone-platform=headless");
@@ -55,6 +56,8 @@ export function startBackground({ core, here, show, open, visible }) {
     if (st.settings.dryRun && st.settings.reviewedDryRun && pr && pr.held && pr.first) out.push({ key: `practice-wait:${pr.first.slug}`, title: "Your practice applications are waiting", body: `${pr.unchecked} new ones are filled in. The app fills in no more until you open one, and nothing is sent until you start sending.`, target: { view: "filled" } });
     const ai = st.search && st.search.aiProblem;
     if (ai) out.push({ key: `ai:${ai}`, title: "The AI stopped working", body: ai, target: { view: "settings" } });
+    const mail = st.state && st.state.mailProblem;
+    if (mail && /app password/.test(mail)) out.push({ key: `mail:${mail}`, title: "Your mailbox stopped working", body: mail, target: { view: "mailbox" } });
     // What keeps every application from being tried and needs the person (no internet sorts itself out).
     const tr = st.state && st.state.trouble;
     if (tr && tr.kind !== "internet" && !(tr.kind === "ai" && ai)) out.push({ key: `trouble:${tr.text}`, title: "Job Autopilot can't apply right now", body: tr.text, target: tr.kind === "ai" ? { view: "settings" } : { view: "overview" } });
@@ -92,7 +95,11 @@ export function startBackground({ core, here, show, open, visible }) {
       seen.add(x.key);
       if (s.notifications === false || visible() || !Notification.isSupported()) continue;
       const n = new Notification({ title: x.title, body: String(x.body || "").slice(0, 200) });
-      n.on("click", () => open(x.target));
+      // Kept until it's gone: a notification nothing holds on to can lose its click.
+      shown.add(n);
+      n.on("click", () => { shown.delete(n); open(x.target); });
+      n.on("close", () => shown.delete(n));
+      if (shown.size > 20) shown.delete(shown.values().next().value);
       n.show();
     }
   }

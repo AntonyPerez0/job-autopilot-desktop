@@ -22,8 +22,13 @@ export async function makeSecretStore(file) {
       if (!value) { delete all[key]; delete cache[key]; }
       else {
         cache[key] = String(value);
-        // Linux without a keyring is the only place encryption may be missing; there it is stored as is.
-        all[key] = available ? { enc: (await safeStorage.encryptStringAsync(String(value))).toString("base64") } : { plain: String(value) };
+        // Linux without a keyring is the only place encryption may be missing; there it is stored as is. On a Mac or
+        // Windows a key is never written unprotected: if the keychain can't be used, saving it fails and says why.
+        const locked = () => new Error(process.platform === "darwin" ? "macOS didn't let Job Autopilot use your keychain, where it keeps this safely. Quit the app, open it again, and press Always Allow when macOS asks about the keychain."
+          : "Windows couldn't protect this for safe keeping. Restart the computer and try again.");
+        if (!available && process.platform !== "linux") { delete cache[key]; throw locked(); }
+        try { all[key] = available ? { enc: (await safeStorage.encryptStringAsync(String(value))).toString("base64") } : { plain: String(value) }; }
+        catch (e) { if (process.platform === "linux") throw e; delete cache[key]; throw locked(); }
       }
       write(all);
     },

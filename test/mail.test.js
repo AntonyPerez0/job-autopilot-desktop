@@ -92,3 +92,18 @@ test("a code from the form's own system (iCIMS here), signed, is used; a newer o
   assert.strictEqual(M.pickCode([mine], since), null, "Greenhouse's senders only, when nothing else is named");
   assert.deepStrictEqual(M.mailDomainsFor("https://careers.polloregio.com/apply"), ["polloregio.com"], "the employer's own site");
 });
+
+test("the app's own confirmation for another role at the same employer doesn't make this one 'already applied'", () => {
+  const cashier = { date: "2026-11-10", subject: "Thank you for applying to Target", text: "We received your application for Cashier." };
+  assert.match(matchConfirmation([cashier], "Target", "Stocker"), /names no role/, "applied by hand, as far as the mailbox shows");
+  assert.strictEqual(matchConfirmation([cashier], "Target", "Stocker", ["Cashier"]), null, "the app sent the Cashier one itself: Stocker is another application");
+  const named = { date: "2026-11-10", subject: "Thank you for applying", text: "Your application for Overnight Stocking Associate at Target is in." };
+  assert.match(matchConfirmation([cashier, named], "Target", "Overnight Stocking Associate", ["Cashier"]), /Thank you for applying/, "a confirmation that names this role still counts");
+});
+
+test("replies: 'unfortunately' counts with the no that follows it, not on its own", async () => {
+  const { classifyReply } = await import("../core/mail.js");
+  assert.strictEqual(classifyReply("Re: your call", "Hi Maria, unfortunately I missed your call earlier. Are you available for an interview on Thursday?"), "interview");
+  for (const t of ["Unfortunately, we have decided to move forward with other candidates.", "Unfortunately the position has been filled.", "Unfortunately, we are unable to offer you a position at this time.", "Unfortunately we won't be progressing your application."])
+    assert.strictEqual(classifyReply("Your application", t), "rejection", t);
+});

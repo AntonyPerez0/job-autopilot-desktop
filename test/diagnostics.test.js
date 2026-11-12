@@ -41,7 +41,17 @@ test("personal details are left out unless the person includes them, and no secr
   for (const x of ["jordan.lee@example.com", "Jordan Lee", "555-0142", "5125550142", "78701", "100 Example St", "after my lease ends", "sk-or-secret-key", "linkedin.com/in/jordanlee-example"]) assert.ok(!out.includes(x), `left out: ${x}`);
   assert.match(out, /applying for \[name\] \(\[email\], \[phone\]\)/);
   const r = diagnostics({});
-  assert.deepStrictEqual([r.aboutYou.email, r.aboutYou.workAuthorized, r.aboutYou.zip], ["set", "yes", "set"]);
+  assert.deepStrictEqual([r.aboutYou.email, r.aboutYou.workAuthorized, r.aboutYou.needsSponsorship, r.aboutYou.zip, r.aboutYou.country], ["set", "set", "set", "set", "United States"], "what they said about themselves: only that it's answered");
+  // However the phone number is written, and what the app's notes quote of their answers.
+  const red = redactor({ phone: "+1 (512) 555-0142" });
+  for (const p of ["512-555-0142", "512.555.0142", "(512) 555 0142", "+1 512 555 0142", "15125550142"]) assert.ok(!/555/.test(red(`call ${p} today`)), p);
+  assert.strictEqual(red("order 5125550142999"), "order 5125550142999", "a longer number is not the phone");
+  log("cs-1", 'truth check: work authorization: "No" corrected to "Yes" on "Are you legally authorized to work in the US?"');
+  log("cs-1", 'truth check: your answer "42 Oak Lane" isn\'t one of the choices for "Where do you live?", so it wasn\'t used there');
+  const act = diagnostics({}).activity.map((e) => e.message).join("\n");
+  assert.match(act, /work authorization: corrected on "Are you legally authorized to work in the US\?"/);
+  assert.ok(!/42 Oak Lane|corrected to "Yes"/.test(act), "the question stays, the answer goes");
+  assert.match(diagnostics({ personal: true }).activity.map((e) => e.message).join("\n"), /42 Oak Lane/);
   assert.deepStrictEqual(r.aboutYou.yourAnswers, [{ question: "Notice period?", scope: "every application", company: "Initech" }]);
   assert.strictEqual(r.resume.approvedSummaries, r.resume.summaries);
   assert.deepStrictEqual(r.settings.mailbox, { connected: false, server: "imap.gmail.com", preset: "gmail" });
